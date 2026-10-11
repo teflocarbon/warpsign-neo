@@ -45,19 +45,36 @@ final class DeviceStore {
     private static let key = "pairing"
     private static let methodKey = "installMethod"
     private static let slotKey = "installSlot"
+    private static let manifestServerKey = "manifestServer"
 
     var method: InstallMethod {
         didSet { UserDefaults.standard.set(method.rawValue, forKey: Self.methodKey) }
     }
 
+    /// Where web installs get their manifests (see worker/ in the repo).
+    /// Empty means WarpSign's default.
+    var manifestServer: String {
+        didSet { UserDefaults.standard.set(manifestServer, forKey: Self.manifestServerKey) }
+    }
+
+    /// The manifest server web installs use
+    var effectiveManifestServer: String {
+        let custom = manifestServer.trimmingCharacters(in: .whitespacesAndNewlines)
+        return custom.isEmpty ? defaultManifestServer() : custom
+    }
+
     /// Whether installing works with the chosen method
     var isReady: Bool {
-        method == .web || hasPairingFile
+        switch method {
+        case .web: effectiveManifestServer.hasPrefix("https://")
+        case .pairing: hasPairingFile
+        }
     }
 
     init() {
         method = UserDefaults.standard.string(forKey: Self.methodKey)
             .flatMap(InstallMethod.init(rawValue:)) ?? .web
+        manifestServer = UserDefaults.standard.string(forKey: Self.manifestServerKey) ?? ""
         if let data = Keychain.data(for: Self.key) {
             hasPairingFile = true
             udid = (try? pairingFileInfo(pairingFile: data))?.udid
@@ -121,6 +138,12 @@ final class DeviceStore {
         let slots = webInstallSlots()
         let slot = UInt32(UserDefaults.standard.integer(forKey: Self.slotKey)) % slots
         UserDefaults.standard.set(Int((slot + 1) % slots), forKey: Self.slotKey)
-        return try WebInstall.start(ipaPath: ipa.path, iconPng: icon, slot: slot, observer: observer)
+        return try WebInstall.start(
+            ipaPath: ipa.path,
+            iconPng: icon,
+            slot: slot,
+            manifestServer: effectiveManifestServer,
+            observer: observer
+        )
     }
 }

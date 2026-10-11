@@ -40,6 +40,8 @@ struct InstallingView: View {
 
             if device.method == .pairing {
                 pairingSections
+            } else {
+                manifestServerSection
             }
         }
         .navigationTitle("Installing")
@@ -53,6 +55,24 @@ struct InstallingView: View {
             Button("Remove", role: .destructive) { device.removePairingFile() }
         } message: {
             Text("WarpSign won't be able to install through LocalDevVPN until you add one again.")
+        }
+    }
+
+    private var manifestServerSection: some View {
+        @Bindable var device = device
+        return Section {
+            TextField(
+                defaultManifestServer().isEmpty ? "https://….workers.dev" : defaultManifestServer(),
+                text: $device.manifestServer
+            )
+            .keyboardType(.URL)
+            .textContentType(.URL)
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+        } header: {
+            Text("Manifest Server")
+        } footer: {
+            Text("iOS only installs from a manifest on a trusted website, and since iOS 27 it must name the app. This server writes one for each install, naming only the app's ID, name and version; the app itself never leaves this device. Leave empty for WarpSign's own.")
         }
     }
 

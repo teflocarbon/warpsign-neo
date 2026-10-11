@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use warpsign_core::device::{self, DeviceError, INSTALL_STEPS, Target};
-use warpsign_core::serve::{self, InstallServer, SERVER_INSTALL_STEPS, SLOTS};
+use warpsign_core::serve::{self, InstallServer, ManifestApp, SERVER_INSTALL_STEPS, SLOTS};
 
 use crate::{ObserverBridge, StepInfo, StepObserver, WarpsignError};
 
@@ -79,7 +79,8 @@ pub fn install_ipa(
 }
 
 /// Installing through iOS's own installer, ESign-style: serves the IPA on
-/// loopback while iOS fetches it via a published manifest. No setup.
+/// loopback while iOS fetches it via a manifest from the manifest server.
+/// No setup on the phone.
 #[derive(uniffi::Object)]
 pub struct WebInstall {
     server: Mutex<Option<InstallServer>>,
@@ -88,29 +89,35 @@ pub struct WebInstall {
 
 #[uniffi::export]
 impl WebInstall {
-    /// Start serving `ipa_path` for manifest `slot` (rotate through
+    /// Start serving `ipa_path` for `slot` (rotate through
     /// `web_install_slots()`), reporting the steps to `observer`. Open
-    /// `install_link()` next.
+    /// `install_link()` next. `manifest_server` is the manifest Worker's
+    /// URL, e.g. `https://warpsign-manifests.example.workers.dev`.
     #[uniffi::constructor]
     pub fn start(
         ipa_path: String,
         icon_png: Option<Vec<u8>>,
         slot: u32,
+        manifest_server: String,
         observer: Arc<dyn StepObserver>,
     ) -> Result<Arc<Self>, WarpsignError> {
+        let failed = |message: String| WarpsignError::Device { message };
+        let manifest_server = manifest_server.trim();
+        if !manifest_server.starts_with("https://") {
+            return Err(failed(
+                "Installing over the web needs a manifest server: set one in Settings → Installing, or use the pairing route."
+                    .into(),
+            ));
+        }
+        let ipa = Path::new(&ipa_path);
+        // From the signed IPA itself, so the manifest always matches it
+        let app = ManifestApp::from_ipa(ipa).map_err(|e| failed(e.to_string()))?;
         let slot = slot % SLOTS;
-        let server = InstallServer::start(
-            Path::new(&ipa_path),
-            icon_png,
-            slot,
-            Box::new(ObserverBridge(observer)),
-        )
-        .map_err(|e| WarpsignError::Device {
-            message: e.to_string(),
-        })?;
+        let server = InstallServer::start(ipa, icon_png, slot, Box::new(ObserverBridge(observer)))
+            .map_err(|e| failed(e.to_string()))?;
         Ok(Arc::new(Self {
             server: Mutex::new(Some(server)),
-            link: serve::install_link(slot),
+            link: serve::install_link(manifest_server, slot, &app),
         }))
     }
 
@@ -124,6 +131,13 @@ impl WebInstall {
         let mut server = self.server.lock().unwrap_or_else(|e| e.into_inner());
         server.take();
     }
+}
+
+/// The manifest server WarpSign uses unless Settings says otherwise
+/// (empty until one is deployed)
+#[uniffi::export]
+pub fn default_manifest_server() -> String {
+    serve::DEFAULT_MANIFEST_SERVER.to_string()
 }
 
 /// How many manifest slots there are to rotate through

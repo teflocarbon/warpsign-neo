@@ -2,11 +2,13 @@
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use warpsign_core::ipa::package_ipa;
 use warpsign_core::progress::{ProgressObserver, Step};
-use warpsign_core::serve::{InstallServer, SERVER_PORT, ServeError, manifest};
+use warpsign_core::serve::{InstallServer, ManifestApp, SERVER_PORT, ServeError, manifest};
 
 #[derive(Default, Clone)]
 struct Events(Arc<Mutex<Vec<String>>>);
@@ -148,8 +150,18 @@ fn stops_and_frees_the_port() {
 }
 
 #[test]
-fn manifests_point_at_the_server() {
-    let plist = plist::Value::from_reader_xml(manifest(42).as_slice()).unwrap();
+fn manifests_describe_the_ipa() {
+    let dir = tempfile::tempdir().unwrap();
+    let ipa = dir.path().join("Test.ipa");
+    package_ipa(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/Test.app"),
+        &ipa,
+    )
+    .unwrap();
+    let app = ManifestApp::from_ipa(&ipa).unwrap();
+    assert_eq!(app.bundle_id, "com.example.test");
+
+    let plist = plist::Value::from_reader_xml(manifest(42, SERVER_PORT, &app).as_slice()).unwrap();
     let item = &plist.as_dictionary().unwrap()["items"].as_array().unwrap()[0];
     let assets = item.as_dictionary().unwrap()["assets"].as_array().unwrap();
     let package = assets[0].as_dictionary().unwrap();
@@ -161,9 +173,37 @@ fn manifests_point_at_the_server() {
     let metadata = item.as_dictionary().unwrap()["metadata"]
         .as_dictionary()
         .unwrap();
+    // iOS 27 refuses the app unless this matches it
     assert_eq!(
         metadata["bundle-identifier"].as_string(),
-        Some("dev.warpsign.install.42")
+        Some("com.example.test")
     );
-    assert_ne!(manifest(1), manifest(2));
+    assert_eq!(metadata["title"].as_string(), Some(app.title.as_str()));
+}
+
+#[test]
+fn manifest_details_suit_the_manifest_server() {
+    let dir = tempfile::tempdir().unwrap();
+    let ipa = dir.path().join("Odd.ipa");
+    let mut info = plist::Dictionary::new();
+    info.insert("CFBundleIdentifier".into(), "com.example.odd".into());
+    info.insert("CFBundleExecutable".into(), "Odd".into());
+    info.insert("CFBundleDisplayName".into(), "x".repeat(150).into());
+    // Spaces and brackets: the manifest server only takes plain versions
+    info.insert("CFBundleShortVersionString".into(), "1.0 (beta)".into());
+    let mut data = Vec::new();
+    plist::to_writer_binary(&mut data, &plist::Value::Dictionary(info)).unwrap();
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(&ipa).unwrap());
+    zip.start_file(
+        "Payload/Odd.app/Info.plist",
+        zip::write::SimpleFileOptions::default(),
+    )
+    .unwrap();
+    std::io::Write::write_all(&mut zip, &data).unwrap();
+    zip.finish().unwrap();
+
+    let app = ManifestApp::from_ipa(&ipa).unwrap();
+    assert_eq!(app.bundle_id, "com.example.odd");
+    assert_eq!(app.title.chars().count(), 100);
+    assert_eq!(app.version, "1.0");
 }

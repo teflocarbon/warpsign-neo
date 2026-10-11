@@ -19,24 +19,67 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use crate::metadata::read_ipa_metadata;
+use crate::portal::http::form_encode;
 use crate::progress::{ProgressObserver, Step};
 
-/// Where the published manifests live: teflocarbon/warpsign-manifests
-pub const MANIFEST_BASE: &str =
-    "https://raw.githubusercontent.com/teflocarbon/warpsign-manifests/main/";
+/// The manifest server: a Cloudflare Worker (worker/ in this repo) that
+/// answers each install with a manifest naming the app. iOS 27 refuses an
+/// app whose bundle ID doesn't match its manifest, so the static
+/// placeholder manifests ESign pioneered no longer work.
+pub const DEFAULT_MANIFEST_SERVER: &str = "";
 
-/// The port the manifests point at. Fixed, since the manifests are static.
+/// The port the server listens on, and the manifests point at
 pub const SERVER_PORT: u16 = 14310;
 
-/// How many manifests there are (app0 to app999)
+/// Installs rotate through this many slots, so each has its own URLs and
+/// iOS never mixes one install up with the last
 pub const SLOTS: u32 = 1000;
 
 /// Steps of an install through iOS's installer, in order
 pub const SERVER_INSTALL_STEPS: [Step; 2] = [Step::WaitForInstall, Step::SendToIos];
 
-/// The manifest for a slot, as published
-pub fn manifest(slot: u32) -> Vec<u8> {
-    let base = format!("http://127.0.0.1:{SERVER_PORT}/app{slot}");
+/// What a manifest says about the app. iOS checks the bundle ID against
+/// the IPA, and shows the title while installing.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ManifestApp {
+    pub bundle_id: String,
+    pub title: String,
+    pub version: String,
+}
+
+impl ManifestApp {
+    /// As the IPA's Info.plist says, so the manifest always matches
+    pub fn from_ipa(ipa: &Path) -> Result<Self, ServeError> {
+        let metadata = read_ipa_metadata(ipa).map_err(|e| ServeError::Metadata(e.to_string()))?;
+        // The manifest server accepts at most 100 characters of title
+        let title: String = metadata.display_name.chars().take(100).collect();
+        // ... and a plain version, which bundle-version doesn't need to match
+        let version = metadata
+            .version
+            .filter(|v| {
+                !v.is_empty()
+                    && v.len() <= 64
+                    && v.chars()
+                        .all(|c| c.is_ascii_alphanumeric() || ".+-".contains(c))
+            })
+            .unwrap_or_else(|| "1.0".into());
+        Ok(Self {
+            bundle_id: metadata.bundle_id,
+            title: if title.trim().is_empty() {
+                "App".into()
+            } else {
+                title
+            },
+            version,
+        })
+    }
+}
+
+/// The manifest for an install, byte for byte what the manifest server
+/// sends (both are checked against worker/test/manifest.plist)
+pub fn manifest(slot: u32, port: u16, app: &ManifestApp) -> Vec<u8> {
+    let base = format!("http://127.0.0.1:{port}/app{slot}");
     let asset = |kind: &str, url: String| {
         let mut asset = plist::Dictionary::new();
         asset.insert("kind".into(), kind.into());
@@ -47,14 +90,10 @@ pub fn manifest(slot: u32) -> Vec<u8> {
         plist::Value::Dictionary(asset)
     };
     let mut metadata = plist::Dictionary::new();
-    // Placeholders: iOS installs whatever the IPA turns out to be
-    metadata.insert(
-        "bundle-identifier".into(),
-        format!("dev.warpsign.install.{slot}").into(),
-    );
-    metadata.insert("bundle-version".into(), "1.0".into());
+    metadata.insert("bundle-identifier".into(), app.bundle_id.clone().into());
+    metadata.insert("bundle-version".into(), app.version.clone().into());
     metadata.insert("kind".into(), "software".into());
-    metadata.insert("title".into(), "App".into());
+    metadata.insert("title".into(), app.title.clone().into());
 
     let mut item = plist::Dictionary::new();
     item.insert(
@@ -79,9 +118,26 @@ pub fn manifest(slot: u32) -> Vec<u8> {
     data
 }
 
-/// The link that starts an install from `slot`
-pub fn install_link(slot: u32) -> String {
-    format!("itms-services://?action=download-manifest&url={MANIFEST_BASE}app{slot}.plist")
+/// The link that makes iOS ask to install `app` from `slot`, with its
+/// manifest from `server` (e.g. https://warpsign.example.workers.dev)
+pub fn install_link(server: &str, slot: u32, app: &ManifestApp) -> String {
+    let port = SERVER_PORT.to_string();
+    let slot = slot.to_string();
+    let manifest_url = format!(
+        "{}/manifest?{}",
+        server.trim_end_matches('/'),
+        form_encode(&[
+            ("slot", &slot),
+            ("port", &port),
+            ("id", &app.bundle_id),
+            ("title", &app.title),
+            ("version", &app.version),
+        ])
+    );
+    format!(
+        "itms-services://?{}",
+        form_encode(&[("action", "download-manifest"), ("url", &manifest_url)])
+    )
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -90,6 +146,8 @@ pub enum ServeError {
         "couldn't start the install server on port {SERVER_PORT} ({0}). Another installer (or a previous install) may be using it: close other signing apps and try again."
     )]
     Port(std::io::Error),
+    #[error("couldn't read the app's details: {0}")]
+    Metadata(String),
     #[error("{path}: {source}")]
     Io {
         path: String,
@@ -470,11 +528,34 @@ mod tests {
         assert_eq!(parse_range("items=0-1"), None);
     }
 
+    fn example() -> ManifestApp {
+        ManifestApp {
+            bundle_id: "com.example.app".into(),
+            title: "Tom's <Fish> & \"Chips\" 🐟".into(),
+            version: "2.1+beta".into(),
+        }
+    }
+
+    /// The manifest server must send exactly this too: see worker/test
     #[test]
-    fn links_name_the_published_manifest() {
+    fn manifests_match_the_shared_fixture() {
+        let fixture =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../worker/test/manifest.plist");
+        let made = manifest(42, 14310, &example());
+        if std::env::var_os("WARPSIGN_WRITE_FIXTURE").is_some() {
+            std::fs::write(&fixture, &made).unwrap();
+        }
         assert_eq!(
-            install_link(7),
-            "itms-services://?action=download-manifest&url=https://raw.githubusercontent.com/teflocarbon/warpsign-manifests/main/app7.plist"
+            String::from_utf8(made).unwrap(),
+            std::fs::read_to_string(fixture).unwrap()
+        );
+    }
+
+    #[test]
+    fn links_carry_the_app_to_the_manifest_server() {
+        assert_eq!(
+            install_link("https://warpsign.example.workers.dev/", 7, &example()),
+            "itms-services://?action=download-manifest&url=https%3A%2F%2Fwarpsign.example.workers.dev%2Fmanifest%3Fslot%3D7%26port%3D14310%26id%3Dcom.example.app%26title%3DTom%2527s%2B%253CFish%253E%2B%2526%2B%2522Chips%2522%2B%25F0%259F%2590%259F%26version%3D2.1%252Bbeta"
         );
     }
 }
