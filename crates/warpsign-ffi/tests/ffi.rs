@@ -188,3 +188,153 @@ fn parses_sources() {
         Err(WarpsignError::Source { .. })
     ));
 }
+
+mod account {
+    use std::sync::{Arc, Mutex};
+
+    use warpsign_ffi::{
+        AppleAccount, HttpHeader, HttpRequest, HttpResponse, HttpTransport, IdentityData, Step,
+        TransportFailure, WarpsignError, default_sign_settings, export_identities,
+        generate_passphrase, identity_info, import_identities, sign_steps,
+    };
+
+    use super::core_data;
+
+    /// Plays Apple the way the Swift transport would see it: comma-joined
+    /// Set-Cookie headers included
+    #[derive(Default)]
+    struct FakeTransport {
+        requests: Mutex<Vec<HttpRequest>>,
+    }
+
+    fn json(status: u16, headers: &[(&str, &str)], body: &str) -> HttpResponse {
+        HttpResponse {
+            status,
+            headers: headers
+                .iter()
+                .map(|(name, value)| HttpHeader {
+                    name: name.to_string(),
+                    value: value.to_string(),
+                })
+                .collect(),
+            body: body.as_bytes().to_vec(),
+        }
+    }
+
+    impl HttpTransport for FakeTransport {
+        fn send(&self, request: HttpRequest) -> Result<HttpResponse, TransportFailure> {
+            self.requests.lock().unwrap().push(request.clone());
+            let url = request.url.as_str();
+            Ok(if url.contains("olympus/v1/app/config") {
+                json(200, &[], r#"{"authServiceKey": "key"}"#)
+            } else if url.contains("/appleauth/auth/signin?") {
+                json(
+                    200,
+                    &[(
+                        "Set-Cookie",
+                        "aasp=1; Path=/; Expires=Wed, 21 Oct 2037 07:28:00 GMT, dslang=GB-EN; Path=/",
+                    )],
+                    "",
+                )
+            } else if url.ends_with("/signin/init") {
+                json(
+                    401,
+                    &[],
+                    r#"{"serviceErrors": [{"code": "-20101", "message": "Your Apple ID or password was incorrect."}]}"#,
+                )
+            } else {
+                return Err(TransportFailure::Failed {
+                    message: format!("offline: {url}"),
+                });
+            })
+        }
+    }
+
+    #[test]
+    fn sign_in_failures_carry_apples_message() {
+        let transport = Arc::new(FakeTransport::default());
+        let account = AppleAccount::new(transport.clone());
+        let error = account
+            .sign_in("someone@example.com".into(), "wrong".into())
+            .unwrap_err();
+        match error {
+            WarpsignError::Auth { message } => {
+                assert_eq!(message, "Your Apple ID or password was incorrect. (-20101)")
+            }
+            other => panic!("{other:?}"),
+        }
+        // Both cookies from the joined header went back to Apple
+        let requests = transport.requests.lock().unwrap();
+        let init = requests
+            .iter()
+            .find(|r| r.url.ends_with("/signin/init"))
+            .unwrap();
+        let cookie = init.headers.iter().find(|h| h.name == "Cookie").unwrap();
+        assert_eq!(cookie.value, "aasp=1; dslang=GB-EN");
+        assert_eq!(init.method, "POST");
+        // Saved sessions keep them
+        assert!(account.session_json().contains("dslang"));
+    }
+
+    #[test]
+    fn transport_failures_are_reported() {
+        let account =
+            AppleAccount::restore(Arc::new(FakeTransport::default()), "{}".into()).unwrap();
+        match account.check_session().unwrap_err() {
+            WarpsignError::Auth { message } => assert!(message.contains("offline"), "{message}"),
+            other => panic!("{other:?}"),
+        }
+        assert!(matches!(
+            AppleAccount::restore(Arc::new(FakeTransport::default()), "nope".into()),
+            Err(WarpsignError::SessionExpired { .. })
+        ));
+    }
+
+    #[test]
+    fn identities_round_trip_through_a_backup() {
+        let legacy = import_identities(
+            std::fs::read(core_data().join("test-cert.p12")).unwrap(),
+            "secret".into(),
+        )
+        .unwrap();
+        let aes = import_identities(
+            std::fs::read(core_data().join("test-distribution-aes.p12")).unwrap(),
+            "secret".into(),
+        )
+        .unwrap();
+        let both: Vec<IdentityData> = legacy.into_iter().chain(aes).collect();
+        let passphrase = generate_passphrase();
+        let backup = export_identities(both.clone(), passphrase.clone()).unwrap();
+        let restored = import_identities(backup, passphrase).unwrap();
+        assert_eq!(restored.len(), 2);
+
+        let info = identity_info(both[0].clone()).unwrap();
+        assert_eq!(info.team_id.as_deref(), Some("ZZZZZ99999"));
+        assert_eq!(info.kind, Some(warpsign_ffi::CertificateType::Development));
+        assert!(info.expires_at > 1_900_000_000);
+
+        let mismatched = IdentityData {
+            certificate: both[0].certificate.clone(),
+            private_key: both[1].private_key.clone(),
+        };
+        assert!(matches!(
+            identity_info(mismatched),
+            Err(WarpsignError::Identity { .. })
+        ));
+        assert!(matches!(
+            import_identities(b"nope".to_vec(), "x".into()),
+            Err(WarpsignError::Identity { .. })
+        ));
+    }
+
+    #[test]
+    fn describes_signing() {
+        let steps: Vec<Step> = sign_steps().into_iter().map(|s| s.step).collect();
+        assert_eq!(steps.first(), Some(&Step::Extract));
+        assert_eq!(steps.last(), Some(&Step::Package));
+        assert_eq!(steps.len(), 10);
+        let settings = default_sign_settings();
+        assert!(settings.encode_ids && settings.patch_ids);
+        assert!(!settings.force_original_id && !settings.patch_debug);
+    }
+}

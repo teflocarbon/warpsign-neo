@@ -18,6 +18,9 @@ use warpsign_core::source;
 
 uniffi::setup_scaffolding!();
 
+mod account;
+pub use account::*;
+
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum WarpsignError {
     #[error("{message}")]
@@ -28,6 +31,21 @@ pub enum WarpsignError {
     Profile { message: String },
     #[error("{message}")]
     Source { message: String },
+    /// Signing in failed
+    #[error("{message}")]
+    Auth { message: String },
+    /// The two-factor code was wrong: ask again
+    #[error("{message}")]
+    IncorrectCode { message: String },
+    /// Sign in again
+    #[error("{message}")]
+    SessionExpired { message: String },
+    #[error("{message}")]
+    Portal { message: String },
+    #[error("{message}")]
+    Identity { message: String },
+    #[error("{message}")]
+    Signing { message: String },
 }
 
 /// A signable part of an app
@@ -72,6 +90,13 @@ pub enum Step {
     Extract,
     InspectComponents,
     ReadTeamIds,
+    PlanIdentifiers,
+    RegisterIdentifiers,
+    PatchInfoPlists,
+    CreateProfiles,
+    PatchBinaries,
+    Sign,
+    Package,
 }
 
 impl From<progress::Step> for Step {
@@ -80,6 +105,13 @@ impl From<progress::Step> for Step {
             progress::Step::Extract => Step::Extract,
             progress::Step::InspectComponents => Step::InspectComponents,
             progress::Step::ReadTeamIds => Step::ReadTeamIds,
+            progress::Step::PlanIdentifiers => Step::PlanIdentifiers,
+            progress::Step::RegisterIdentifiers => Step::RegisterIdentifiers,
+            progress::Step::PatchInfoPlists => Step::PatchInfoPlists,
+            progress::Step::CreateProfiles => Step::CreateProfiles,
+            progress::Step::PatchBinaries => Step::PatchBinaries,
+            progress::Step::Sign => Step::Sign,
+            progress::Step::Package => Step::Package,
         }
     }
 }
@@ -100,7 +132,7 @@ pub trait StepObserver: Send + Sync {
     fn step_finished(&self, step: Step, elapsed_ms: u64, error: Option<String>);
 }
 
-struct ObserverBridge(Arc<dyn StepObserver>);
+pub(crate) struct ObserverBridge(pub(crate) Arc<dyn StepObserver>);
 
 impl ProgressObserver for ObserverBridge {
     fn step_started(&self, step: progress::Step) {

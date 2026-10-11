@@ -13,6 +13,21 @@ pub enum Step {
     InspectComponents,
     /// Work out which team(s) the app is currently signed for
     ReadTeamIds,
+    /// Map identifiers and decide which capabilities each part needs
+    PlanIdentifiers,
+    /// Register App IDs, app groups and iCloud containers, and set
+    /// capabilities, on the Developer Portal
+    RegisterIdentifiers,
+    /// Rewrite Info.plists with the new identifiers and chosen tweaks
+    PatchInfoPlists,
+    /// Create (or regenerate) and download provisioning profiles
+    CreateProfiles,
+    /// Replace old identifiers inside executables
+    PatchBinaries,
+    /// Code sign every bundle and executable
+    Sign,
+    /// Zip the signed app into an IPA
+    Package,
 }
 
 impl Step {
@@ -21,6 +36,13 @@ impl Step {
             Step::Extract => "Extract IPA",
             Step::InspectComponents => "Inspect components",
             Step::ReadTeamIds => "Read team IDs",
+            Step::PlanIdentifiers => "Plan identifiers",
+            Step::RegisterIdentifiers => "Register identifiers",
+            Step::PatchInfoPlists => "Patch Info.plists",
+            Step::CreateProfiles => "Create provisioning profiles",
+            Step::PatchBinaries => "Patch binaries",
+            Step::Sign => "Sign",
+            Step::Package => "Package IPA",
         }
     }
 }

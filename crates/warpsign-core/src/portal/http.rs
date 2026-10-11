@@ -166,6 +166,7 @@ pub struct Cookie {
 /// Everything needed to resume a signed-in session. Secret: keep it in the
 /// Keychain.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SessionState {
     pub cookies: Vec<Cookie>,
     /// `X-Apple-ID-Session-Id`, from sign-in

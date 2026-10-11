@@ -10,6 +10,7 @@ Usage:
     python tools/gen_fixtures.py /path/to/warpsign
 """
 
+import base64
 import contextlib
 import io
 import json
@@ -607,8 +608,31 @@ def info_plist_cases() -> list:
                     with open(path, "rb") as f:
                         patched = plistlib.load(f)
                     case["info_plists"].append({**entry, "expected": patched})
+
+                # Then a binary, with the patcher state the plists left
+                # (as SignOrchestrator does): every ID it knows, embedded
+                binary = app / "Binary"
+                blob = binary_blob(mapper)
+                binary.write_bytes(blob)
+                patcher.patch_app_binary(binary, mapper)
+                case["binary"] = {
+                    "input": base64.b64encode(blob).decode(),
+                    "expected": base64.b64encode(binary.read_bytes()).decode(),
+                }
         cases.append(case)
     return cases
+
+
+def binary_blob(mapper) -> bytes:
+    """Bytes containing every identifier a mapper knows, in various
+    surroundings, like strings in a Mach-O"""
+    ids = sorted(set(mapper.mappings) | set(mapper.original_team_ids))
+    parts = [b"\xcf\xfa\xed\xfe\x0c\x00\x00\x01"]
+    for identifier in ids:
+        encoded = identifier.encode()
+        parts += [encoded + b"\x00", b"prefix." + encoded + b".suffix\x00", encoded + encoded]
+    parts.append(f"{mapper.original_team_ids[0]}.com.example.app\x00".encode())
+    return b"".join(parts)
 
 
 # --- App inspection -------------------------------------------------------

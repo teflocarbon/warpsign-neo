@@ -21,6 +21,8 @@ pub enum InfoPlistError {
     },
     #[error("{path} is not a valid Info.plist: {message}")]
     Invalid { path: String, message: String },
+    #[error("can't replace {old} with {new} in binaries: the lengths differ")]
+    LengthMismatch { old: String, new: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -171,6 +173,53 @@ impl InfoPlistPatcher {
             Ok(_) => Err(invalid("not a dictionary after patching".into())),
             Err(e) => Err(invalid(format!("invalid after patching: {e}"))),
         }
+    }
+
+    /// Replace mapped IDs in a binary, byte for byte, and return how many
+    /// were replaced. Uses the same replacements as Info.plists, so patch
+    /// the main app's Info.plist first. Python's `AppPatcher.patch_app_binary`
+    /// without entitlements or dylib injection.
+    pub fn patch_binary(
+        &self,
+        path: &Path,
+        mapping: &BundleMapping,
+    ) -> Result<usize, InfoPlistError> {
+        if !self.options.patch_ids {
+            return Ok(0);
+        }
+        let mut replacements =
+            self.filter_replacements(mapping, mapping.binary_patches().into_iter().collect());
+        if replacements.is_empty() {
+            return Ok(0);
+        }
+        if let Some((old, new)) = replacements
+            .iter()
+            .find(|(old, new)| old.len() != new.len())
+        {
+            return Err(InfoPlistError::LengthMismatch {
+                old: old.clone(),
+                new: new.clone(),
+            });
+        }
+        replacements.sort_by_key(|(old, _)| std::cmp::Reverse(old.chars().count()));
+
+        let io_error = |source| InfoPlistError::Io {
+            path: path.display().to_string(),
+            source,
+        };
+        let mut bytes = std::fs::read(path).map_err(io_error)?;
+        let mut total = 0;
+        for (old, new) in &replacements {
+            let count = count_matches(&bytes, old.as_bytes());
+            if count > 0 {
+                bytes = replace_all(&bytes, old.as_bytes(), new.as_bytes());
+                total += count;
+            }
+        }
+        if total > 0 {
+            std::fs::write(path, &bytes).map_err(io_error)?;
+        }
+        Ok(total)
     }
 
     fn patch_identifiers(
@@ -356,6 +405,24 @@ fn looks_like_team_id(s: &str) -> bool {
         && s.chars()
             .filter(|c| c.is_alphabetic())
             .all(char::is_uppercase)
+}
+
+/// Non-overlapping occurrences, scanning left to right (like `bytes.count`)
+fn count_matches(haystack: &[u8], needle: &[u8]) -> usize {
+    if needle.is_empty() {
+        return 0;
+    }
+    let mut count = 0;
+    let mut i = 0;
+    while i + needle.len() <= haystack.len() {
+        if haystack[i..].starts_with(needle) {
+            count += 1;
+            i += needle.len();
+        } else {
+            i += 1;
+        }
+    }
+    count
 }
 
 /// Replace every non-overlapping occurrence, scanning left to right

@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 
+use base64::Engine;
 use plist::{Dictionary, Value};
 use serde_json::{Value as Json, json};
 use warpsign_core::bundle_mapping::BundleMapping;
@@ -371,5 +372,20 @@ fn info_plist_patching_matches() {
                 "{name}: file on disk"
             );
         }
+
+        // Then a binary, with the state the Info.plists left
+        let decode = |key: &str| {
+            base64::engine::general_purpose::STANDARD
+                .decode(str_of(&case["binary"][key]))
+                .unwrap()
+        };
+        let binary = dir.path().join("Binary");
+        std::fs::write(&binary, decode("input")).unwrap();
+        patcher.patch_binary(&binary, &mapping).unwrap();
+        assert_eq!(
+            std::fs::read(&binary).unwrap(),
+            decode("expected"),
+            "{name}: binary"
+        );
     }
 }
