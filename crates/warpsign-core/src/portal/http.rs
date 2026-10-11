@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Method {
     Get,
+    Head,
     Post,
     Put,
     Patch,
@@ -23,6 +24,7 @@ impl Method {
     pub fn as_str(self) -> &'static str {
         match self {
             Method::Get => "GET",
+            Method::Head => "HEAD",
             Method::Post => "POST",
             Method::Put => "PUT",
             Method::Patch => "PATCH",
@@ -264,6 +266,12 @@ impl HttpClient {
     fn lock(&self) -> std::sync::MutexGuard<'_, SessionState> {
         // A panic while holding the lock can't leave the state half-written
         self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Send without the session's cookies and without following
+    /// redirects, as a fresh browser would
+    pub fn send_bare(&self, request: &Request) -> Result<Response, TransportError> {
+        self.transport.send(request)
     }
 
     pub fn send(&self, request: Request) -> Result<Response, TransportError> {

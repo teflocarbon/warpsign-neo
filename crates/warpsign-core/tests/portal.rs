@@ -19,6 +19,7 @@ use warpsign_core::portal::http::{HttpClient, Method, SessionState};
 use warpsign_core::portal::{AuthError, Authenticator, Portal, SignInOutcome};
 
 const AUTH: &str = "https://idmsa.apple.com/appleauth/auth";
+const SIGN_OUT_URL: &str = "https://appstoreconnect.apple.com/logout";
 const WIDGET_KEY_URL: &str = "https://appstoreconnect.apple.com/olympus/v1/app/config";
 const ACCOUNT_URL: &str = "https://developer.apple.com/account/resources";
 const TEAMS_URL: &str = "https://developer.apple.com/services-account/QH65B2/account/getTeams";
@@ -52,6 +53,22 @@ fn header<'a>(request: &'a warpsign_core::portal::Request, name: &str) -> &'a st
         .unwrap_or_else(|| panic!("no {name} header on {}", request.url))
 }
 
+/// The sign-out redirect that carries the widget key, as Apple answers now
+fn script_widget_key(mock: &MockApple) {
+    mock.expect(SIGN_OUT_URL, |request| {
+        assert_eq!(request.method, Method::Head);
+        assert_eq!(request.header_value("Cookie"), None);
+        response(
+            302,
+            &[(
+                "Location",
+                "https://appstoreconnect.apple.com/login?targetUrl=%2F&widgetKey=widget-key",
+            )],
+            "",
+        )
+    });
+}
+
 /// Script the sign-in up to `signin/complete`, which `complete` answers
 fn script_sign_in(
     mock: &MockApple,
@@ -60,10 +77,7 @@ fn script_sign_in(
     + 'static,
 ) {
     let case = srp_case();
-    mock.respond(
-        WIDGET_KEY_URL,
-        json_response(200, json!({"authServiceKey": "widget-key"})),
-    );
+    script_widget_key(mock);
     mock.expect(&format!("{AUTH}/signin?widgetKey=widget-key"), |request| {
         assert_eq!(request.method, Method::Get);
         response(
@@ -364,6 +378,52 @@ fn signs_in_with_a_text_message_code() {
     );
     auth.verify_sms_code(2, "654321").unwrap();
     assert_eq!(auth.session().csrf.as_deref(), Some("header-token"));
+    mock.assert_done();
+}
+
+#[test]
+fn falls_back_to_the_olympus_config_for_the_widget_key() {
+    let mock = MockApple::new();
+    mock.respond(SIGN_OUT_URL, response(404, &[], ""));
+    mock.respond(
+        WIDGET_KEY_URL,
+        json_response(200, json!({"authServiceKey": "olympus-key"})),
+    );
+    mock.respond(
+        &format!("{AUTH}/signin?widgetKey=olympus-key"),
+        response(200, &[], "<html></html>"),
+    );
+    mock.expect(&format!("{AUTH}/signin/init"), |request| {
+        assert_eq!(header(request, "X-Apple-Widget-Key"), "olympus-key");
+        json_response(403, json!({"serviceErrors": [{"message": "Stop here."}]}))
+    });
+    let error = authenticator(&mock)
+        .sign_in("someone@example.com", "correct horse battery staple")
+        .unwrap_err();
+    assert_eq!(error, AuthError::Refused("Stop here.".into()));
+    mock.assert_done();
+}
+
+#[test]
+fn reports_a_missing_widget_key() {
+    let mock = MockApple::new();
+    // Apple's sign-out redirect without a key, and the retired endpoint
+    mock.respond(
+        SIGN_OUT_URL,
+        response(
+            302,
+            &[("Location", "https://appstoreconnect.apple.com/login")],
+            "",
+        ),
+    );
+    mock.respond(WIDGET_KEY_URL, response(404, &[], ""));
+    let error = authenticator(&mock)
+        .sign_in("someone@example.com", "correct horse battery staple")
+        .unwrap_err();
+    assert_eq!(
+        error,
+        AuthError::Unexpected("no sign-in service key from App Store Connect (HTTP 404)".into())
+    );
     mock.assert_done();
 }
 

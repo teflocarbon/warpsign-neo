@@ -226,8 +226,15 @@ mod account {
         fn send(&self, request: HttpRequest) -> Result<HttpResponse, TransportFailure> {
             self.requests.lock().unwrap().push(request.clone());
             let url = request.url.as_str();
-            Ok(if url.contains("olympus/v1/app/config") {
-                json(200, &[], r#"{"authServiceKey": "key"}"#)
+            Ok(if url.ends_with("appstoreconnect.apple.com/logout") {
+                json(
+                    302,
+                    &[(
+                        "Location",
+                        "https://appstoreconnect.apple.com/login?widgetKey=key",
+                    )],
+                    "",
+                )
             } else if url.contains("/appleauth/auth/signin?") {
                 json(
                     200,

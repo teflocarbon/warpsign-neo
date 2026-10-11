@@ -22,6 +22,10 @@ use crate::auth::hashcash;
 use crate::auth::srp::{Protocol, SrpClient, SrpError, derive_password};
 
 const AUTH: &str = "https://idmsa.apple.com/appleauth/auth";
+/// Signing out redirects to the sign-in page, whose URL carries the key
+const SIGN_OUT_URL: &str = "https://appstoreconnect.apple.com/logout";
+/// Where Python warpsign gets the key. Apple retired it in September 2026
+/// (it returns 404), so it's only a fallback now, as in fastlane 2.240.
 const WIDGET_KEY_URL: &str =
     "https://appstoreconnect.apple.com/olympus/v1/app/config?hostname=itunesconnect.apple.com";
 const ACCOUNT_URL: &str = "https://developer.apple.com/account/resources";
@@ -333,15 +337,40 @@ impl Authenticator {
         })
     }
 
+    /// The App Store Connect key that identifies the sign-in page to idmsa.
+    ///
+    /// Departs from Python warpsign, whose only source (the Olympus config)
+    /// now returns 404: first read it from the sign-out redirect, as
+    /// fastlane does.
     fn widget_key(&self) -> Result<String, AuthError> {
         if let Some(key) = self.widget_key.get() {
             return Ok(key.clone());
         }
+        let key = match self.widget_key_from_sign_out() {
+            Some(key) => key,
+            None => self.widget_key_from_config()?,
+        };
+        Ok(self.widget_key.get_or_init(|| key).clone())
+    }
+
+    /// Best effort: any failure falls back to the Olympus config
+    fn widget_key_from_sign_out(&self) -> Option<String> {
+        let response = self
+            .http
+            .send_bare(&Request::new(Method::Head, SIGN_OUT_URL))
+            .ok()?;
+        response
+            .header("Location")
+            .and_then(|location| query_value(location, "widgetKey"))
+            .filter(|key| !key.is_empty())
+    }
+
+    fn widget_key_from_config(&self) -> Result<String, AuthError> {
         let response = self
             .http
             .send(Request::get(WIDGET_KEY_URL))
             .map_err(|e| AuthError::Transport(e.0))?;
-        let key = response
+        response
             .json()
             .and_then(|body| body.get("authServiceKey")?.as_str().map(String::from))
             .filter(|key| !key.is_empty())
@@ -350,8 +379,7 @@ impl Authenticator {
                     "no sign-in service key from App Store Connect (HTTP {})",
                     response.status
                 ))
-            })?;
-        Ok(self.widget_key.get_or_init(|| key).clone())
+            })
     }
 
     /// The `X-APPLE-HC` header for this sign-in, if Apple asks for one
@@ -450,9 +478,56 @@ fn find_js_string(text: &str, key: &str) -> Option<String> {
     None
 }
 
+/// A query parameter from a URL, percent-decoded
+fn query_value(url: &str, name: &str) -> Option<String> {
+    let query = url.split_once('?')?.1;
+    let query = query.split('#').next().unwrap_or(query);
+    query.split('&').find_map(|pair| {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        (key == name).then(|| percent_decode(value))
+    })
+}
+
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' if i + 2 < bytes.len() => {
+                let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).ok();
+                match hex.and_then(|hex| u8::from_str_radix(hex, 16).ok()) {
+                    Some(byte) => {
+                        out.push(byte);
+                        i += 3;
+                        continue;
+                    }
+                    None => out.push(b'%'),
+                }
+            }
+            b'+' => out.push(b' '),
+            byte => out.push(byte),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_query_values() {
+        let url =
+            "https://appstoreconnect.apple.com/login?targetUrl=%2Fapps&widgetKey=e0b8%2Bkey#top";
+        assert_eq!(query_value(url, "widgetKey").as_deref(), Some("e0b8+key"));
+        assert_eq!(query_value(url, "targetUrl").as_deref(), Some("/apps"));
+        assert_eq!(query_value(url, "missing"), None);
+        assert_eq!(query_value("https://example.com/", "widgetKey"), None);
+        assert_eq!(percent_decode("100%"), "100%");
+        assert_eq!(percent_decode("%zz%41"), "%zzA");
+    }
 
     #[test]
     fn finds_csrf_in_page_scripts() {
