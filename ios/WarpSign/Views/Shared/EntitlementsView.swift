@@ -519,17 +519,20 @@ func listedComponents(_ components: [SavedComponent]) -> [SavedComponent] {
     }
 }
 
+/// A component's place in the list and its entitlement count (Swift can't
+/// nest this inside the generic function that uses it)
+private struct RankedComponent {
+    let index: Int
+    let count: Int
+}
+
 /// Components with the most entitlements first, as those usually matter
 /// most; ties keep their order
 func mostEntitlementsFirst<T>(_ components: [T], entitlementsXml: (T) -> String) -> [T] {
-    struct Ranked {
-        let index: Int
-        let count: Int
-    }
-    var ranked: [Ranked] = []
+    var ranked: [RankedComponent] = []
     for (index, component) in components.enumerated() {
         let count = Entitlements.parse(entitlementsXml(component))?.count ?? 0
-        ranked.append(Ranked(index: index, count: count))
+        ranked.append(RankedComponent(index: index, count: count))
     }
     ranked.sort { first, second in
         if first.count != second.count { return first.count > second.count }
