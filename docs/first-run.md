@@ -9,6 +9,19 @@ cargo install --path crates/warpsign-cli
 export WARPSIGN_HTTP_LOG=~/warpsign-http.log
 ```
 
+### On Windows
+
+No Rust needed: Actions → CLI binaries → the latest run → download `warpsign-windows-x64` and unzip `warpsign.exe` somewhere handy. Then, in PowerShell from that folder:
+
+```powershell
+$env:WARPSIGN_HTTP_LOG = "$HOME\warpsign-http.log"
+.\warpsign.exe login
+```
+
+For USB (steps 4 and 6) install Apple's **Apple Devices** app from the Microsoft Store, or iTunes. Either brings the Apple Mobile Device Service, which is how WarpSign finds the phone. Plug the phone in and tap Trust once, so the service can see it, before running `pair` or `install`.
+
+The commands below are the same, with `.\warpsign.exe` for `warpsign` and Windows paths for `~/...`. Settings and the saved session live in `%APPDATA%\warpsign`. Windows Defender may scan or warn about an unsigned download; that's expected.
+
 ## 1. Sign in (once!)
 
 ```bash
@@ -38,7 +51,7 @@ warpsign identity export ~/warpsign-identity.p12   # save the printed passphrase
 
 Creating certificates is new: Python warpsign never did it. If Apple rejects the request, the log shows its reason. A full distribution slot is reported, not fatal.
 
-Then open the `.p12` in Keychain Access on a Mac to check it's readable.
+Then check it's readable: open the `.p12` in Keychain Access on a Mac, or on Windows double-click it (the Certificate Import Wizard asks for the passphrase; cancel before importing).
 
 ## 4. Sign something small
 
@@ -56,7 +69,7 @@ Then install it over USB with `warpsign install Small-signed.ipa` (or `warpsign 
 warpsign profile ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision
 ```
 
-Your account predates PPQ, so profiles should say `PPQ off`. With a newer team, `sign --force-original-id` must refuse.
+(That path is the Mac's; on Windows, point it at any `.mobileprovision`, e.g. the one inside a signed IPA.) Your account predates PPQ, so profiles should say `PPQ off`. With a newer team, `sign --force-original-id` must refuse.
 
 ## 6. Pairing file
 
@@ -72,7 +85,7 @@ Build with `tools/build_ios.sh`, set your bundle ID and team, and run it on the 
 
 1. Settings → Sign In.
 2. Settings → Signing Identity → Restore from Backup, with the `.p12` from step 3. This avoids using more certificate slots.
-3. Settings → Installing: AirDrop the pairing file to the phone and open it in WarpSign, install LocalDevVPN and connect it, then Test Connection. The Team section should say this phone is registered.
+3. Settings → Installing: get the pairing file to the phone (AirDrop from a Mac; from Windows, iCloud Drive or anything that lands it in Files) and open it in WarpSign, install LocalDevVPN and connect it, then Test Connection. The Team section should say this phone is registered.
 4. Library → import an IPA → Sign → Install on This Device.
 
 Installing goes through LocalDevVPN to the phone's own installer, as SideStore does. If Test Connection can't connect, check the VPN is on. If it says the pairing file was refused, make a new one.
