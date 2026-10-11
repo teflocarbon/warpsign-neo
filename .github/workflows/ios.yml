@@ -1,0 +1,29 @@
+name: iOS
+
+# Manual only: macOS runners cost 10x the minutes of Linux ones
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Build Rust core, bindings and Xcode project
+        run: PROFILE=dev tools/build_ios.sh
+      - name: Build app for device (unsigned)
+        run: >
+          xcodebuild -project ios/WarpSign.xcodeproj -scheme WarpSign
+          -configuration Debug -destination 'generic/platform=iOS'
+          CODE_SIGNING_ALLOWED=NO build
+      - name: Build app for simulator
+        run: >
+          xcodebuild -project ios/WarpSign.xcodeproj -scheme WarpSign
+          -configuration Debug -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO build

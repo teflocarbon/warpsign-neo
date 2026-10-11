@@ -1,0 +1,58 @@
+# XcodeGen spec for the WarpSign iOS app: run tools/build_ios.sh, which builds
+# the Rust core and then generates WarpSign.xcodeproj from this file.
+name: WarpSign
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  WarpSign:
+    type: application
+    platform: iOS
+    sources:
+      - WarpSign
+    dependencies:
+      # Built by tools/build_ios.sh from crates/warpsign-ffi
+      - framework: Frameworks/WarpsignFFI.xcframework
+        embed: false
+    settings:
+      base:
+        # Change to your own; the app re-provisions itself once installed
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.warpsign
+        TARGETED_DEVICE_FAMILY: "1,2"
+    info:
+      path: WarpSign/Info.plist
+      properties:
+        CFBundleDisplayName: WarpSign
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # Let IPAs be opened in WarpSign from Files and the share sheet
+        LSSupportsOpeningDocumentsInPlace: false
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: iOS App
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - com.apple.itunes.ipa
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: com.apple.itunes.ipa
+            UTTypeDescription: iOS App
+            UTTypeConformsTo:
+              - public.zip-archive
+              - public.data
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - ipa

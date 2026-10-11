@@ -39,10 +39,26 @@ python tools/gen_fixtures.py /path/to/warpsign
 
 ```
 crates/warpsign-core/   Shared logic (library)
+crates/warpsign-ffi/    Swift bindings for the iOS app (uniffi)
+crates/uniffi-bindgen/  Generates those bindings
+ios/                    SwiftUI app (XcodeGen spec + sources)
 docs/spikes/            Findings from experiments (e.g. signing with rcodesign)
 fixtures/               Reference outputs from Python warpsign
-tools/                  Fixture generator, test app builder, macOS A/B test for rcodesign
+tools/                  Fixture generator, test data builders, iOS build, macOS A/B test for rcodesign
 ```
+
+## iOS app
+
+So far the app opens an IPA (from its picker, or Files and the share sheet) and shows what's inside: bundle ID, version, team IDs and every component, all read by the Rust core.
+
+To build it on a Mac (Xcode, rustup and `brew install xcodegen`):
+
+```bash
+tools/build_ios.sh        # builds the Rust core for iOS, the Swift bindings and the Xcode project
+open ios/WarpSign.xcodeproj
+```
+
+Set your bundle ID in `ios/project.yml` (`PRODUCT_BUNDLE_IDENTIFIER`) and your team in Xcode to run it on a device. The **iOS** workflow in GitHub Actions does the same build without signing; it only runs when triggered by hand, as macOS runners are expensive.
 
 ## Development
 

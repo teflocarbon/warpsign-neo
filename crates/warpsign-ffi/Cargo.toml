@@ -1,0 +1,22 @@
+[package]
+name = "warpsign-ffi"
+description = "Swift bindings (via uniffi) for warpsign-core, used by the iOS app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+# staticlib for the iOS XCFramework; cdylib so uniffi-bindgen can read the
+# bindings' metadata from the built library
+crate-type = ["lib", "staticlib", "cdylib"]
+name = "warpsign_ffi"
+
+[dependencies]
+plist = "1"
+thiserror = "2"
+uniffi = "0.32"
+warpsign-core = { path = "../warpsign-core" }
+
+[dev-dependencies]
+tempfile = "3"
