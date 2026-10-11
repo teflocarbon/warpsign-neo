@@ -52,6 +52,7 @@ pub struct IdMapping {
     pub id_type: IdType,
 }
 
+#[derive(Clone)]
 pub struct BundleMapping {
     team_id: String,
     original_team_ids: Vec<String>,

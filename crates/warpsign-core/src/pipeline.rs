@@ -13,8 +13,10 @@ use crate::identity::{CertificateKind, Identity, IdentityError};
 use crate::info_plist::{InfoPlistError, InfoPlistPatcher, PatchingOptions};
 use crate::inspect::{AppComponent, InspectError, inspect_app_with, slash_path, team_ids};
 use crate::ipa::{IpaError, extract_ipa, package_ipa};
+use crate::portal::api::PortalProfile;
 use crate::portal::{Portal, PortalError};
 use crate::profile::{PpqRisk, ProfileError, ProvisioningProfile, check_ppq_risk};
+use crate::profile_reuse::{NotReusable, ProfileCache, check, portal_date};
 use crate::progress::{ProgressObserver, Step, StepLog, run_step};
 use crate::signature;
 use crate::signing::{BundleEntitlements, SigningError, sign_app_bundle};
@@ -170,6 +172,9 @@ pub struct SignOptions {
     pub encode_ids: bool,
     /// Allow debuggers to attach (`get-task-allow`)
     pub patch_debug: bool,
+    /// Where to keep provisioning profiles between signs (see
+    /// [`crate::profile_reuse`]); None downloads them each time
+    pub profile_cache: Option<PathBuf>,
 }
 
 impl Default for SignOptions {
@@ -178,6 +183,7 @@ impl Default for SignOptions {
             patching: PatchingOptions::default(),
             encode_ids: true,
             patch_debug: false,
+            profile_cache: None,
         }
     }
 }
@@ -496,15 +502,40 @@ pub fn sign_ipa(
             registered.insert(new_id.to_string());
         };
 
+        // What the team already has, listed once rather than discovered by
+        // trying to register each identifier again (not in Python warpsign:
+        // see profile_reuse)
+        let existing_groups = if app_groups.is_empty() {
+            Vec::new()
+        } else {
+            portal.app_groups()?
+        };
         let mut group_ids = Vec::new();
         for group in &app_groups {
-            let name = format!("WS App Group {}", group.replace('.', " "));
-            let registered_group = portal.register_app_group(group, &name)?;
-            log.log(format!("App group {group}: {}", registered_group.id));
+            let registered_group = match existing_groups.iter().find(|g| &g.identifier == group) {
+                Some(existing) => {
+                    log.log(format!(
+                        "App group {group}: {} (already registered)",
+                        existing.id
+                    ));
+                    existing.clone()
+                }
+                None => {
+                    let name = format!("WS App Group {}", group.replace('.', " "));
+                    let registered_group = portal.register_app_group(group, &name)?;
+                    log.log(format!("App group {group}: {}", registered_group.id));
+                    registered_group
+                }
+            };
             group_ids.push(registered_group.id);
             record(&mut registered, &mapping, group);
         }
 
+        let existing_containers = if icloud_containers.is_empty() {
+            Vec::new()
+        } else {
+            portal.cloud_containers()?
+        };
         let mut container_ids = Vec::new();
         for container in &icloud_containers {
             let container = if container.starts_with("iCloud.") {
@@ -521,17 +552,48 @@ pub fn sign_ipa(
                 ));
                 fixed
             };
-            let name = format!("WS iCloud Container {}", container.replace('.', " "));
-            let registered_container = portal.register_cloud_container(&container, &name)?;
-            log.log(format!(
-                "iCloud container {container}: {}",
-                registered_container.id
-            ));
+            let registered_container = match existing_containers
+                .iter()
+                .find(|c| c.identifier == container)
+            {
+                Some(existing) => {
+                    log.log(format!(
+                        "iCloud container {container}: {} (already registered)",
+                        existing.id
+                    ));
+                    existing.clone()
+                }
+                None => {
+                    let name = format!("WS iCloud Container {}", container.replace('.', " "));
+                    let registered_container =
+                        portal.register_cloud_container(&container, &name)?;
+                    log.log(format!(
+                        "iCloud container {container}: {}",
+                        registered_container.id
+                    ));
+                    registered_container
+                }
+            };
             container_ids.push(registered_container.id);
             record(&mut registered, &mapping, &container);
         }
 
+        // For deciding which profiles can be used as they are, before
+        // changing any App ID
+        let devices = portal.devices()?;
+        let device_udids: Vec<String> = devices.iter().map(|device| device.udid.clone()).collect();
+        let existing_profiles = portal.profiles()?;
+        let existing_bundles = portal.bundle_ids()?;
+        let cache = options
+            .profile_cache
+            .as_deref()
+            .map(|root| ProfileCache::new(root, &team_id));
+        // Worked out as the Sign step will, without touching the real mapping
+        let mut preview_mapping = mapping.clone();
+        let now = std::time::SystemTime::now();
+
         let mut bundles = Vec::new();
+        let mut profile_plans = Vec::new();
         for plan in &plans {
             let component = &app.components[plan.component];
             let kind = if component.is_main_app() {
@@ -539,13 +601,47 @@ pub fn sign_ipa(
             } else {
                 "App Extension"
             };
-            // Python warpsign's names
-            let name = format!(
-                "WS {kind} {}",
-                plan.new_bundle_id.rsplit('.').next().unwrap_or_default()
+            let bundle = match existing_bundles
+                .iter()
+                .find(|bundle| bundle.identifier == plan.new_bundle_id)
+            {
+                Some(existing) => {
+                    log.log(format!(
+                        "App ID {}: {} (already registered)",
+                        existing.identifier, existing.id
+                    ));
+                    existing.clone()
+                }
+                None => {
+                    // Python warpsign's names
+                    let name = format!(
+                        "WS {kind} {}",
+                        plan.new_bundle_id.rsplit('.').next().unwrap_or_default()
+                    );
+                    let bundle = portal.register_bundle_id(&plan.new_bundle_id, &name)?;
+                    log.log(format!("App ID {}: {}", bundle.identifier, bundle.id));
+                    bundle
+                }
+            };
+
+            let (wanted, _) = signing_entitlements_quiet(
+                component,
+                plan,
+                &mut preview_mapping,
+                &team_id,
+                options,
             );
-            let bundle = portal.register_bundle_id(&plan.new_bundle_id, &name)?;
-            log.log(format!("App ID {}: {}", bundle.identifier, bundle.id));
+            let profile_plan = plan_profile(
+                portal,
+                cache.as_ref(),
+                &existing_profiles,
+                &profile_name(&plan.new_bundle_id, profile_type),
+                &format!("{team_id}.{}", plan.new_bundle_id),
+                identity.certificate_der(),
+                &device_udids,
+                &wanted,
+                now,
+            )?;
             record(&mut registered, &mapping, &plan.new_bundle_id);
             for original_team_id in mapping.original_team_ids() {
                 if component.bundle_id.contains(original_team_id.as_str()) {
@@ -554,7 +650,15 @@ pub fn sign_ipa(
                 }
             }
 
-            if !plan.capabilities.is_empty() {
+            let capabilities_current = match &profile_plan {
+                ProfilePlan::Reuse { .. } => true,
+                ProfilePlan::Make { reason, .. } => reason
+                    .as_ref()
+                    .is_some_and(|reason| !reason.needs_capabilities()),
+            };
+            if !plan.capabilities.is_empty() && capabilities_current {
+                log.log("  capabilities unchanged: its profile already grants them");
+            } else if !plan.capabilities.is_empty() {
                 let mut relationships = BTreeMap::new();
                 if plan.capabilities.contains("APP_GROUPS") && !group_ids.is_empty() {
                     relationships.insert("APP_GROUPS".to_string(), group_ids.clone());
@@ -576,10 +680,12 @@ pub fn sign_ipa(
                 }
             }
             bundles.push(bundle);
+            profile_plans.push(profile_plan);
         }
         mapping.registered_identifiers = registered;
-        Ok::<_, PipelineError>(bundles)
+        Ok::<_, PipelineError>((bundles, profile_plans, devices, existing_profiles, cache))
     })?;
+    let (bundles, profile_plans, devices, existing_profiles, cache) = bundles;
 
     // _update_info_plists. The main app first: which IDs get replaced with
     // force_original_id depends on its bundle ID.
@@ -613,14 +719,13 @@ pub fn sign_ipa(
 
     // _create_provisioning_profiles
     let profiles = run_step(observer, Step::CreateProfiles, |log| {
-        let devices = portal.devices()?;
         if devices.is_empty() {
             return Err(PipelineError::Setup(
                 "no iPhones or iPads are registered on this team: add this device at developer.apple.com first".into(),
             ));
         }
         log.log(format!("{} devices", devices.len()));
-        let device_ids: Vec<String> = devices.into_iter().map(|device| device.id).collect();
+        let device_ids: Vec<String> = devices.iter().map(|device| device.id.clone()).collect();
 
         let serial = identity.serial_number();
         let certificate = portal
@@ -640,38 +745,47 @@ pub fn sign_ipa(
             certificate.id
         ));
 
-        // Reuse profiles by name rather than making a new one every time
-        let existing = portal.profiles()?;
-        let type_name = match profile_type {
-            ProfileType::Development => "Development",
-            ProfileType::AdHoc => "Ad Hoc",
-        };
+        let mut listed: std::collections::HashSet<String> = existing_profiles
+            .iter()
+            .map(|profile| profile.id.clone())
+            .collect();
         let mut profiles = Vec::new();
         let mut parsed = Vec::new();
-        for (plan, bundle) in plans.iter().zip(&bundles) {
+        for ((plan, bundle), profile_plan) in plans.iter().zip(&bundles).zip(profile_plans) {
             let component = &app.components[plan.component];
-            let name = format!("TS {} {type_name}", plan.new_bundle_id);
-            let existing_id = existing
-                .iter()
-                .find(|profile| profile.name == name)
-                .map(|profile| profile.id.as_str());
-            let content = portal.create_or_regenerate_profile(
-                existing_id,
-                bundle,
-                &name,
-                std::slice::from_ref(&certificate.id),
-                &device_ids,
-                profile_type,
-            )?;
+            let name = profile_name(&plan.new_bundle_id, profile_type);
+            let (content, how) = match profile_plan {
+                ProfilePlan::Reuse { content, .. } => {
+                    (content, " (up to date, reused)".to_string())
+                }
+                ProfilePlan::Make {
+                    existing_id,
+                    reason,
+                } => {
+                    let (id, content) = portal.create_or_regenerate_profile(
+                        existing_id.as_deref(),
+                        bundle,
+                        &name,
+                        std::slice::from_ref(&certificate.id),
+                        &device_ids,
+                        profile_type,
+                    )?;
+                    if let Some(cache) = &cache {
+                        cache.store(&id, &content);
+                    }
+                    listed.insert(id);
+                    let how = match (existing_id, reason) {
+                        (None, _) => String::new(),
+                        (Some(_), Some(reason)) => format!(" (regenerated: {reason})"),
+                        (Some(_), None) => " (regenerated)".to_string(),
+                    };
+                    (content, how)
+                }
+            };
             let profile = ProvisioningProfile::parse(&content)?;
             log.log(format!(
-                "{}: {name}{}{}",
+                "{}: {name}{how}{}",
                 describe(component),
-                if existing_id.is_some() {
-                    " (regenerated)"
-                } else {
-                    ""
-                },
                 if profile.ppq_check {
                     ", PPQCheck on"
                 } else {
@@ -694,6 +808,9 @@ pub fn sign_ipa(
                 expiration_date: profile.expiration_date,
             });
             parsed.push(profile);
+        }
+        if let Some(cache) = &cache {
+            cache.prune(&listed);
         }
         // Keeping the original bundle ID with a PPQ profile risks the
         // Apple ID: refuse before anything is signed
@@ -830,6 +947,90 @@ pub fn sign_ipa(
 
 /// The entitlements to sign a primary component with, as in Python
 /// warpsign's `_sign_components` and `patch_app_binary`
+/// Python warpsign's profile names, which reusing profiles goes by
+fn profile_name(bundle_id: &str, profile_type: ProfileType) -> String {
+    let type_name = match profile_type {
+        ProfileType::Development => "Development",
+        ProfileType::AdHoc => "Ad Hoc",
+    };
+    format!("TS {bundle_id} {type_name}")
+}
+
+/// What to do about a component's provisioning profile
+enum ProfilePlan {
+    /// The portal's current one already does: use it as it is
+    Reuse { content: Vec<u8> },
+    /// Make one, regenerating `existing_id` if there is one. `reason` says
+    /// why the existing one won't do, when it was checked.
+    Make {
+        existing_id: Option<String>,
+        reason: Option<NotReusable>,
+    },
+}
+
+/// Whether the profile named `name` can be used as it is (see
+/// [`crate::profile_reuse`]), from the cache or one download
+#[allow(clippy::too_many_arguments)]
+fn plan_profile(
+    portal: &Portal,
+    cache: Option<&ProfileCache>,
+    existing: &[PortalProfile],
+    name: &str,
+    app_identifier: &str,
+    certificate_der: &[u8],
+    device_udids: &[String],
+    entitlements: &Dictionary,
+    now: std::time::SystemTime,
+) -> Result<ProfilePlan, PipelineError> {
+    let Some(listed) = existing.iter().find(|profile| profile.name == name) else {
+        return Ok(ProfilePlan::Make {
+            existing_id: None,
+            reason: None,
+        });
+    };
+    let make = |reason| {
+        Ok(ProfilePlan::Make {
+            existing_id: Some(listed.id.clone()),
+            reason,
+        })
+    };
+    if listed.state != "ACTIVE" {
+        return make(Some(NotReusable::State(listed.state.clone())));
+    }
+    let expires = listed.expiration_date.as_deref().and_then(portal_date);
+    let cached = match (cache, expires) {
+        (Some(cache), Some(expires)) => cache.load(&listed.id, expires),
+        _ => None,
+    };
+    let content = match cached {
+        Some(content) => content,
+        // Can't tell, so regenerate, as before
+        None => match portal.download_profile(&listed.id) {
+            Ok(content) => {
+                if let Some(cache) = cache {
+                    cache.store(&listed.id, &content);
+                }
+                content
+            }
+            Err(_) => return make(None),
+        },
+    };
+    let Ok(profile) = ProvisioningProfile::parse(&content) else {
+        return make(None);
+    };
+    match check(
+        &profile,
+        app_identifier,
+        certificate_der,
+        device_udids,
+        entitlements,
+        now,
+    ) {
+        Ok(()) => Ok(ProfilePlan::Reuse { content }),
+        Err(reason) => make(Some(reason)),
+    }
+}
+
 fn signing_entitlements(
     component: &AppComponent,
     plan: &Plan,
@@ -838,9 +1039,27 @@ fn signing_entitlements(
     options: &SignOptions,
     log: &StepLog,
 ) -> Dictionary {
+    let (entitlements, messages) =
+        signing_entitlements_quiet(component, plan, mapping, team_id, options);
+    for message in messages {
+        log.log(message);
+    }
+    entitlements
+}
+
+/// What [`signing_entitlements`] makes, with its messages returned rather
+/// than logged, so it can also be worked out ahead of the Sign step
+fn signing_entitlements_quiet(
+    component: &AppComponent,
+    plan: &Plan,
+    mapping: &mut BundleMapping,
+    team_id: &str,
+    options: &SignOptions,
+) -> (Dictionary, Vec<String>) {
+    let mut messages = Vec::new();
     let bundle_id = mapping.map_bundle_id(&component.bundle_id);
     let mut entitlements = if component.entitlements.is_empty() {
-        log.log(format!(
+        messages.push(format!(
             "Warning: {} has no entitlements, using the minimum",
             describe(component)
         ));
@@ -865,7 +1084,7 @@ fn signing_entitlements(
         }
     }
     if !missing.is_empty() && !component.entitlements.is_empty() {
-        log.log(format!(
+        messages.push(format!(
             "Warning: added missing {} for {}",
             missing.join(", "),
             describe(component)
@@ -877,13 +1096,13 @@ fn signing_entitlements(
     } else {
         entitlements.remove("get-task-allow");
         if component.entitlements.contains_key("get-task-allow") {
-            log.log(format!(
+            messages.push(format!(
                 "{}: get-task-allow removed, as debugging is off in the signing options",
                 describe(component)
             ));
         }
     }
-    entitlements
+    (entitlements, messages)
 }
 
 /// The original identifier mapped to `new_id`, if any

@@ -129,6 +129,8 @@ pub struct PortalProfile {
     pub state: String,
     pub platform: String,
     pub type_label: String,
+    /// e.g. "2027-10-11T12:00:00.000+00:00"
+    pub expiration_date: Option<String>,
 }
 
 /// What changed when setting an App ID's capabilities
@@ -607,12 +609,13 @@ impl Portal {
                 state: string(attributes, "profileState").unwrap_or_default(),
                 platform: string(attributes, "platform").unwrap_or_default(),
                 type_label: string(attributes, "profileTypeLabel").unwrap_or_default(),
+                expiration_date: string(attributes, "expirationDate"),
             })
         })
     }
 
     /// Create a provisioning profile, or regenerate `existing_id` in place,
-    /// and download it
+    /// and download it. Returns its portal ID and contents.
     #[allow(clippy::too_many_arguments)]
     pub fn create_or_regenerate_profile(
         &self,
@@ -622,7 +625,7 @@ impl Portal {
         certificate_ids: &[String],
         device_ids: &[String],
         profile_type: ProfileType,
-    ) -> Result<Vec<u8>, PortalError> {
+    ) -> Result<(String, Vec<u8>), PortalError> {
         let operation = format!("creating provisioning profile \"{name}\"");
         let distribution_type = match profile_type {
             ProfileType::Development => "limited",
@@ -653,7 +656,7 @@ impl Portal {
             .pointer("/provisioningProfile/provisioningProfileId")
             .and_then(Value::as_str)
             .ok_or_else(|| PortalError::new(&operation, None, "no profile ID in the response"))?;
-        self.download_profile(profile_id)
+        Ok((profile_id.to_string(), self.download_profile(profile_id)?))
     }
 
     pub fn download_profile(&self, profile_id: &str) -> Result<Vec<u8>, PortalError> {

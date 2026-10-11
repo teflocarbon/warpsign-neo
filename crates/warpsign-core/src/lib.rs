@@ -13,6 +13,7 @@ pub mod metadata;
 pub mod pipeline;
 pub mod portal;
 pub mod profile;
+pub mod profile_reuse;
 pub mod progress;
 mod pyrandom;
 pub mod serve;

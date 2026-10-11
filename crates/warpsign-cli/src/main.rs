@@ -865,6 +865,8 @@ fn sign(store: &Store, args: SignArgs) -> Result<()> {
         },
         encode_ids: !args.no_encode_ids,
         patch_debug: args.patch_debug,
+        // Profiles kept between signs, so an unchanged app makes no portal changes
+        profile_cache: Some(store.dir().join("profiles")),
     };
 
     let work = tempfile::tempdir()?;

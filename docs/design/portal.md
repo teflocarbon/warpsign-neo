@@ -29,3 +29,14 @@ Decisions and known pitfalls for porting Python warpsign's portal client. Agreed
 - **`api.rs`**: the `DeveloperPortalAPI` port. `tests/portal_parity.rs` replays Python's calls (captured by `tools/gen_fixtures.py` into `fixtures/portal_requests.json`) and checks every request's method, URL, headers and body match. Deliberate differences: errors instead of `None`; no `Host`/`Connection`/bogus `Accept-Encoding` headers (the transport owns those); CSRF headers left out when unknown (Python sent `csrf_ts: None`).
 - **New, with no Python reference**: certificate creation from a CSR (`POST v1/certificates`, App Store Connect API shape), verified only against mocks. Revoking is deliberately not implemented: the app sends you to developer.apple.com for that.
 - **Free accounts**: rejected when `getTeams` returns no teams. Whether a free account gets an empty list or something else is unverified, so a 403 on the first portal request is also reported with Apple's message.
+
+## Signing the same app again
+
+Python warpsign re-registers every identifier, sets every App ID's capabilities and regenerates every profile on each sign: for an app with an extension or five, around 40 requests and 20 writes even when nothing changed, which is how busy accounts get rate-limited. WarpSign departs from that (`profile_reuse.rs`, the Register Identifiers and Create Profiles steps):
+
+- App IDs, app groups and iCloud containers are listed once per sign and only missing ones are registered.
+- For each component, the existing profile (found by Python's name, `TS <bundle id> <type>`) is the ground truth for what its App ID grants. If the portal lists it as `ACTIVE`, it expires more than a week out, it includes this certificate and every enabled device, and its `Entitlements` grant every entitlement about to be signed (with Apple's `*` wildcards and lists), the App ID's capabilities aren't touched and the profile is used as it is.
+- Otherwise the App ID's capabilities are set (only when the reason could involve them: an invalid profile, a missing entitlement, or no profile yet) and the profile is regenerated, as before.
+- Profiles are cached by portal ID (app: Application Support/Caches/Profiles; CLI: `profiles/` in the config directory) and only trusted while their expiry matches what the portal lists, so one regenerated elsewhere is downloaded again. Profiles the portal no longer lists are pruned.
+
+An unchanged re-sign makes about six reads and no writes. Checked in `tests/sign_pipeline.rs` for: an unchanged app (no writes, no downloads with the cache), no cache (downloads only), a new device (regenerations only), invalid profiles (capabilities and regenerations, nothing re-registered) and a profile missing an entitlement (only that component's App ID and profile).

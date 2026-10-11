@@ -276,7 +276,7 @@ fn profiles() {
             args["distribution_type"].as_str().unwrap().parse().unwrap();
         let strings =
             |key: &str| -> Vec<String> { serde_json::from_value(args[key].clone()).unwrap() };
-        let content = Portal::new(http, TEAM)
+        let (_, content) = Portal::new(http, TEAM)
             .create_or_regenerate_profile(
                 existing,
                 &bundle(),

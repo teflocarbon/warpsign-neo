@@ -117,6 +117,9 @@ struct FakePortal {
     devices: Json,
     certificates: Json,
     profiles: Json,
+    /// Make profiles as the portal would (for the App ID, with the
+    /// certificate, devices and app groups it has) instead of `profile`
+    realistic_profiles: bool,
     state: Mutex<FakeState>,
 }
 
@@ -127,6 +130,67 @@ struct FakeState {
     bundle_ids: Vec<String>,
     capability_updates: Vec<(String, Json)>,
     profile_forms: Vec<String>,
+    /// Profiles made: ID, name, state and contents
+    made_profiles: Vec<(String, String, String, Vec<u8>)>,
+    /// Devices registered after the fake was made
+    extra_devices: Vec<String>,
+}
+
+/// The expiry of profiles the fake makes
+const PROFILE_EXPIRY: &str = "2030-01-01T00:00:00.000+00:00";
+
+/// A provisioning profile as the portal makes them, signed with the test
+/// certificate
+fn make_profile(
+    name: &str,
+    app_identifier: &str,
+    groups: &[String],
+    devices: &[String],
+) -> Vec<u8> {
+    let identity = identity();
+    let mut entitlements = Dictionary::new();
+    entitlements.insert("application-identifier".into(), app_identifier.into());
+    entitlements.insert("com.apple.developer.team-identifier".into(), TEAM.into());
+    entitlements.insert(
+        "keychain-access-groups".into(),
+        strings(&[&format!("{TEAM}.*")]),
+    );
+    entitlements.insert("get-task-allow".into(), true.into());
+    entitlements.insert("aps-environment".into(), "development".into());
+    entitlements.insert(
+        "com.apple.security.application-groups".into(),
+        Value::Array(groups.iter().map(|group| group.clone().into()).collect()),
+    );
+    let mut profile = Dictionary::new();
+    profile.insert("Name".into(), name.into());
+    profile.insert("TeamIdentifier".into(), strings(&[TEAM]));
+    profile.insert("Entitlements".into(), Value::Dictionary(entitlements));
+    profile.insert(
+        "ProvisionedDevices".into(),
+        Value::Array(devices.iter().map(|udid| udid.clone().into()).collect()),
+    );
+    profile.insert(
+        "DeveloperCertificates".into(),
+        Value::Array(vec![Value::Data(identity.certificate_der().to_vec())]),
+    );
+    let expiry = warpsign_core::profile_reuse::portal_date(PROFILE_EXPIRY).unwrap();
+    profile.insert("ExpirationDate".into(), Value::Date(expiry.into()));
+    let mut xml = Vec::new();
+    Value::Dictionary(profile).to_writer_xml(&mut xml).unwrap();
+
+    let key = x509_certificate::InMemorySigningKeyPair::from_pkcs8_der(identity.private_key_der())
+        .unwrap();
+    let certificate =
+        x509_certificate::CapturedX509Certificate::from_der(identity.certificate_der().to_vec())
+            .unwrap();
+    cryptographic_message_syntax::SignedDataBuilder::default()
+        .content_inline(xml)
+        .signer(cryptographic_message_syntax::SignerBuilder::new(
+            &key,
+            certificate,
+        ))
+        .build_der()
+        .unwrap()
 }
 
 impl FakePortal {
@@ -137,6 +201,7 @@ impl FakePortal {
             devices: json!({"data": [{"id": "DEV1", "attributes": {"name": "iPhone", "udid": "00008110-0001", "status": "ENABLED", "deviceClass": "IPHONE", "platform": "IOS"}}]}),
             certificates: json!({"data": [{"id": "CERT1", "attributes": {"serialNumber": serial, "certificateType": "DEVELOPMENT", "name": "Apple Development: Test User"}}]}),
             profiles: json!({"data": []}),
+            realistic_profiles: false,
             state: Mutex::default(),
         })
     }
@@ -190,9 +255,34 @@ impl Transport for FakePortal {
             (Method::Post, url) if url.starts_with("/v1/capabilities") => {
                 ok(FakePortal::capabilities())
             }
-            (Method::Post, "/v1/devices") => ok(self.devices.clone()),
+            (Method::Post, "/v1/devices") => {
+                let mut devices = self.devices.clone();
+                for (index, udid) in state.extra_devices.iter().enumerate() {
+                    devices["data"].as_array_mut().unwrap().push(json!({"id": format!("NEWDEV{index}"), "attributes": {"name": "iPad", "udid": udid, "status": "ENABLED", "deviceClass": "IPAD", "platform": "IOS"}}));
+                }
+                ok(devices)
+            }
             (Method::Post, "/v1/certificates") if reading => ok(self.certificates.clone()),
-            (Method::Post, "/v1/profiles") => ok(self.profiles.clone()),
+            (Method::Post, "/v1/profiles") => {
+                let mut profiles = self.profiles.clone();
+                for (id, name, profile_state, _) in &state.made_profiles {
+                    profiles["data"].as_array_mut().unwrap().push(json!({"id": id, "attributes": {"name": name, "profileState": profile_state, "expirationDate": PROFILE_EXPIRY, "platform": "IOS", "profileTypeLabel": "iOS App Development"}}));
+                }
+                ok(profiles)
+            }
+            (Method::Post, "/v1/bundleIds") if reading => ok(json!({
+                "data": state.bundle_ids.iter().enumerate().map(|(index, identifier)| {
+                    json!({"id": format!("BUNDLE{}", index + 1), "attributes": {"identifier": identifier, "name": "x"}})
+                }).collect::<Vec<_>>()
+            })),
+            (Method::Post, "/QH65B2/account/ios/identifiers/listApplicationGroups.action") => {
+                ok(json!({
+                    "resultCode": 0,
+                    "applicationGroupList": state.app_groups.iter().enumerate().map(|(index, identifier)| {
+                        json!({"applicationGroup": format!("GROUP{}", index + 1), "identifier": identifier, "name": "x"})
+                    }).collect::<Vec<_>>()
+                }))
+            }
             (Method::Post, "/QH65B2/account/ios/identifiers/addApplicationGroup.action") => {
                 let identifier = form_value(&body, "identifier");
                 state.app_groups.push(identifier.clone());
@@ -221,18 +311,48 @@ impl Transport for FakePortal {
                 ok(json!({"data": {}}))
             }
             (Method::Post, "/QH65B2/account/ios/profile/regenProvisioningProfile.action") => {
-                state.profile_forms.push(body);
-                ok(
-                    json!({"resultCode": 0, "provisioningProfile": {"provisioningProfileId": format!("PROFILE{}", state.profile_forms.len())}}),
-                )
+                state.profile_forms.push(body.clone());
+                let existing = form_value(&body, "provisioningProfileId");
+                let id = if existing.is_empty() {
+                    format!("PROFILE{}", state.profile_forms.len())
+                } else {
+                    existing
+                };
+                let name = form_value(&body, "provisioningProfileName");
+                let content = if self.realistic_profiles {
+                    let bundle = form_value(&body, "appIdId");
+                    let index: usize = bundle.trim_start_matches("BUNDLE").parse().unwrap();
+                    let identifier = state.bundle_ids[index - 1].clone();
+                    let mut devices = vec!["00008110-0001".to_string()];
+                    devices.extend(state.extra_devices.iter().cloned());
+                    make_profile(
+                        &name,
+                        &format!("{TEAM}.{identifier}"),
+                        &state.app_groups,
+                        &devices,
+                    )
+                } else {
+                    self.profile.clone()
+                };
+                state.made_profiles.retain(|(made, ..)| made != &id);
+                state
+                    .made_profiles
+                    .push((id.clone(), name, "ACTIVE".into(), content));
+                ok(json!({"resultCode": 0, "provisioningProfile": {"provisioningProfileId": id}}))
             }
             (Method::Get, url)
                 if url.starts_with("/QH65B2/account/ios/profile/downloadProfileContent") =>
             {
+                let id = url.rsplit("provisioningProfileId=").next().unwrap();
+                let made = state
+                    .made_profiles
+                    .iter()
+                    .find(|(made, ..)| made == id)
+                    .map(|(.., content)| content.clone());
                 Response {
                     status: 200,
                     headers: Vec::new(),
-                    body: self.profile.clone(),
+                    body: made.unwrap_or_else(|| self.profile.clone()),
                 }
             }
             _ => panic!(
@@ -605,5 +725,193 @@ fn explains_account_problems() {
     assert!(
         error.to_string().contains("may have been revoked"),
         "{error}"
+    );
+}
+
+// Signing again: only what changed reaches the portal (not in Python
+// warpsign, which re-registers and regenerates everything; see
+// warpsign_core::profile_reuse)
+
+/// Requests that change something on the portal
+fn writes(requests: &[Request]) -> Vec<String> {
+    requests
+        .iter()
+        .filter(|request| {
+            let reading = request.header_value("X-HTTP-Method-Override") == Some("GET");
+            let url = request.url.as_str();
+            request.method == Method::Patch
+                || (url.ends_with("/v1/bundleIds") && !reading)
+                || url.contains("addApplicationGroup")
+                || url.contains("addCloudContainer")
+                || url.contains("regenProvisioningProfile")
+        })
+        .map(|request| format!("{} {}", request.method.as_str(), request.url))
+        .collect()
+}
+
+fn downloads(requests: &[Request]) -> usize {
+    requests
+        .iter()
+        .filter(|request| request.url.contains("downloadProfileContent"))
+        .count()
+}
+
+fn realistic_portal() -> Arc<FakePortal> {
+    FakePortal::new("no-ppq.mobileprovision").with(|fake| fake.realistic_profiles = true)
+}
+
+/// Sign once, then return how many requests that took
+fn signed_once(
+    fake: &Arc<FakePortal>,
+    options: &SignOptions,
+) -> (usize, warpsign_core::pipeline::SignedApp) {
+    let (_dir, result, _) = sign(fake, options, TEAM);
+    let signed = result.unwrap();
+    let state = fake.state.lock().unwrap();
+    assert!(
+        !writes(&state.requests).is_empty(),
+        "the first sign registers things"
+    );
+    (state.requests.len(), signed)
+}
+
+#[test]
+fn signing_an_unchanged_app_again_changes_nothing() {
+    let fake = realistic_portal();
+    let cache = tempfile::tempdir().unwrap();
+    let options = SignOptions {
+        profile_cache: Some(cache.path().to_path_buf()),
+        ..Default::default()
+    };
+    let (before, _) = signed_once(&fake, &options);
+
+    let (_dir, result, _) = sign(&fake, &options, TEAM);
+    let signed = result.unwrap();
+    let state = fake.state.lock().unwrap();
+    let again = &state.requests[before..];
+    assert_eq!(writes(again), Vec::<String>::new());
+    // Both profiles came from the cache
+    assert_eq!(downloads(again), 0);
+    assert_eq!(signed.profiles.len(), 2);
+}
+
+#[test]
+fn without_a_cache_profiles_are_downloaded_but_nothing_changes() {
+    let fake = realistic_portal();
+    let options = SignOptions::default();
+    let (before, _) = signed_once(&fake, &options);
+
+    let (_dir, result, _) = sign(&fake, &options, TEAM);
+    result.unwrap();
+    let state = fake.state.lock().unwrap();
+    let again = &state.requests[before..];
+    assert_eq!(writes(again), Vec::<String>::new());
+    assert_eq!(downloads(again), 2);
+}
+
+#[test]
+fn a_new_device_regenerates_profiles_without_touching_app_ids() {
+    let fake = realistic_portal();
+    let cache = tempfile::tempdir().unwrap();
+    let options = SignOptions {
+        profile_cache: Some(cache.path().to_path_buf()),
+        ..Default::default()
+    };
+    let (before, _) = signed_once(&fake, &options);
+    fake.state
+        .lock()
+        .unwrap()
+        .extra_devices
+        .push("00008030-0002".into());
+
+    let (_dir, result, _) = sign(&fake, &options, TEAM);
+    result.unwrap();
+    let state = fake.state.lock().unwrap();
+    let again = writes(&state.requests[before..]);
+    assert_eq!(again.len(), 2, "{again:?}");
+    assert!(
+        again
+            .iter()
+            .all(|write| write.contains("regenProvisioningProfile")),
+        "{again:?}"
+    );
+}
+
+#[test]
+fn an_invalid_profile_sets_capabilities_and_regenerates() {
+    let fake = realistic_portal();
+    let cache = tempfile::tempdir().unwrap();
+    let options = SignOptions {
+        profile_cache: Some(cache.path().to_path_buf()),
+        ..Default::default()
+    };
+    let (before, _) = signed_once(&fake, &options);
+    // As the portal marks profiles after their App ID changes
+    for profile in &mut fake.state.lock().unwrap().made_profiles {
+        profile.2 = "INVALID".into();
+    }
+
+    let (_dir, result, _) = sign(&fake, &options, TEAM);
+    result.unwrap();
+    let state = fake.state.lock().unwrap();
+    let again = writes(&state.requests[before..]);
+    let patches = again
+        .iter()
+        .filter(|write| write.starts_with("PATCH"))
+        .count();
+    let regenerated = again
+        .iter()
+        .filter(|write| write.contains("regenProvisioningProfile"))
+        .count();
+    assert_eq!((patches, regenerated), (2, 2), "{again:?}");
+    // App IDs and the app group were found, not registered again
+    assert!(
+        !again
+            .iter()
+            .any(|write| write.ends_with("/v1/bundleIds") || write.contains("addApplicationGroup"))
+    );
+}
+
+#[test]
+fn a_profile_missing_an_entitlement_updates_only_its_app_id() {
+    let fake = realistic_portal();
+    let options = SignOptions::default();
+    let (before, signed) = signed_once(&fake, &options);
+    // The main app's profile no longer grants its app group, as if the
+    // group were unlinked on the portal
+    let main = signed
+        .profiles
+        .iter()
+        .find(|profile| profile.bundle_path.is_empty())
+        .unwrap();
+    {
+        let mut state = fake.state.lock().unwrap();
+        let profile = state
+            .made_profiles
+            .iter_mut()
+            .find(|(_, name, ..)| name == &main.name)
+            .unwrap();
+        profile.3 = make_profile(
+            &main.name,
+            &format!("{TEAM}.{}", main.bundle_id),
+            &[],
+            &["00008110-0001".to_string()],
+        );
+    }
+
+    let (_dir, result, _) = sign(&fake, &options, TEAM);
+    result.unwrap();
+    let state = fake.state.lock().unwrap();
+    let again = writes(&state.requests[before..]);
+    let patches = again
+        .iter()
+        .filter(|write| write.starts_with("PATCH"))
+        .count();
+    let regenerated: Vec<&String> = state.profile_forms[2..].iter().collect();
+    assert_eq!(patches, 1, "{again:?}");
+    assert_eq!(regenerated.len(), 1);
+    assert!(
+        regenerated[0].contains(&main.name.replace(' ', "+")),
+        "{regenerated:?}"
     );
 }

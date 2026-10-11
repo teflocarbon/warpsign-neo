@@ -317,6 +317,7 @@ impl From<SignSettings> for SignOptions {
             },
             encode_ids: settings.encode_ids,
             patch_debug: settings.patch_debug,
+            profile_cache: None,
         }
     }
 }
@@ -738,17 +739,21 @@ impl AppleAccount {
         output_path: String,
         work_dir: String,
         settings: SignSettings,
+        profile_cache_dir: Option<String>,
         observer: Arc<dyn StepObserver>,
     ) -> Result<SignResult, WarpsignError> {
         let identity = to_identity(&identity)?;
         let portal = self.portal(&team_id);
+        let mut options: SignOptions = settings.into();
+        // Profiles kept between signs, so an unchanged app makes no portal changes
+        options.profile_cache = profile_cache_dir.map(Into::into);
         let signed = pipeline::sign_ipa(
             &portal,
             &identity,
             Path::new(&ipa_path),
             Path::new(&output_path),
             Path::new(&work_dir),
-            &settings.into(),
+            &options,
             &ObserverBridge(observer),
         )
         .map_err(|error| match error {
