@@ -13,6 +13,8 @@ struct StepState: Identifiable {
     let title: String
     var status: Status = .pending
     var log: [String] = []
+    /// 0...1 while a long step reports how far it is
+    var progress: Double?
 
     var id: Step { step }
 }
@@ -23,6 +25,7 @@ final class StepRecorder: StepObserver {
     enum Event: Sendable {
         case started(Step)
         case log(Step, String)
+        case progress(Step, Double)
         case finished(Step, milliseconds: UInt64, error: String?)
     }
 
@@ -45,6 +48,10 @@ final class StepRecorder: StepObserver {
         deliver(.log(step, message))
     }
 
+    func stepProgress(step: Step, fraction: Double) {
+        deliver(.progress(step, fraction))
+    }
+
     func stepFinished(step: Step, elapsedMs: UInt64, error: String?) {
         deliver(.finished(step, milliseconds: elapsedMs, error: error))
     }
@@ -62,8 +69,11 @@ extension Array where Element == StepState {
             update(step) { $0.status = .running }
         case .log(let step, let message):
             update(step) { $0.log.append(message) }
+        case .progress(let step, let fraction):
+            update(step) { $0.progress = fraction }
         case .finished(let step, let milliseconds, let error):
             update(step) {
+                $0.progress = nil
                 if let error {
                     $0.status = .failed(milliseconds: milliseconds, message: error)
                 } else {

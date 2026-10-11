@@ -25,12 +25,12 @@ struct SigningView: View {
 
             if case .done(let result, let copy) = phase {
                 Section {
+                    InstallButton(ipa: library.signedURL(copy, of: app), name: app.displayName)
                     ShareLink(item: library.signedURL(copy, of: app)) {
                         Label("Share Signed IPA", systemImage: "square.and.arrow.up")
-                            .font(.headline)
                     }
                 } footer: {
-                    Text("Installs on the devices registered to your team. Share it to a Mac and install with Apple Configurator, or with your preferred installer.")
+                    Text("Installs on the devices registered to your team.")
                 }
                 if !result.warnings.isEmpty {
                     Section("Warnings") {

@@ -54,7 +54,11 @@ struct AppDetailView: View {
             if !app.signedCopies.isEmpty {
                 Section {
                     ForEach(app.signedCopies) { copy in
-                        SignedCopyRow(app: app, copy: copy)
+                        NavigationLink {
+                            SignedCopyView(app: app, copy: copy)
+                        } label: {
+                            SignedCopyRow(app: app, copy: copy)
+                        }
                     }
                     .onDelete { offsets in
                         for index in offsets {
@@ -64,7 +68,7 @@ struct AppDetailView: View {
                 } header: {
                     Text("Signed")
                 } footer: {
-                    Text("Share a signed IPA to install it, for example with Apple Configurator or by AirDrop to a Mac.")
+                    Text("Install a signed copy on this device, or share it.")
                 }
             }
 
@@ -112,7 +116,6 @@ struct AppDetailView: View {
 }
 
 private struct SignedCopyRow: View {
-    @Environment(LibraryStore.self) private var library
     let app: LibraryApp
     let copy: SignedCopy
 
@@ -138,10 +141,43 @@ private struct SignedCopyRow: View {
                 }
             }
             Spacer()
-            ShareLink(item: library.signedURL(copy, of: app)) {
-                Image(systemName: "square.and.arrow.up")
-            }
-            .buttonStyle(.borderless)
         }
+    }
+}
+
+/// One signed copy: install or share it
+private struct SignedCopyView: View {
+    @Environment(LibraryStore.self) private var library
+    let app: LibraryApp
+    let copy: SignedCopy
+
+    var body: some View {
+        List {
+            Section {
+                InstallButton(ipa: library.signedURL(copy, of: app), name: app.displayName)
+                ShareLink(item: library.signedURL(copy, of: app)) {
+                    Label("Share Signed IPA", systemImage: "square.and.arrow.up")
+                }
+            }
+            Section {
+                LabeledContent("Signed") {
+                    Text(copy.date, format: .dateTime.day().month().year().hour().minute())
+                }
+                LabeledContent("Bundle ID") {
+                    Text(copy.bundleId).font(.caption.monospaced()).textSelection(.enabled)
+                }
+                LabeledContent("Team") { Text(copy.teamId).monospaced() }
+                LabeledContent("Certificate", value: copy.certificate)
+                LabeledContent("PPQ Checking", value: copy.ppqCheck ? "On" : "Off")
+                if let expires = copy.profileExpires {
+                    LabeledContent("Profile Expires") {
+                        Text(expires, format: .dateTime.day().month().year())
+                            .foregroundStyle(expires < Date() ? Color.red : Color.primary)
+                    }
+                }
+            }
+        }
+        .navigationTitle(app.displayName)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

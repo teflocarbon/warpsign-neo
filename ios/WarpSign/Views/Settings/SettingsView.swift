@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AccountStore.self) private var account
+    @Environment(DeviceStore.self) private var device
     @State private var signingIn = false
     @State private var confirmingSignOut = false
 
@@ -65,6 +66,24 @@ struct SettingsView: View {
                         Text("Back up your signing identity, so a new device or reinstall doesn't use up another certificate.")
                             .foregroundStyle(.orange)
                     }
+                }
+
+                Section {
+                    NavigationLink {
+                        InstallingView()
+                    } label: {
+                        HStack {
+                            Label("Installing", systemImage: "arrow.down.app")
+                            Spacer()
+                            if device.hasPairingFile {
+                                Badge("Set Up", color: .green)
+                            } else {
+                                Badge("Not Set Up", color: .secondary)
+                            }
+                        }
+                    }
+                } footer: {
+                    Text("Install signed apps straight onto this device, as SideStore does.")
                 }
 
                 Section("Diagnostics") {

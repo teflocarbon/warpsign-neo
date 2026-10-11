@@ -6,6 +6,7 @@ struct WarpSignApp: App {
     @State private var account = AccountStore()
     @State private var sources = SourcesStore()
     @State private var inspection = InspectionModel()
+    @State private var device = DeviceStore()
     @State private var tab = AppTab.library
 
     enum AppTab: Hashable {
@@ -30,14 +31,19 @@ struct WarpSignApp: App {
             .environment(account)
             .environment(sources)
             .environment(inspection)
+            .environment(device)
             .task { await account.restore() }
-            // IPAs and profiles opened in WarpSign from Files or the share sheet
+            // IPAs, profiles and pairing files opened in WarpSign from Files or the share sheet
             .onOpenURL { url in
                 Task {
                     switch url.pathExtension.lowercased() {
                     case "mobileprovision":
                         tab = .settings
                         await inspection.addProfile(url)
+                    case "mobiledevicepairing":
+                        tab = .settings
+                        device.importPairingFile(url)
+                        await device.check()
                     case "ipa":
                         tab = .library
                         await library.importFile(url)

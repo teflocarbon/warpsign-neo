@@ -34,15 +34,25 @@ private struct StepRow: View {
                 Text("Not run").font(.caption).foregroundStyle(.secondary)
             }
         } label: {
-            HStack(spacing: 12) {
-                statusIcon
-                    .frame(width: 22)
-                Text(step.title)
-                Spacer()
-                if let duration {
-                    Text(duration)
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 12) {
+                    statusIcon
+                        .frame(width: 22)
+                    Text(step.title)
+                    Spacer()
+                    if let duration {
+                        Text(duration)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    } else if let progress = step.progress {
+                        Text(progress, format: .percent.precision(.fractionLength(0)))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                if let progress = step.progress, step.status == .running {
+                    ProgressView(value: progress)
+                        .padding(.leading, 34)
                 }
             }
         }

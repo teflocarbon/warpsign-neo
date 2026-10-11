@@ -24,7 +24,8 @@ extension Error {
             case .Ipa(let message), .Inspect(let message), .Profile(let message),
                  .Source(let message), .Auth(let message), .IncorrectCode(let message),
                  .SessionExpired(let message), .Portal(let message),
-                 .Identity(let message), .Signing(let message):
+                 .Identity(let message), .Signing(let message),
+                 .DeviceUnreachable(let message), .Device(let message):
                 return message
             }
         }

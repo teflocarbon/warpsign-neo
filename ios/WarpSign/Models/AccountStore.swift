@@ -286,6 +286,23 @@ final class AccountStore {
         }
     }
 
+    /// Register a device (e.g. this iPhone, from its pairing file's UDID)
+    func registerDevice(name: String, udid: String) async throws -> DeviceInfo {
+        guard let account, let team = selectedTeam else {
+            throw WarpsignError.Portal(message: "Sign in first.")
+        }
+        let teamId = team.teamId
+        do {
+            let device = try await background {
+                try account.registerDevice(teamId: teamId, name: name, udid: udid)
+            }
+            saveSession()
+            return device
+        } catch {
+            throw handle(error)
+        }
+    }
+
     // MARK: Signing
 
     /// Why signing can't start yet, if it can't
