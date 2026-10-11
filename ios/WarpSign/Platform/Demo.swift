@@ -260,13 +260,13 @@ enum Demo {
         let oldTeam = "QWERT67890"
         let newId = copy.bundleId
         let names = [
-            EntitlementNameInfo(key: "application-identifier", name: "App ID", description: nil, capability: nil),
-            EntitlementNameInfo(key: "com.apple.developer.team-identifier", name: "Team ID", description: nil, capability: nil),
-            EntitlementNameInfo(key: "keychain-access-groups", name: "Keychain Groups", description: nil, capability: nil),
-            EntitlementNameInfo(key: "get-task-allow", name: "Debugging", description: nil, capability: nil),
-            EntitlementNameInfo(key: "aps-environment", name: "Push Notifications", description: nil, capability: "PUSH_NOTIFICATIONS"),
-            EntitlementNameInfo(key: "com.apple.security.application-groups", name: "App Groups", description: nil, capability: "APP_GROUPS"),
-            EntitlementNameInfo(key: "com.apple.developer.healthkit", name: "HealthKit", description: nil, capability: "HEALTHKIT"),
+            EntitlementNameInfo(key: "application-identifier", name: "App ID", description: nil, capability: nil, symbol: nil),
+            EntitlementNameInfo(key: "com.apple.developer.team-identifier", name: "Team ID", description: nil, capability: nil, symbol: nil),
+            EntitlementNameInfo(key: "keychain-access-groups", name: "Keychain Groups", description: nil, capability: nil, symbol: nil),
+            EntitlementNameInfo(key: "get-task-allow", name: "Debugging", description: nil, capability: nil, symbol: nil),
+            EntitlementNameInfo(key: "aps-environment", name: "Push Notifications", description: nil, capability: "PUSH_NOTIFICATIONS", symbol: "app.badge"),
+            EntitlementNameInfo(key: "com.apple.security.application-groups", name: "App Groups", description: nil, capability: "APP_GROUPS", symbol: nil),
+            EntitlementNameInfo(key: "com.apple.developer.healthkit", name: "HealthKit", description: nil, capability: "HEALTHKIT", symbol: "health"),
         ]
         let app = SignedComponentInfo(
             path: "",

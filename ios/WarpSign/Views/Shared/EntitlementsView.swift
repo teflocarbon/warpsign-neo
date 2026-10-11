@@ -258,6 +258,37 @@ struct SignedComponentView: View {
         names = EntitlementNames(component.names)
     }
 
+    /// This component's own entitlement keys that `capability` grants, as
+    /// they appear in its plists (e.g. com.apple.security.application-groups)
+    private func keys(for capability: String) -> [String] {
+        var keys = Set<String>()
+        for entry in (signed ?? []) + (original ?? []) where names[entry.key]?.capability == capability {
+            keys.insert(entry.key)
+        }
+        return keys.sorted()
+    }
+
+    private func capabilityRow(_ capability: String) -> some View {
+        let granted = keys(for: capability)
+        let symbol = granted.first.flatMap { names[$0]?.symbol }
+        return Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(names.capabilityName(capability) ?? capability)
+                ForEach(granted, id: \.self) { key in
+                    Text(key)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                }
+                Text(capability)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: EntitlementSymbol.name(key: granted.first ?? "", capability: capability, portal: symbol))
+                .foregroundStyle(.tint)
+        }
+    }
+
     var body: some View {
         List {
             Section {
@@ -281,17 +312,7 @@ struct SignedComponentView: View {
             if !component.capabilities.isEmpty {
                 Section {
                     ForEach(component.capabilities, id: \.self) { capability in
-                        Label {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(names.capabilityName(capability) ?? capability)
-                                Text(capability)
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: EntitlementSymbol.name(key: "", capability: capability))
-                                .foregroundStyle(.tint)
-                        }
+                        capabilityRow(capability)
                     }
                 } header: {
                     Text("Capabilities")
@@ -501,10 +522,20 @@ func listedComponents(_ components: [SavedComponent]) -> [SavedComponent] {
 /// Components with the most entitlements first, as those usually matter
 /// most; ties keep their order
 func mostEntitlementsFirst<T>(_ components: [T], entitlementsXml: (T) -> String) -> [T] {
-    components.enumerated()
-        .map { (index: $0.offset, count: Entitlements.parse(entitlementsXml($0.element))?.count ?? 0, item: $0.element) }
-        .sorted { $0.count != $1.count ? $0.count > $1.count : $0.index < $1.index }
-        .map(\.item)
+    struct Ranked {
+        let index: Int
+        let count: Int
+    }
+    var ranked: [Ranked] = []
+    for (index, component) in components.enumerated() {
+        let count = Entitlements.parse(entitlementsXml(component))?.count ?? 0
+        ranked.append(Ranked(index: index, count: count))
+    }
+    ranked.sort { first, second in
+        if first.count != second.count { return first.count > second.count }
+        return first.index < second.index
+    }
+    return ranked.map { components[$0.index] }
 }
 
 /// A one-line summary of a component's changes, e.g. "2 added, 1 removed"
