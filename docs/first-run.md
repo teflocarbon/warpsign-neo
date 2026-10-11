@@ -48,7 +48,7 @@ warpsign sign Small.ipa
 
 This registers App IDs, app groups and containers, sets capabilities, makes profiles and signs. Check the portal afterwards: the App IDs should be named `WS App ...` like Python warpsign's, and profiles `TS <id> Development`. A second run should regenerate the same profiles, not make new ones.
 
-Then install the signed IPA (Apple Configurator, or `xcrun devicectl device install app`) and launch it. **This is the first real test of rcodesign's signatures on a device.** If it won't install, compare with `tools/rcodesign_ab_test.sh`.
+Then install it over USB with `warpsign install Small-signed.ipa` (or `warpsign sign Small.ipa --install`) and launch it. **This is the first real test of rcodesign's signatures on a device.** If installd rejects it, its message says why. Compare with `tools/rcodesign_ab_test.sh`.
 
 ## 5. PPQ
 
@@ -58,12 +58,23 @@ warpsign profile ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision
 
 Your account predates PPQ, so profiles should say `PPQ off`. With a newer team, `sign --force-original-id` must refuse.
 
-## 6. The app
+## 6. Pairing file
+
+```bash
+warpsign pair     # phone on USB, unlocked; tap Trust
+```
+
+This writes `<UDID>.mobiledevicepairing`. It's the first real test of idevice's pairing. If it fails, try `idevice_pair` or Impactor, which produce the same format, to tell a WarpSign problem from a device one.
+
+## 7. The app
 
 Build with `tools/build_ios.sh`, set your bundle ID and team, and run it on the phone. Then:
 
 1. Settings → Sign In.
 2. Settings → Signing Identity → Restore from Backup, with the `.p12` from step 3. This avoids using more certificate slots.
-3. Library → import an IPA → Sign.
+3. Settings → Installing: AirDrop the pairing file to the phone and open it in WarpSign, install LocalDevVPN and connect it, then Test Connection. The Team section should say this phone is registered.
+4. Library → import an IPA → Sign → Install on This Device.
+
+Installing goes through LocalDevVPN to the phone's own installer, as SideStore does. If Test Connection can't connect, check the VPN is on. If it says the pairing file was refused, make a new one.
 
 If something fails, Settings → Diagnostics → Network Log shows what Apple said, and each signing step's log can be copied.
