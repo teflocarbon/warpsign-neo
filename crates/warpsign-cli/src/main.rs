@@ -83,9 +83,14 @@ enum Command {
         /// Which device, if more than one is connected
         #[arg(long)]
         udid: Option<String>,
-        /// Where to write it [default: <UDID>.mobiledevicepairing]
+        /// Where to write it [default: <UDID>.rppairing.plist, or
+        /// <UDID>.mobiledevicepairing with --lockdown]
         #[arg(short, long)]
         output: Option<PathBuf>,
+        /// Make a lockdown pairing file, for iOS before 17.4 (iOS 26.6 and
+        /// later refuse these over the VPN)
+        #[arg(long)]
+        lockdown: bool,
     },
 }
 
@@ -241,7 +246,11 @@ fn run(cli: Cli) -> Result<()> {
         Command::Profile { files } => profiles(&files),
         Command::Sign(args) => sign(&store, args),
         Command::Install { ipa, udid } => install(&ipa, udid),
-        Command::Pair { udid, output } => pair(udid, output),
+        Command::Pair {
+            udid,
+            output,
+            lockdown,
+        } => pair(udid, output, lockdown),
     }
 }
 
@@ -696,7 +705,7 @@ fn install(ipa: &Path, udid: Option<String>) -> Result<()> {
     Ok(())
 }
 
-fn pair(udid: Option<String>, output: Option<PathBuf>) -> Result<()> {
+fn pair(udid: Option<String>, output: Option<PathBuf>, lockdown: bool) -> Result<()> {
     let devices = device::usb_devices()?;
     let udid = match (udid, devices.as_slice()) {
         (Some(udid), _) => udid,
@@ -711,8 +720,19 @@ fn pair(udid: Option<String>, output: Option<PathBuf>) -> Result<()> {
     let host = std::env::var("HOSTNAME")
         .or_else(|_| std::env::var("COMPUTERNAME"))
         .unwrap_or_else(|_| "warpsign".into());
-    let (udid, data) = device::create_pairing_file(Some(&udid), &host)?;
-    let output = output.unwrap_or_else(|| PathBuf::from(format!("{udid}.mobiledevicepairing")));
+    let kind = if lockdown {
+        device::PairingKind::Lockdown
+    } else {
+        device::PairingKind::RemotePairing
+    };
+    let (udid, data) = device::create_pairing_file(Some(&udid), &host, kind)?;
+    let output = output.unwrap_or_else(|| {
+        PathBuf::from(if lockdown {
+            format!("{udid}.mobiledevicepairing")
+        } else {
+            format!("{udid}.rppairing.plist")
+        })
+    });
     write_private(&output, &data).with_context(|| format!("writing {}", output.display()))?;
     println!("Wrote {}", output.display());
     println!("AirDrop it to the device and open it in WarpSign (Settings > Installing).");

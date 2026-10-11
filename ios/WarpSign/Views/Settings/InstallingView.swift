@@ -76,12 +76,32 @@ struct InstallingView: View {
         }
     }
 
+    private var remotePairingPortSection: some View {
+        @Bindable var device = device
+        return Section {
+            TextField("\(defaultRemotePairingPort())", text: $device.remotePairingPort)
+                .keyboardType(.numberPad)
+        } header: {
+            Text("RemotePairing Port")
+        } footer: {
+            Text("Where this device listens for RemotePairing. Usually \(defaultRemotePairingPort()); leave empty unless Test Connection says it can't connect, then try the port your device advertises as _remotepairing._tcp.")
+        }
+    }
+
     @ViewBuilder
     private var pairingSections: some View {
             Section {
                 if device.hasPairingFile {
-                    Label("Pairing file added", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                    if device.isRemotePairing {
+                        Label("RemotePairing file added", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    } else {
+                        Label("Lockdown pairing file added", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Label("iOS 26.6 and later refuse lockdown pairing files through the VPN. If Test Connection fails, make a RemotePairing file with `warpsign pair` and use that instead.", systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                    }
                     if let udid = device.udid {
                         LabeledContent("UDID") {
                             Text(udid).font(.caption.monospaced()).textSelection(.enabled)
@@ -98,7 +118,7 @@ struct InstallingView: View {
             } header: {
                 Text("1. Pairing File")
             } footer: {
-                Text("Made once on a computer: connect this device by USB and run `warpsign pair`, then AirDrop the .mobiledevicepairing file here. It lets apps on this device install apps, so keep it private.")
+                Text("Made once on a computer: connect this device by USB and run `warpsign pair`, then get the .rppairing.plist file here (AirDrop, iCloud Drive or Files). Pairing files from idevice_pair work too. It lets apps on this device install apps, so keep it private.")
             }
 
             Section {
@@ -109,6 +129,10 @@ struct InstallingView: View {
                 Text("2. Loopback VPN")
             } footer: {
                 Text("LocalDevVPN lets WarpSign talk to this device's installer, as SideStore does. Its traffic never leaves the device. Turn it on before installing.")
+            }
+
+            if device.isRemotePairing {
+                remotePairingPortSection
             }
 
             Section {

@@ -74,10 +74,10 @@ warpsign profile ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision
 ## 6. Pairing file
 
 ```bash
-warpsign pair     # phone on USB, unlocked; tap Trust
+warpsign pair     # phone on USB and unlocked
 ```
 
-This writes `<UDID>.mobiledevicepairing`. It's the first real test of idevice's pairing. If it fails, try `idevice_pair` or Impactor, which produce the same format, to tell a WarpSign problem from a device one.
+This writes `<UDID>.rppairing.plist`, a RemotePairing file (iOS 17.4+). It pairs over the trust USB already has, so there's no prompt. iOS 26.6 and later refuse the older lockdown files through the VPN; `warpsign pair --lockdown` still makes one for older iOS. If it fails, idevice_pair's RemotePairing files work in WarpSign too, which tells a WarpSign problem from a device one.
 
 ## 7. The app
 

@@ -3,8 +3,9 @@
 use std::net::{IpAddr, Ipv4Addr};
 use std::path::PathBuf;
 
+use idevice::remote_pairing::RpPairingFile;
 use warpsign_core::device::{
-    DeviceError, INSTALL_STEPS, Target, device_info, install_ipa, read_pairing_file,
+    DeviceError, INSTALL_STEPS, PairingKind, Target, device_info, install_ipa, read_pairing_file,
 };
 use warpsign_core::progress::{NoProgress, Step};
 
@@ -20,6 +21,7 @@ fn reads_pairing_files() {
     let info = read_pairing_file(&pairing_file()).unwrap();
     assert_eq!(info.udid.as_deref(), Some("00008110-000A0B0C0D0E0F10"));
     assert_eq!(info.host_id, "11111111-2222-4333-8444-555555555555");
+    assert_eq!(info.kind, PairingKind::Lockdown);
 
     let error = read_pairing_file(b"<plist><dict/></plist>").unwrap_err();
     assert!(
@@ -29,12 +31,59 @@ fn reads_pairing_files() {
     assert!(read_pairing_file(b"nonsense").is_err());
 }
 
+/// A RemotePairing file as idevice_pair writes it, with `udid` added as
+/// `warpsign pair` does
+fn rp_pairing_file(udid: Option<&str>) -> Vec<u8> {
+    let file = RpPairingFile::generate("WarpSign");
+    let mut dict: plist::Dictionary = plist::from_bytes(&file.to_bytes()).unwrap();
+    if let Some(udid) = udid {
+        dict.insert("UDID".into(), udid.into());
+    }
+    let mut data = Vec::new();
+    plist::Value::Dictionary(dict)
+        .to_writer_xml(&mut data)
+        .unwrap();
+    data
+}
+
+#[test]
+fn reads_remote_pairing_files() {
+    let info = read_pairing_file(&rp_pairing_file(Some("00008110-000A0B0C0D0E0F10"))).unwrap();
+    assert_eq!(info.kind, PairingKind::RemotePairing);
+    assert_eq!(info.udid.as_deref(), Some("00008110-000A0B0C0D0E0F10"));
+    assert!(!info.host_id.is_empty());
+
+    // idevice_pair's own files have no UDID
+    let info = read_pairing_file(&rp_pairing_file(None)).unwrap();
+    assert_eq!(info.kind, PairingKind::RemotePairing);
+    assert_eq!(info.udid, None);
+}
+
+#[test]
+fn explains_an_unreachable_remote_pairing_port() {
+    // A port nothing listens on: like the VPN being off
+    let port = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let target = Target::Network {
+        address: IpAddr::V4(Ipv4Addr::LOCALHOST),
+        pairing_file: rp_pairing_file(None),
+        remote_pairing_port: Some(port),
+    };
+    let error = device_info(&target).unwrap_err();
+    assert!(matches!(error, DeviceError::Unreachable(_)), "{error}");
+    assert!(error.to_string().contains(&port.to_string()), "{error}");
+}
+
 #[test]
 fn explains_an_unreachable_device() {
     // Nothing listens on lockdownd's port here: like the VPN being off
     let target = Target::Network {
         address: IpAddr::V4(Ipv4Addr::LOCALHOST),
         pairing_file: pairing_file(),
+        remote_pairing_port: None,
     };
     let error = device_info(&target).unwrap_err();
     assert!(matches!(error, DeviceError::Unreachable(_)), "{error}");
@@ -45,6 +94,7 @@ fn explains_an_unreachable_device() {
 fn a_bad_pairing_file_fails_before_connecting() {
     let target = Target::Loopback {
         pairing_file: b"nonsense".to_vec(),
+        remote_pairing_port: None,
     };
     assert!(matches!(
         device_info(&target),
@@ -60,6 +110,7 @@ fn a_bad_pairing_file_fails_before_connecting() {
 fn installs_need_a_signed_ipa() {
     let target = Target::Loopback {
         pairing_file: pairing_file(),
+        remote_pairing_port: None,
     };
     let error = install_ipa(&target, &PathBuf::from("missing.ipa"), &NoProgress).unwrap_err();
     assert!(matches!(error, DeviceError::Package(_)), "{error}");

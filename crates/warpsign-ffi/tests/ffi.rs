@@ -362,7 +362,7 @@ mod install {
             Err(WarpsignError::Device { .. })
         ));
         // Not on the device, so the loopback address goes nowhere
-        assert!(connected_device(b"nope".to_vec()).is_err());
+        assert!(connected_device(b"nope".to_vec(), None).is_err());
     }
 
     #[test]

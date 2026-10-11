@@ -23,6 +23,10 @@ idevice = { version = "0.1.68", default-features = false, features = [
     "installation_proxy",
     "heartbeat",
     "pair",
+    # RemotePairing: lockdownd refuses connections over the VPN since iOS 26.6
+    "remote_pairing",
+    "rsd",
+    "tunnel_tcp_stack",
 ] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 indexmap = "2"

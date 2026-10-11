@@ -37,6 +37,9 @@ final class DeviceStore {
     /// This device's UDID, from the pairing file
     private(set) var udid: String?
     private(set) var hasPairingFile = false
+    /// RemotePairing rather than lockdown: lockdown files stopped working
+    /// over the VPN in iOS 26.6
+    private(set) var isRemotePairing = false
     private(set) var connection: Connection = .unknown
     var importError: String?
 
@@ -46,6 +49,7 @@ final class DeviceStore {
     private static let methodKey = "installMethod"
     private static let slotKey = "installSlot"
     private static let manifestServerKey = "manifestServer"
+    private static let remotePairingPortKey = "remotePairingPort"
 
     var method: InstallMethod {
         didSet { UserDefaults.standard.set(method.rawValue, forKey: Self.methodKey) }
@@ -55,6 +59,16 @@ final class DeviceStore {
     /// Empty means WarpSign's default.
     var manifestServer: String {
         didSet { UserDefaults.standard.set(manifestServer, forKey: Self.manifestServerKey) }
+    }
+
+    /// Where this device listens for RemotePairing, if not the usual port.
+    /// Empty means the default.
+    var remotePairingPort: String {
+        didSet { UserDefaults.standard.set(remotePairingPort, forKey: Self.remotePairingPortKey) }
+    }
+
+    private var remotePairingPortOverride: UInt16? {
+        UInt16(remotePairingPort.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     /// The manifest server web installs use
@@ -75,9 +89,12 @@ final class DeviceStore {
         method = UserDefaults.standard.string(forKey: Self.methodKey)
             .flatMap(InstallMethod.init(rawValue:)) ?? .web
         manifestServer = UserDefaults.standard.string(forKey: Self.manifestServerKey) ?? ""
+        remotePairingPort = UserDefaults.standard.string(forKey: Self.remotePairingPortKey) ?? ""
         if let data = Keychain.data(for: Self.key) {
             hasPairingFile = true
-            udid = (try? pairingFileInfo(pairingFile: data))?.udid
+            let info = try? pairingFileInfo(pairingFile: data)
+            udid = info?.udid
+            isRemotePairing = info?.remotePairing ?? false
         }
     }
 
@@ -90,6 +107,7 @@ final class DeviceStore {
             try Keychain.set(data, for: Self.key)
             hasPairingFile = true
             udid = info.udid
+            isRemotePairing = info.remotePairing
             connection = .unknown
             importError = nil
         } catch {
@@ -100,6 +118,7 @@ final class DeviceStore {
     func removePairingFile() {
         try? Keychain.set(nil, for: Self.key)
         hasPairingFile = false
+        isRemotePairing = false
         udid = nil
         connection = .unknown
     }
@@ -108,8 +127,11 @@ final class DeviceStore {
     func check() async {
         guard let data = Keychain.data(for: Self.key) else { return }
         connection = .checking
+        let port = remotePairingPortOverride
         do {
-            let device = try await background { try connectedDevice(pairingFile: data) }
+            let device = try await background {
+                try connectedDevice(pairingFile: data, remotePairingPort: port)
+            }
             if udid == nil { udid = device.udid }
             connection = .connected(name: device.name, iosVersion: device.iosVersion)
         } catch WarpsignError.DeviceUnreachable(let message) {
@@ -127,8 +149,14 @@ final class DeviceStore {
         // Copying a big app takes a while: don't let the screen lock
         UIApplication.shared.isIdleTimerDisabled = true
         defer { UIApplication.shared.isIdleTimerDisabled = false }
+        let port = remotePairingPortOverride
         try await background {
-            try installIpa(pairingFile: data, ipaPath: ipa.path, observer: observer)
+            try installIpa(
+                pairingFile: data,
+                remotePairingPort: port,
+                ipaPath: ipa.path,
+                observer: observer
+            )
         }
     }
 

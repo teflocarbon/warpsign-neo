@@ -112,3 +112,17 @@ pub fn run_step<T, E: Display>(
     observer.step_finished(step, started.elapsed(), error.as_deref());
     result
 }
+
+/// As [`run_step`], for async work
+pub async fn run_step_async<T, E: Display>(
+    observer: &dyn ProgressObserver,
+    step: Step,
+    work: impl AsyncFnOnce(&StepLog) -> Result<T, E>,
+) -> Result<T, E> {
+    observer.step_started(step);
+    let started = Instant::now();
+    let result = work(&StepLog { observer, step }).await;
+    let error = result.as_ref().err().map(ToString::to_string);
+    observer.step_finished(step, started.elapsed(), error.as_deref());
+    result
+}

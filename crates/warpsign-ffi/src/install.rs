@@ -12,6 +12,8 @@ use crate::{ObserverBridge, StepInfo, StepObserver, WarpsignError};
 pub struct PairingFileInfo {
     /// The device it's for, if the file says
     pub udid: Option<String>,
+    /// RemotePairing (works over the VPN on iOS 26.6+) rather than lockdown
+    pub remote_pairing: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -34,14 +36,31 @@ fn device_error(error: DeviceError) -> WarpsignError {
 #[uniffi::export]
 pub fn pairing_file_info(pairing_file: Vec<u8>) -> Result<PairingFileInfo, WarpsignError> {
     let info = device::read_pairing_file(&pairing_file).map_err(device_error)?;
-    Ok(PairingFileInfo { udid: info.udid })
+    Ok(PairingFileInfo {
+        udid: info.udid,
+        remote_pairing: info.kind == device::PairingKind::RemotePairing,
+    })
+}
+
+/// The port RemotePairing is tried on unless told otherwise
+#[uniffi::export]
+pub fn default_remote_pairing_port() -> u16 {
+    device::REMOTE_PAIRING_PORT
 }
 
 /// Connect to this device through the VPN: checks the VPN and pairing file
-/// work. Blocks: call from a background thread.
+/// work. `remote_pairing_port` overrides where RemotePairing files connect.
+/// Blocks: call from a background thread.
 #[uniffi::export]
-pub fn connected_device(pairing_file: Vec<u8>) -> Result<ConnectedDevice, WarpsignError> {
-    let info = device::device_info(&Target::Loopback { pairing_file }).map_err(device_error)?;
+pub fn connected_device(
+    pairing_file: Vec<u8>,
+    remote_pairing_port: Option<u16>,
+) -> Result<ConnectedDevice, WarpsignError> {
+    let info = device::device_info(&Target::Loopback {
+        pairing_file,
+        remote_pairing_port,
+    })
+    .map_err(device_error)?;
     Ok(ConnectedDevice {
         udid: info.udid,
         name: info.name,
@@ -67,11 +86,15 @@ pub fn install_steps() -> Vec<StepInfo> {
 #[uniffi::export]
 pub fn install_ipa(
     pairing_file: Vec<u8>,
+    remote_pairing_port: Option<u16>,
     ipa_path: String,
     observer: Arc<dyn StepObserver>,
 ) -> Result<(), WarpsignError> {
     device::install_ipa(
-        &Target::Loopback { pairing_file },
+        &Target::Loopback {
+            pairing_file,
+            remote_pairing_port,
+        },
         Path::new(&ipa_path),
         &ObserverBridge(observer),
     )
