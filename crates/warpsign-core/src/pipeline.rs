@@ -7,6 +7,7 @@ use plist::{Dictionary, Value};
 
 use crate::ProfileType;
 use crate::bundle_mapping::BundleMapping;
+use crate::capability_names::{EntitlementName, EntitlementNames};
 use crate::entitlements::EntitlementsProcessor;
 use crate::identity::{CertificateKind, Identity, IdentityError};
 use crate::info_plist::{InfoPlistError, InfoPlistPatcher, PatchingOptions};
@@ -200,6 +201,163 @@ pub struct SignedApp {
     pub profiles: Vec<SignedProfile>,
     /// Things that worked out, but not quite as asked
     pub warnings: Vec<String>,
+    /// Every component, in the order of [`InspectedApp::components`], with
+    /// what it was signed with
+    pub components: Vec<SignedComponent>,
+}
+
+/// What one component of a signed app was signed with, and how that
+/// differs from what it had before
+#[derive(Debug, Clone, PartialEq)]
+pub struct SignedComponent {
+    /// Bundle path inside the app ("" for the app itself), "/"-separated
+    pub path: String,
+    /// Apps and extensions; frameworks, dylibs and plug-in bundles aren't
+    pub is_primary: bool,
+    /// CFBundleIdentifier before signing (the file stem for frameworks)
+    pub original_bundle_id: String,
+    /// CFBundleIdentifier after signing. Frameworks keep theirs.
+    pub bundle_id: String,
+    /// Entitlements the component's executable had before
+    pub original_entitlements: Dictionary,
+    /// Entitlements it was signed with. Always empty for frameworks,
+    /// which are signed without any.
+    pub entitlements: Dictionary,
+    /// Portal capabilities enabled on its App ID (primary components only)
+    pub capabilities: Vec<String>,
+    /// Differences between the two entitlement dictionaries, by key
+    pub changes: Vec<EntitlementChange>,
+    /// Friendly names for the keys in either dictionary that have one,
+    /// from the portal's capabilities or a built-in table
+    pub names: BTreeMap<String, EntitlementName>,
+}
+
+/// One entitlement that differs between the original and signed component
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntitlementChange {
+    pub key: String,
+    pub kind: ChangeKind,
+    /// Why, when the pipeline knows
+    pub reason: Option<ChangeReason>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChangeKind {
+    Added,
+    Removed,
+    /// Present before and after, with a different value
+    Changed,
+}
+
+/// Why an entitlement was added, removed or changed
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChangeReason {
+    /// The team has no portal capability that grants it
+    NoCapability,
+    /// Always removed (see `entitlements::is_banned`)
+    Banned,
+    /// get-task-allow, with debugging off in the signing options
+    DebuggingOff,
+    /// get-task-allow, with debugging on in the signing options
+    DebuggingOn,
+    /// Needed to sign (application-identifier, team-identifier), and missing
+    Required,
+    /// Points at the new team, App ID, app groups or containers
+    Remapped,
+    /// aps-environment, set for the profile type
+    PushEnvironment,
+    /// Frameworks and other non-primary components are signed without
+    /// entitlements
+    NotPrimary,
+}
+
+impl ChangeReason {
+    /// A short explanation for people
+    pub fn description(self) -> &'static str {
+        match self {
+            ChangeReason::NoCapability => "No matching capability on the Developer Portal",
+            ChangeReason::Banned => "Always removed when re-signing",
+            ChangeReason::DebuggingOff => "Debugging is off in the signing options",
+            ChangeReason::DebuggingOn => "Debugging is on in the signing options",
+            ChangeReason::Required => "Required for signing",
+            ChangeReason::Remapped => "Remapped to the new team and identifiers",
+            ChangeReason::PushEnvironment => "Set to match the provisioning profile type",
+            ChangeReason::NotPrimary => "Frameworks and libraries are signed without entitlements",
+        }
+    }
+}
+
+impl std::fmt::Display for ChangeReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.description())
+    }
+}
+
+/// How `signed` differs from `component`'s original entitlements, sorted
+/// by key. `removals` is the processor's removal list for a primary
+/// component, `None` for one signed without entitlements.
+fn entitlement_changes(
+    component: &AppComponent,
+    signed: &Dictionary,
+    removals: Option<&BTreeSet<String>>,
+    patch_debug: bool,
+) -> Vec<EntitlementChange> {
+    let original = &component.entitlements;
+    let mut changes = Vec::new();
+    for (key, value) in original {
+        let (kind, reason) = match signed.get(key) {
+            None => {
+                let reason = match removals {
+                    None => Some(ChangeReason::NotPrimary),
+                    Some(_) if key == "get-task-allow" && !patch_debug => {
+                        Some(ChangeReason::DebuggingOff)
+                    }
+                    Some(removals) if removals.contains(key) => {
+                        if crate::entitlements::is_banned(key) {
+                            Some(ChangeReason::Banned)
+                        } else {
+                            Some(ChangeReason::NoCapability)
+                        }
+                    }
+                    Some(_) => None,
+                };
+                (ChangeKind::Removed, reason)
+            }
+            Some(new) if new != value => {
+                let reason = match key.as_str() {
+                    "get-task-allow" if patch_debug => ChangeReason::DebuggingOn,
+                    "aps-environment" => ChangeReason::PushEnvironment,
+                    _ => ChangeReason::Remapped,
+                };
+                (ChangeKind::Changed, Some(reason))
+            }
+            Some(_) => continue,
+        };
+        changes.push(EntitlementChange {
+            key: key.clone(),
+            kind,
+            reason,
+        });
+    }
+    for key in signed.keys() {
+        if original.contains_key(key) {
+            continue;
+        }
+        let reason = match key.as_str() {
+            "get-task-allow" if patch_debug => Some(ChangeReason::DebuggingOn),
+            "application-identifier" | "com.apple.developer.team-identifier" => {
+                Some(ChangeReason::Required)
+            }
+            _ => None,
+        };
+        changes.push(EntitlementChange {
+            key: key.clone(),
+            kind: ChangeKind::Added,
+            reason,
+        });
+    }
+    changes.sort_by(|a, b| a.key.cmp(&b.key));
+    changes
 }
 
 /// A primary component (app or extension) and what it needs
@@ -250,7 +408,7 @@ pub fn sign_ipa(
     let main = app.main();
 
     // _analyze_components
-    let (mut mapping, plans, app_groups, icloud_containers) =
+    let (mut mapping, plans, app_groups, icloud_containers, names) =
         run_step(observer, Step::PlanIdentifiers, |log| {
             if app.team_ids.is_empty() {
                 log.log("Warning: no team IDs found in the app. Check the IPA.");
@@ -266,6 +424,7 @@ pub fn sign_ipa(
 
             let capabilities = portal.capabilities()?;
             let processor = EntitlementsProcessor::new(&capabilities, profile_type);
+            let names = EntitlementNames::from_capabilities(&capabilities);
             let mut plans = Vec::new();
             let mut app_groups = BTreeSet::new();
             let mut icloud_containers = BTreeSet::new();
@@ -318,7 +477,7 @@ pub fn sign_ipa(
             for container in &icloud_containers {
                 log.log(format!("iCloud container: {container}"));
             }
-            Ok::<_, PipelineError>((mapping, plans, app_groups, icloud_containers))
+            Ok::<_, PipelineError>((mapping, plans, app_groups, icloud_containers, names))
         })?;
 
     // _register_app_resources
@@ -423,6 +582,8 @@ pub fn sign_ipa(
     // _update_info_plists. The main app first: which IDs get replaced with
     // force_original_id depends on its bundle ID.
     let mut patcher = InfoPlistPatcher::new(options.patching.clone());
+    // The CFBundleIdentifier each primary component ended up with, by index
+    let mut patched_bundle_ids = BTreeMap::new();
     let main_bundle_id = run_step(observer, Step::PatchInfoPlists, |log| {
         let mut order: Vec<&Plan> = plans.iter().collect();
         order.sort_by_key(|plan| !app.components[plan.component].is_main_app());
@@ -441,8 +602,9 @@ pub fn sign_ipa(
                 describe(component)
             ));
             if component.is_main_app() {
-                main_bundle_id = bundle_id;
+                main_bundle_id = bundle_id.clone();
             }
+            patched_bundle_ids.insert(plan.component, bundle_id);
         }
         Ok::<_, PipelineError>(main_bundle_id)
     })?;
@@ -564,7 +726,7 @@ pub fn sign_ipa(
         Ok::<_, PipelineError>(())
     })?;
 
-    run_step(observer, Step::Sign, |log| {
+    let signed_entitlements = run_step(observer, Step::Sign, |log| {
         let mut bundle_entitlements = Vec::new();
         for plan in &plans {
             let component = &app.components[plan.component];
@@ -586,8 +748,59 @@ pub fn sign_ipa(
             "Signed with {}",
             identity.common_name().unwrap_or_default()
         ));
-        Ok::<_, PipelineError>(())
+        // In the order of `plans`
+        Ok::<_, PipelineError>(
+            bundle_entitlements
+                .into_iter()
+                .map(|bundle| bundle.entitlements)
+                .collect::<Vec<_>>(),
+        )
     })?;
+
+    // What each component was signed with, for front-ends to show
+    let components = app
+        .components
+        .iter()
+        .enumerate()
+        .map(|(index, component)| {
+            let signed = plans
+                .iter()
+                .zip(&signed_entitlements)
+                .find(|(plan, _)| plan.component == index);
+            let (entitlements, capabilities, removals) = match signed {
+                Some((plan, entitlements)) => (
+                    entitlements.clone(),
+                    plan.capabilities.iter().cloned().collect(),
+                    Some(&plan.removals),
+                ),
+                None => (Dictionary::new(), Vec::new(), None),
+            };
+            SignedComponent {
+                path: slash_path(&component.path),
+                is_primary: component.is_primary,
+                original_bundle_id: component.bundle_id.clone(),
+                bundle_id: patched_bundle_ids
+                    .get(&index)
+                    .cloned()
+                    .unwrap_or_else(|| component.bundle_id.clone()),
+                changes: entitlement_changes(
+                    component,
+                    &entitlements,
+                    removals,
+                    options.patch_debug,
+                ),
+                names: component
+                    .entitlements
+                    .keys()
+                    .chain(entitlements.keys())
+                    .filter_map(|key| Some((key.clone(), names.get(key)?)))
+                    .collect(),
+                original_entitlements: component.entitlements.clone(),
+                entitlements,
+                capabilities,
+            }
+        })
+        .collect();
 
     run_step(observer, Step::Package, |log| {
         package_ipa(&app.app_dir, output)?;
@@ -607,6 +820,7 @@ pub fn sign_ipa(
         bundle_id: main_bundle_id,
         profiles,
         warnings,
+        components,
     })
 }
 
@@ -687,4 +901,105 @@ fn describe(component: &AppComponent) -> String {
 
 fn join(items: &BTreeSet<String>) -> String {
     items.iter().cloned().collect::<Vec<_>>().join(", ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn component(entitlements: Dictionary, is_primary: bool) -> AppComponent {
+        AppComponent {
+            path: PathBuf::new(),
+            bundle_id: "com.example.test".into(),
+            executable: PathBuf::from("Test"),
+            entitlements,
+            info_plist: Dictionary::new(),
+            is_primary,
+            entitlements_bundle_id: None,
+        }
+    }
+
+    fn dict(pairs: &[(&str, Value)]) -> Dictionary {
+        pairs
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.clone()))
+            .collect()
+    }
+
+    fn change(key: &str, kind: ChangeKind, reason: Option<ChangeReason>) -> EntitlementChange {
+        EntitlementChange {
+            key: key.into(),
+            kind,
+            reason,
+        }
+    }
+
+    #[test]
+    fn explains_removed_entitlements() {
+        let original = dict(&[
+            ("com.apple.developer.healthkit", true.into()),
+            ("com.apple.developer.in-app-payments", Value::Array(vec![])),
+            ("get-task-allow", true.into()),
+            ("com.example.mystery", true.into()),
+        ]);
+        let signed = dict(&[
+            ("application-identifier", "T.x".into()),
+            ("com.apple.developer.team-identifier", "T".into()),
+        ]);
+        let removals: BTreeSet<String> = [
+            "com.apple.developer.healthkit",
+            "com.apple.developer.in-app-payments",
+            "get-task-allow",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+        assert_eq!(
+            entitlement_changes(
+                &component(original.clone(), true),
+                &signed,
+                Some(&removals),
+                false
+            ),
+            [
+                change(
+                    "application-identifier",
+                    ChangeKind::Added,
+                    Some(ChangeReason::Required)
+                ),
+                change(
+                    "com.apple.developer.healthkit",
+                    ChangeKind::Removed,
+                    Some(ChangeReason::NoCapability)
+                ),
+                change(
+                    "com.apple.developer.in-app-payments",
+                    ChangeKind::Removed,
+                    Some(ChangeReason::Banned)
+                ),
+                change(
+                    "com.apple.developer.team-identifier",
+                    ChangeKind::Added,
+                    Some(ChangeReason::Required)
+                ),
+                change("com.example.mystery", ChangeKind::Removed, None),
+                change(
+                    "get-task-allow",
+                    ChangeKind::Removed,
+                    Some(ChangeReason::DebuggingOff)
+                ),
+            ]
+        );
+
+        // Frameworks are signed without entitlements
+        let changes =
+            entitlement_changes(&component(original, false), &Dictionary::new(), None, false);
+        assert_eq!(changes.len(), 4);
+        assert!(
+            changes
+                .iter()
+                .all(|change| change.kind == ChangeKind::Removed
+                    && change.reason == Some(ChangeReason::NotPrimary))
+        );
+    }
 }

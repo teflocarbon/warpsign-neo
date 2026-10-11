@@ -8,7 +8,9 @@ use plist::{Dictionary, Value};
 use serde_json::{Value as Json, json};
 use warpsign_core::identity::{Identity, import_p12};
 use warpsign_core::ipa::{extract_ipa, package_ipa};
-use warpsign_core::pipeline::{PipelineError, SIGN_STEPS, SignOptions, sign_ipa};
+use warpsign_core::pipeline::{
+    ChangeKind, ChangeReason, EntitlementChange, PipelineError, SIGN_STEPS, SignOptions, sign_ipa,
+};
 use warpsign_core::portal::Portal;
 use warpsign_core::portal::http::{
     HttpClient, Method, Request, Response, SessionState, Transport, TransportError,
@@ -403,6 +405,87 @@ fn signs_for_the_signed_in_team() {
         .unwrap()
         .unwrap();
     assert_eq!(framework.team_id.as_deref(), Some(TEAM));
+
+    // What each component was signed with, as front-ends show it
+    let paths: Vec<_> = signed.components.iter().map(|c| c.path.as_str()).collect();
+    assert_eq!(
+        paths,
+        ["", "Frameworks/Foo.framework", "PlugIns/Widget.appex"]
+    );
+    let main = &signed.components[0];
+    assert!(main.is_primary);
+    assert_eq!(main.original_bundle_id, "com.example.test");
+    assert_eq!(&main.bundle_id, new_id);
+    // Exactly what's in the signature, before and after
+    assert_eq!(main.entitlements, entitlements);
+    assert_eq!(
+        main.original_entitlements["application-identifier"].as_string(),
+        Some(format!("{ORIGINAL_TEAM}.com.example.test").as_str())
+    );
+    assert_eq!(main.capabilities, ["APP_GROUPS", "PUSH_NOTIFICATIONS"]);
+    let change = |key: &str, kind, reason| EntitlementChange {
+        key: key.into(),
+        kind,
+        reason: Some(reason),
+    };
+    assert_eq!(
+        main.changes,
+        [
+            change(
+                "application-identifier",
+                ChangeKind::Changed,
+                ChangeReason::Remapped
+            ),
+            change(
+                "aps-environment",
+                ChangeKind::Changed,
+                ChangeReason::PushEnvironment
+            ),
+            change(
+                "com.apple.developer.team-identifier",
+                ChangeKind::Changed,
+                ChangeReason::Remapped
+            ),
+            change(
+                "com.apple.security.application-groups",
+                ChangeKind::Changed,
+                ChangeReason::Remapped
+            ),
+            change(
+                "get-task-allow",
+                ChangeKind::Removed,
+                ChangeReason::DebuggingOff
+            ),
+            change(
+                "keychain-access-groups",
+                ChangeKind::Changed,
+                ChangeReason::Remapped
+            ),
+        ]
+    );
+    // Names from the portal's capabilities, and built-in ones for the rest
+    let push = &main.names["aps-environment"];
+    assert_eq!(push.name, "Push Notifications");
+    assert_eq!(push.capability.as_deref(), Some("PUSH_NOTIFICATIONS"));
+    assert_eq!(main.names["get-task-allow"].name, "Debugging");
+    assert_eq!(main.names["keychain-access-groups"].capability, None);
+
+    let framework = &signed.components[1];
+    assert!(!framework.is_primary);
+    assert_eq!(framework.bundle_id, "Foo");
+    assert!(framework.entitlements.is_empty() && framework.changes.is_empty());
+
+    let widget = &signed.components[2];
+    assert_eq!(widget.bundle_id, state.bundle_ids[1]);
+    assert_eq!(widget.entitlements, widget_signature(&app));
+    assert_eq!(widget.capabilities, ["APP_GROUPS"]);
+}
+
+fn widget_signature(app: &Path) -> Dictionary {
+    read_signature(&app.join("PlugIns/Widget.appex/Widget"))
+        .unwrap()
+        .unwrap()
+        .entitlements
 }
 
 #[test]
@@ -453,6 +536,24 @@ fn keeps_the_original_bundle_id_when_asked() {
         .unwrap()
         .entitlements;
     assert_eq!(entitlements["get-task-allow"].as_boolean(), Some(true));
+
+    let main = &signed.components[0];
+    assert_eq!(main.bundle_id, "com.example.test");
+    assert_eq!(main.entitlements, entitlements);
+    let debug = main
+        .changes
+        .iter()
+        .find(|change| change.key == "get-task-allow")
+        .unwrap();
+    assert_eq!(debug.kind, ChangeKind::Changed);
+    assert_eq!(debug.reason, Some(ChangeReason::DebuggingOn));
+    // The widget had no get-task-allow: it's added
+    let widget = &signed.components[2];
+    assert!(widget.changes.contains(&EntitlementChange {
+        key: "get-task-allow".into(),
+        kind: ChangeKind::Added,
+        reason: Some(ChangeReason::DebuggingOn),
+    }));
 }
 
 #[test]

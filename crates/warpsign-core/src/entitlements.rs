@@ -29,6 +29,12 @@ pub struct EntitlementsPlan {
     pub entitlements_to_remove: BTreeSet<String>,
 }
 
+/// Whether `key` is always removed before signing, whatever the account
+/// offers
+pub fn is_banned(key: &str) -> bool {
+    BANNED_ENTITLEMENTS.contains(&key)
+}
+
 pub struct EntitlementsProcessor {
     /// Entitlement key -> capability ID
     capabilities: HashMap<String, String>,
