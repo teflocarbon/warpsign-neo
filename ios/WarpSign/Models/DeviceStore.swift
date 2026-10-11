@@ -2,9 +2,26 @@ import Foundation
 import Observation
 import UIKit
 
-/// Installing on this device: its pairing file (made once on a computer
-/// with `warpsign pair`) and the LocalDevVPN connection, the way SideStore
-/// installs
+/// How WarpSign installs apps on this device
+enum InstallMethod: String, CaseIterable, Identifiable {
+    /// iOS's own installer, fed from a loopback server (ESign's way)
+    case web
+    /// installation_proxy through LocalDevVPN with a pairing file (SideStore's way)
+    case pairing
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .web: "Over the Web"
+        case .pairing: "Through LocalDevVPN"
+        }
+    }
+}
+
+/// Installing on this device: over the web through iOS's installer, or
+/// through LocalDevVPN with a pairing file (made once on a computer with
+/// `warpsign pair`)
 @MainActor
 @Observable
 final class DeviceStore {
@@ -26,8 +43,21 @@ final class DeviceStore {
     static let localDevVPN = URL(string: "https://apps.apple.com/app/localdevvpn/id6755608044")!
 
     private static let key = "pairing"
+    private static let methodKey = "installMethod"
+    private static let slotKey = "installSlot"
+
+    var method: InstallMethod {
+        didSet { UserDefaults.standard.set(method.rawValue, forKey: Self.methodKey) }
+    }
+
+    /// Whether installing works with the chosen method
+    var isReady: Bool {
+        method == .web || hasPairingFile
+    }
 
     init() {
+        method = UserDefaults.standard.string(forKey: Self.methodKey)
+            .flatMap(InstallMethod.init(rawValue:)) ?? .web
         if let data = Keychain.data(for: Self.key) {
             hasPairingFile = true
             udid = (try? pairingFileInfo(pairingFile: data))?.udid
@@ -83,5 +113,14 @@ final class DeviceStore {
         try await background {
             try installIpa(pairingFile: data, ipaPath: ipa.path, observer: observer)
         }
+    }
+
+    /// Start serving an IPA to iOS's installer; open the result's
+    /// `installLink()` next. Uses the next manifest slot each time.
+    func startWebInstall(_ ipa: URL, icon: Data?, observer: StepRecorder) throws -> WebInstall {
+        let slots = webInstallSlots()
+        let slot = UInt32(UserDefaults.standard.integer(forKey: Self.slotKey)) % slots
+        UserDefaults.standard.set(Int((slot + 1) % slots), forKey: Self.slotKey)
+        return try WebInstall.start(ipaPath: ipa.path, iconPng: icon, slot: slot, observer: observer)
     }
 }

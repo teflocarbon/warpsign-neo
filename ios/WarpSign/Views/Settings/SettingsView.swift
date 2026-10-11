@@ -75,15 +75,15 @@ struct SettingsView: View {
                         HStack {
                             Label("Installing", systemImage: "arrow.down.app")
                             Spacer()
-                            if device.hasPairingFile {
-                                Badge("Set Up", color: .green)
+                            if device.isReady {
+                                Badge(device.method == .web ? "Over the Web" : "LocalDevVPN", color: .green)
                             } else {
                                 Badge("Not Set Up", color: .secondary)
                             }
                         }
                     }
                 } footer: {
-                    Text("Install signed apps straight onto this device, as SideStore does.")
+                    Text("Install signed apps straight onto this device.")
                 }
 
                 Section("Diagnostics") {

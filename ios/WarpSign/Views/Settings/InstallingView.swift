@@ -2,7 +2,8 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// Setting up installs on this device: a pairing file and LocalDevVPN
+/// How apps get installed on this device: over the web (no setup), or
+/// through LocalDevVPN with a pairing file
 struct InstallingView: View {
     @Environment(DeviceStore.self) private var device
     @Environment(AccountStore.self) private var account
@@ -18,7 +19,45 @@ struct InstallingView: View {
     ]
 
     var body: some View {
+        @Bindable var device = device
         List {
+            Section {
+                Picker("Method", selection: $device.method) {
+                    ForEach(InstallMethod.allCases) { method in
+                        Text(method.title).tag(method)
+                    }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+            } footer: {
+                switch device.method {
+                case .web:
+                    Text("No setup. WarpSign hands the app to iOS's own installer, as ESign does: iOS asks you to confirm, then installs it. Needs an internet connection to start each install.")
+                case .pairing:
+                    Text("WarpSign talks to this device's installer directly, as SideStore does, with clearer errors. Needs a pairing file made once on a computer, and LocalDevVPN.")
+                }
+            }
+
+            if device.method == .pairing {
+                pairingSections
+            }
+        }
+        .navigationTitle("Installing")
+        .fileImporter(isPresented: $importing, allowedContentTypes: Self.pairingTypes) { result in
+            if case .success(let url) = result {
+                device.importPairingFile(url)
+                Task { await device.check() }
+            }
+        }
+        .confirmationDialog("Remove the pairing file?", isPresented: $confirmingRemove, titleVisibility: .visible) {
+            Button("Remove", role: .destructive) { device.removePairingFile() }
+        } message: {
+            Text("WarpSign won't be able to install through LocalDevVPN until you add one again.")
+        }
+    }
+
+    @ViewBuilder
+    private var pairingSections: some View {
             Section {
                 if device.hasPairingFile {
                     Label("Pairing file added", systemImage: "checkmark.circle.fill")
@@ -94,19 +133,6 @@ struct InstallingView: View {
                 }
                 .task(id: udid) { await checkRegistration(udid) }
             }
-        }
-        .navigationTitle("Installing")
-        .fileImporter(isPresented: $importing, allowedContentTypes: Self.pairingTypes) { result in
-            if case .success(let url) = result {
-                device.importPairingFile(url)
-                Task { await device.check() }
-            }
-        }
-        .confirmationDialog("Remove the pairing file?", isPresented: $confirmingRemove, titleVisibility: .visible) {
-            Button("Remove", role: .destructive) { device.removePairingFile() }
-        } message: {
-            Text("WarpSign won't be able to install apps until you add one again.")
-        }
     }
 
     @ViewBuilder

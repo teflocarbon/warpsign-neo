@@ -34,6 +34,10 @@ targets:
       properties:
         CFBundleDisplayName: WarpSign
         UILaunchScreen: {}
+        # Keeps WarpSign alive while iOS downloads an app from it (silent
+        # audio, as ESign does): see Platform/KeepAlive.swift
+        UIBackgroundModes:
+          - audio
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft

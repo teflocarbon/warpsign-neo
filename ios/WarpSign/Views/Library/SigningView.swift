@@ -25,7 +25,11 @@ struct SigningView: View {
 
             if case .done(let result, let copy) = phase {
                 Section {
-                    InstallButton(ipa: library.signedURL(copy, of: app), name: app.displayName)
+                    InstallButton(
+                    ipa: library.signedURL(copy, of: app),
+                    name: app.displayName,
+                    icon: LibraryStore.folder(of: app.id).appendingPathComponent("icon.png")
+                )
                     ShareLink(item: library.signedURL(copy, of: app)) {
                         Label("Share Signed IPA", systemImage: "square.and.arrow.up")
                     }

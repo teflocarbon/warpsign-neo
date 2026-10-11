@@ -1,24 +1,41 @@
 import SwiftUI
+import UIKit
 
-/// Installs a signed IPA on this device, showing each step
+/// Installs a signed IPA on this device with the chosen method, showing
+/// each step
 struct InstallView: View {
     @Environment(DeviceStore.self) private var device
     let ipa: URL
     let name: String
+    /// Shown in iOS's install progress (web installs)
+    var icon: URL?
 
     private enum Phase {
         case installing
+        /// Web installs: the user still has to accept iOS's prompt
+        case waitingForPrompt
         case installed
         case failed(String, unreachable: Bool)
     }
 
     @State private var phase = Phase.installing
-    @State private var steps = [StepState](pending: installSteps())
+    @State private var steps: [StepState] = []
     @State private var started = false
+    @State private var method = InstallMethod.web
+    @State private var server: WebInstall?
 
     var body: some View {
         List {
             Section { header }
+            if case .waitingForPrompt = phase, let server {
+                Section {
+                    Button("Show the Install Prompt Again", systemImage: "arrow.clockwise") {
+                        open(server)
+                    }
+                } footer: {
+                    Text("iOS asks before installing. If you dismissed it, show it again.")
+                }
+            }
             if case .failed(_, true) = phase {
                 Section {
                     Link(destination: DeviceStore.localDevVPN) {
@@ -31,31 +48,35 @@ struct InstallView: View {
             Section {
                 StepListView(steps: steps)
             } header: {
-                Text("Steps")
+                Text(method.title)
             } footer: {
                 CopyLogButton(steps: steps)
             }
         }
         .navigationTitle("Install")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(isInstalling)
+        .navigationBarBackButtonHidden(isBusy)
         .toolbar {
             if case .failed = phase {
                 ToolbarItem(placement: .primaryAction) {
-                    Button("Try Again") {
-                        Task { await install() }
-                    }
+                    Button("Try Again") { Task { await start() } }
+                }
+            }
+            if case .waitingForPrompt = phase {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { finishWeb() }
                 }
             }
         }
         .task {
             guard !started else { return }
             started = true
-            await install()
+            await start()
         }
+        .onDisappear { finishWeb() }
     }
 
-    private var isInstalling: Bool {
+    private var isBusy: Bool {
         if case .installing = phase { return true }
         return false
     }
@@ -68,16 +89,29 @@ struct InstallView: View {
                 ProgressView()
                 VStack(alignment: .leading) {
                     Text("Installing \(name)…").font(.headline)
-                    Text("Keep WarpSign open until it's copied.")
+                    Text("Keep WarpSign open until it's sent.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
+        case .waitingForPrompt:
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Tap Install").font(.headline)
+                    Text("iOS is asking whether to install \(name).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } icon: {
+                Image(systemName: "hand.tap.fill").foregroundStyle(.tint)
+            }
         case .installed:
             Label {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Installed").font(.headline)
-                    Text("\(name) is on your Home Screen.")
+                    Text(method == .web ? "Sent to iOS" : "Installed").font(.headline)
+                    Text(method == .web
+                         ? "iOS is installing \(name): watch the Home Screen."
+                         : "\(name) is on your Home Screen.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -89,7 +123,15 @@ struct InstallView: View {
         }
     }
 
-    private func install() async {
+    private func start() async {
+        method = device.method
+        switch method {
+        case .web: startWeb()
+        case .pairing: await installWithPairing()
+        }
+    }
+
+    private func installWithPairing() async {
         phase = .installing
         steps = [StepState](pending: installSteps())
         let recorder = StepRecorder { event in
@@ -104,6 +146,49 @@ struct InstallView: View {
             phase = .failed(error.userMessage, unreachable: false)
         }
     }
+
+    private func startWeb() {
+        server?.stop()
+        steps = [StepState](pending: webInstallSteps())
+        let recorder = StepRecorder { event in
+            steps.apply(event)
+            switch event {
+            case .started(.sendToIos):
+                phase = .installing
+            case .finished(.sendToIos, _, nil):
+                phase = .installed
+                // iOS may come back for a piece it missed: keep serving a bit
+                Task {
+                    try? await Task.sleep(for: .seconds(60))
+                    finishWeb()
+                }
+            default:
+                break
+            }
+        }
+        do {
+            let iconData = icon.flatMap { try? Data(contentsOf: $0) }
+            let server = try device.startWebInstall(ipa, icon: iconData, observer: recorder)
+            self.server = server
+            KeepAlive.shared.start()
+            phase = .waitingForPrompt
+            open(server)
+        } catch {
+            phase = .failed(error.userMessage, unreachable: false)
+        }
+    }
+
+    private func open(_ server: WebInstall) {
+        if let url = URL(string: server.installLink()) {
+            UIApplication.shared.open(url)
+        }
+    }
+
+    private func finishWeb() {
+        server?.stop()
+        server = nil
+        KeepAlive.shared.stop()
+    }
 }
 
 /// Install, or explain how to set installing up
@@ -111,11 +196,12 @@ struct InstallButton: View {
     @Environment(DeviceStore.self) private var device
     let ipa: URL
     let name: String
+    var icon: URL?
 
     var body: some View {
-        if device.hasPairingFile {
+        if device.isReady {
             NavigationLink {
-                InstallView(ipa: ipa, name: name)
+                InstallView(ipa: ipa, name: name, icon: icon)
             } label: {
                 Label("Install on This Device", systemImage: "arrow.down.app")
                     .font(.headline)
