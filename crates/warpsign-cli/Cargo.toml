@@ -1,0 +1,23 @@
+[package]
+name = "warpsign-cli"
+description = "Command-line front-end for warpsign-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "warpsign"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22"
+clap = { version = "4", features = ["derive", "env"] }
+dirs = "5"
+rpassword = "7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+ureq = "2"
+warpsign-core = { path = "../warpsign-core" }
