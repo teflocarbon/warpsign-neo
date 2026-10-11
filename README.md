@@ -87,6 +87,9 @@ warpsign inspect App.ipa
 warpsign profile *.mobileprovision # PPQ check
 warpsign status
 warpsign device list               # the devices signed apps install on
+warpsign sign App.ipa --install    # sign, then install over USB
+warpsign install App-signed.ipa    # install over USB
+warpsign pair                      # pairing file so the phone can install on itself
 ```
 
 Not ported yet: `--patch-liquid-glass`, `--hide-home-indicator` and `--inject-warpsign-fix`, which edit Mach-O load commands (Python warpsign used LIEF).

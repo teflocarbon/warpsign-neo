@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use warpsign_core::device::{self, Target};
 use warpsign_core::identity::{self, CertificateKind, Identity};
 use warpsign_core::info_plist::{PatchingOptions, StatusBarStyle, UiStyle};
 use warpsign_core::pipeline::{self, SignOptions};
@@ -69,6 +70,23 @@ enum Command {
     },
     /// Re-sign an IPA for your team
     Sign(SignArgs),
+    /// Install a signed IPA on a device connected by USB
+    Install {
+        ipa: PathBuf,
+        /// Which device, if more than one is connected
+        #[arg(long)]
+        udid: Option<String>,
+    },
+    /// Make a pairing file for WarpSign on a USB-connected iPhone or iPad,
+    /// so it can install apps on itself (through LocalDevVPN)
+    Pair {
+        /// Which device, if more than one is connected
+        #[arg(long)]
+        udid: Option<String>,
+        /// Where to write it [default: <UDID>.mobiledevicepairing]
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -172,6 +190,12 @@ struct SignArgs {
     /// Remove URL scheme registrations
     #[arg(long)]
     remove_url_schemes: bool,
+    /// Then install it on a device connected by USB
+    #[arg(long)]
+    install: bool,
+    /// Which device to install on, if more than one is connected
+    #[arg(long, requires = "install")]
+    udid: Option<String>,
 }
 
 fn main() {
@@ -216,6 +240,8 @@ fn run(cli: Cli) -> Result<()> {
         Command::Inspect { ipa } => inspect(&ipa),
         Command::Profile { files } => profiles(&files),
         Command::Sign(args) => sign(&store, args),
+        Command::Install { ipa, udid } => install(&ipa, udid),
+        Command::Pair { udid, output } => pair(udid, output),
     }
 }
 
@@ -521,10 +547,22 @@ fn device_command(store: &Store, command: DeviceCommand) -> Result<()> {
 // Apps
 
 /// Prints steps as they run
-struct Printer;
+#[derive(Default)]
+struct Printer {
+    /// Last tenth of progress printed
+    shown: std::sync::atomic::AtomicU32,
+}
 
 impl ProgressObserver for Printer {
+    fn step_progress(&self, _step: Step, fraction: f64) {
+        use std::sync::atomic::Ordering;
+        let tenth = (fraction * 10.0).floor() as u32;
+        if tenth > self.shown.swap(tenth, Ordering::Relaxed) {
+            eprintln!("    {}%", tenth * 10);
+        }
+    }
     fn step_started(&self, step: Step) {
+        self.shown.store(0, std::sync::atomic::Ordering::Relaxed);
         eprintln!("▸ {}", step.title());
     }
     fn step_log(&self, _step: Step, message: &str) {
@@ -540,7 +578,7 @@ impl ProgressObserver for Printer {
 
 fn inspect(ipa: &Path) -> Result<()> {
     let work = tempfile::tempdir()?;
-    let app = pipeline::inspect_ipa(ipa, work.path(), &Printer)?;
+    let app = pipeline::inspect_ipa(ipa, work.path(), &Printer::default())?;
     for component in &app.components {
         let path = warpsign_core::inspect::slash_path(&component.path);
         println!(
@@ -637,7 +675,7 @@ fn sign(store: &Store, args: SignArgs) -> Result<()> {
         &output,
         work.path(),
         &options,
-        &Printer,
+        &Printer::default(),
     );
     // Keep refreshed cookies and tokens, even if signing failed
     store.save_session(&auth.session())?;
@@ -646,5 +684,38 @@ fn sign(store: &Store, args: SignArgs) -> Result<()> {
         eprintln!("warning: {warning}");
     }
     println!("Signed {} as {}", output.display(), signed.bundle_id);
+    if args.install {
+        install(&output, args.udid)?;
+    }
+    Ok(())
+}
+
+fn install(ipa: &Path, udid: Option<String>) -> Result<()> {
+    device::install_ipa(&Target::Usb { udid }, ipa, &Printer::default())?;
+    println!("Installed {}", ipa.display());
+    Ok(())
+}
+
+fn pair(udid: Option<String>, output: Option<PathBuf>) -> Result<()> {
+    let devices = device::usb_devices()?;
+    let udid = match (udid, devices.as_slice()) {
+        (Some(udid), _) => udid,
+        (None, []) => bail!("no iPhone or iPad is connected by USB"),
+        (None, [only]) => only.clone(),
+        (None, _) => bail!(
+            "more than one device is connected; pick one with --udid: {}",
+            devices.join(", ")
+        ),
+    };
+    eprintln!("Unlock the device, and tap Trust if it asks.");
+    let host = std::env::var("HOSTNAME")
+        .or_else(|_| std::env::var("COMPUTERNAME"))
+        .unwrap_or_else(|_| "warpsign".into());
+    let (udid, data) = device::create_pairing_file(Some(&udid), &host)?;
+    let output = output.unwrap_or_else(|| PathBuf::from(format!("{udid}.mobiledevicepairing")));
+    write_private(&output, &data).with_context(|| format!("writing {}", output.display()))?;
+    println!("Wrote {}", output.display());
+    println!("AirDrop it to the device and open it in WarpSign (Settings > Installing).");
+    println!("It lets apps on that device install apps: keep it private.");
     Ok(())
 }
