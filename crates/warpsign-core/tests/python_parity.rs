@@ -230,6 +230,32 @@ fn entitlements_processor_matches() {
     }
 }
 
+/// Mirrors `apple_entitlements_processor_cases` in tools/gen_fixtures.py:
+/// the processor against a real capabilities response from Apple
+#[test]
+fn entitlements_processor_matches_on_apples_response() {
+    let capabilities = load_fixture("capabilities_apple.json");
+    assert_eq!(capabilities["data"].as_array().unwrap().len(), 135);
+    for case in cases(&load_fixture("entitlements_processor_apple.json")) {
+        let name = str_of(&case["name"]);
+        let profile_type: ProfileType = str_of(&case["profile_type"]).parse().unwrap();
+
+        let plan = EntitlementsProcessor::new(&capabilities, profile_type)
+            .process(&dict(&case["entitlements"]));
+
+        assert_eq!(
+            plan.capabilities_to_enable.into_iter().collect::<Vec<_>>(),
+            strings(&case["expected"]["capabilities_to_enable"]),
+            "{name}: capabilities"
+        );
+        assert_eq!(
+            plan.entitlements_to_remove.into_iter().collect::<Vec<_>>(),
+            strings(&case["expected"]["entitlements_to_remove"]),
+            "{name}: removals"
+        );
+    }
+}
+
 /// Mirrors `inspection_cases` in tools/gen_fixtures.py
 #[test]
 fn app_inspection_matches() {

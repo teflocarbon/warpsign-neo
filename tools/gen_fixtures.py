@@ -424,6 +424,72 @@ def entitlements_processor_cases() -> list:
     return cases
 
 
+def _profile_keys(value) -> set:
+    """Every profileKey anywhere in a capabilities response"""
+    keys = set()
+    if isinstance(value, dict):
+        if isinstance(value.get("profileKey"), str):
+            keys.add(value["profileKey"])
+        for item in value.values():
+            keys |= _profile_keys(item)
+    elif isinstance(value, list):
+        for item in value:
+            keys |= _profile_keys(item)
+    return keys
+
+
+def apple_entitlements_processor_cases() -> list:
+    """The processor against a real capabilities response from Apple
+    (fixtures/capabilities_apple.json, saved with `warpsign capabilities
+    --json`, October 2026: 135 capabilities)"""
+    with open(FIXTURES_DIR / "capabilities_apple.json") as f:
+        response = json.load(f)
+    every_key = {key: True for key in sorted(_profile_keys(response))}
+    entitlement_sets = {
+        # Every key Apple lists, plus the core identifiers and unknown keys
+        "every_key": dict(
+            every_key,
+            **{
+                "application-identifier": f"{TEAM_A}.com.example.app",
+                "com.apple.developer.team-identifier": TEAM_A,
+                "keychain-access-groups": [f"{TEAM_A}.com.example.app"],
+                "get-task-allow": True,
+                "com.example.unknown": True,
+            },
+        ),
+        "typical_app": dict(FULL_ENTITLEMENTS),
+        # Offered by both a development and a distribution capability
+        "family_controls": {"com.apple.developer.family-controls": True},
+        # Offered by two capabilities of the same kind
+        "storekit_external_purchase": {
+            "com.apple.developer.storekit.custom-purchase-link.allowed-regions": ["US"],
+        },
+        # Enhanced Security's many keys
+        "hardened_process": {
+            "com.apple.security.hardened-process": True,
+            "com.apple.security.hardened-process.hardened-heap": True,
+            "com.apple.security.hardened-process.enhanced-security-version": 1,
+        },
+    }
+    cases = []
+    for profile_type in ["development", "adhoc"]:
+        for name, entitlements in entitlement_sets.items():
+            processor = EntitlementsProcessor(response, profile_type)
+            enable, remove = processor.process_entitlements(entitlements)
+            cases.append(
+                {
+                    "name": f"{name}_{profile_type}",
+                    "profile_type": profile_type,
+                    "entitlements": entitlements,
+                    "expected": {
+                        "capabilities_to_enable": sorted(enable),
+                        "entitlements_to_remove": sorted(remove),
+                    },
+                }
+            )
+    return cases
+
+
 # --- Apple SRP login ------------------------------------------------------
 
 
@@ -1133,6 +1199,7 @@ if __name__ == "__main__":
         json.dump(CAPABILITIES_RESPONSE, f, indent=2)
         f.write("\n")
     write("entitlements_processor", entitlements_processor_cases())
+    write("entitlements_processor_apple", apple_entitlements_processor_cases())
     write("app_inspection", inspection_cases())
     write("info_plist_patching", info_plist_cases())
     write("srp", srp_cases())

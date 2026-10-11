@@ -80,6 +80,8 @@ pub struct EntitlementNameInfo {
     /// The portal capability that grants it, e.g. "PUSH_NOTIFICATIONS";
     /// None for keys that are never capabilities
     pub capability: Option<String>,
+    /// The SF Symbol the portal shows for its capability, if it gives one
+    pub symbol: Option<String>,
 }
 
 /// Every entitlement key with a name, sorted by key. Names come from
@@ -116,6 +118,7 @@ pub(crate) fn name_info(key: &str, name: EntitlementName) -> EntitlementNameInfo
         name: name.name,
         description: name.description,
         capability: name.capability,
+        symbol: name.symbol,
     }
 }
 

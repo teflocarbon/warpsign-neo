@@ -19,6 +19,8 @@ pub struct EntitlementName {
     /// The portal capability that grants it, e.g. "PUSH_NOTIFICATIONS".
     /// None for keys that aren't capabilities.
     pub capability: Option<String>,
+    /// The SF Symbol the portal shows for that capability, e.g. "globe"
+    pub symbol: Option<String>,
 }
 
 /// Keys every signed app has (or may have) that no portal capability
@@ -59,6 +61,7 @@ fn not_capability(key: &str) -> Option<EntitlementName> {
             name: (*name).to_string(),
             description: Some((*description).to_string()),
             capability: None,
+            symbol: None,
         })
 }
 
@@ -73,6 +76,8 @@ pub struct PortalCapability {
     /// then those in its settings' options' entitlements (where iCloud,
     /// Data Protection and others list theirs), without repeats
     pub entitlement_keys: Vec<String>,
+    /// `attributes.sfSymbolIcon`: the SF Symbol the portal shows for it
+    pub symbol: Option<String>,
 }
 
 /// Every capability in a `/services-account/v1/capabilities` response, in
@@ -117,6 +122,7 @@ pub fn capabilities(response: &Json) -> Vec<PortalCapability> {
                 name: string(attributes, "name"),
                 description: string(attributes, "description"),
                 entitlement_keys,
+                symbol: string(attributes, "sfSymbolIcon"),
             }
         })
         .collect()
@@ -149,6 +155,7 @@ impl EntitlementNames {
                     name: name.clone(),
                     description: capability.description.clone(),
                     capability: capability.id.clone(),
+                    symbol: capability.symbol.clone(),
                 });
             }
         }
@@ -179,6 +186,39 @@ impl EntitlementNames {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A real response from Apple (October 2026): every key it lists gets
+    /// its capability's name, and the portal's symbols come through
+    #[test]
+    fn names_every_key_in_apples_response() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../fixtures/capabilities_apple.json"
+        );
+        let response: Json = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let listed = capabilities(&response);
+        assert_eq!(listed.len(), 135);
+        let keys: std::collections::BTreeSet<&String> =
+            listed.iter().flat_map(|c| &c.entitlement_keys).collect();
+        assert_eq!(keys.len(), 149);
+
+        let names = EntitlementNames::from_capabilities(&response);
+        for key in &keys {
+            assert!(names.get(key).is_some(), "{key} has no name");
+        }
+        let domains = names.get("com.apple.developer.associated-domains").unwrap();
+        assert_eq!(domains.name, "Associated Domains");
+        assert_eq!(domains.capability.as_deref(), Some("ASSOCIATED_DOMAINS"));
+        assert_eq!(domains.symbol.as_deref(), Some("globe"));
+        // Only under iCloud's settings options
+        assert_eq!(
+            names
+                .get("com.apple.developer.icloud-container-environment")
+                .unwrap()
+                .name,
+            "iCloud"
+        );
+    }
 
     fn fixture() -> Json {
         serde_json::from_str(include_str!("../../../fixtures/capabilities_response.json")).unwrap()
