@@ -381,6 +381,7 @@ final class AccountStore {
             throw WarpsignError.Signing(message: signingBlocker(for: kind) ?? "Not ready to sign.")
         }
         let teamId = team.teamId
+        let profileCacheDir = Self.profileCacheDir.path
         let workDir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: workDir) }
@@ -393,7 +394,7 @@ final class AccountStore {
                     outputPath: output.path,
                     workDir: workDir.path,
                     settings: settings,
-                    profileCacheDir: Self.profileCacheDir.path,
+                    profileCacheDir: profileCacheDir,
                     observer: observer
                 )
             }
