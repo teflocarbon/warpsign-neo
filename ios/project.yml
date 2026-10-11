@@ -24,6 +24,8 @@ targets:
       base:
         # Change to your own; the app re-provisions itself once installed
         PRODUCT_BUNDLE_IDENTIFIER: com.example.warpsign
+        # The Rust core is only built for arm64 simulators (Apple silicon)
+        "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
         TARGETED_DEVICE_FAMILY: "1,2"
     info:
       path: WarpSign/Info.plist
