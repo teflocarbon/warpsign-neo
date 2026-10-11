@@ -145,13 +145,14 @@ private struct SignedCopyRow: View {
     }
 }
 
-/// One signed copy: install or share it
+/// One signed copy: install or share it, and see how it was signed
 private struct SignedCopyView: View {
     @Environment(LibraryStore.self) private var library
     let app: LibraryApp
     let copy: SignedCopy
 
     var body: some View {
+        let record = library.signingRecord(for: copy, of: app)
         List {
             Section {
                 InstallButton(
@@ -180,8 +181,134 @@ private struct SignedCopyView: View {
                     }
                 }
             }
+
+            if let record {
+                SigningRecordSections(record: record)
+            } else {
+                Section {
+                    Text("This copy was signed before WarpSign kept a record of each sign. Sign the app again to see what each part was signed with, and the steps.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .navigationTitle(app.displayName)
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// How a signed copy was made: warnings, entitlements per component,
+/// options and the steps, as kept when it was signed
+private struct SigningRecordSections: View {
+    let record: SigningRecord
+
+    var body: some View {
+        if !record.warnings.isEmpty {
+            Section("Warnings") {
+                ForEach(record.warnings, id: \.self) { warning in
+                    Label(warning, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                        .font(.callout)
+                }
+            }
+        }
+
+        let components = listedComponents(record.components)
+        if !components.isEmpty {
+            Section {
+                ForEach(components) { component in
+                    NavigationLink {
+                        SignedComponentView(component: component)
+                    } label: {
+                        SignedComponentRow(component: component)
+                    }
+                }
+            } header: {
+                Text("Entitlements")
+            } footer: {
+                Text("What each part was signed with, and what changed. Frameworks are signed without entitlements.")
+            }
+        }
+
+        if !record.profiles.isEmpty {
+            Section("Profiles") {
+                ForEach(record.profiles, id: \.bundlePath) { profile in
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text(profile.bundlePath.isEmpty ? "App" : profile.bundlePath)
+                            Spacer()
+                            Badge(profile.ppqCheck ? "PPQ on" : "PPQ off", color: profile.ppqCheck ? .orange : .green)
+                        }
+                        Text(profile.name)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+        }
+
+        Section {
+            NavigationLink {
+                SigningOptionsSummary(options: record.options, customIcon: record.customIcon)
+            } label: {
+                Label("Signing Options", systemImage: "slider.horizontal.3")
+            }
+        }
+
+        if !record.steps.isEmpty {
+            Section {
+                SavedStepListView(steps: record.steps)
+            } header: {
+                Text("Steps")
+            } footer: {
+                CopyLogButton(savedSteps: record.steps)
+            }
+        }
+    }
+}
+
+/// The options a copy was signed with
+private struct SigningOptionsSummary: View {
+    let options: SigningOptions?
+    let customIcon: Bool
+
+    var body: some View {
+        List {
+            if let options {
+                Section {
+                    LabeledContent("Certificate", value: options.certificate.title)
+                }
+                Section("Identifiers") {
+                    row("Unique Identifiers", options.encodeIds)
+                    row("Patch IDs in Binaries", options.patchIds)
+                    row("Keep Original Bundle ID", options.forceOriginalId)
+                }
+                Section("App") {
+                    LabeledContent("Name", value: options.bundleName.isEmpty ? "Unchanged" : options.bundleName)
+                    LabeledContent("Icon", value: customIcon ? "Replaced" : "Unchanged")
+                    row("Support All Devices", options.patchAllDevices)
+                    row("File Sharing", options.patchFileSharing)
+                    row("ProMotion (120 Hz)", options.patchPromotion)
+                    row("Fullscreen on iPad", options.patchFullscreen)
+                    row("All Orientations", options.patchOrientation)
+                    row("Game Mode", options.patchGameMode)
+                    row("Remove URL Schemes", options.removeUrlSchemes)
+                    LabeledContent("Status Bar", value: options.statusBar.title)
+                    LabeledContent("Appearance", value: options.interfaceStyle.title)
+                }
+                Section {
+                    row("Allow Debugging", options.patchDebug)
+                }
+            } else {
+                Text("The options weren't recorded.").foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle("Signing Options")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func row(_ title: String, _ on: Bool) -> some View {
+        LabeledContent(title, value: on ? "On" : "Off")
     }
 }

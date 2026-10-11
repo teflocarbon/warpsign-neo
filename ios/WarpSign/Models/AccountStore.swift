@@ -318,6 +318,33 @@ final class AccountStore {
         }
     }
 
+    // MARK: Entitlement names
+
+    /// Names for entitlement keys, from the team's capabilities on the
+    /// Developer Portal: fetched when signed in (and kept), otherwise the
+    /// last ones fetched. With neither, only keys that are never
+    /// capabilities have names.
+    func entitlementNames() async -> EntitlementNames {
+        var json: String?
+        if let account, let team = selectedTeam {
+            let teamId = team.teamId
+            do {
+                let fetched = try await background { try account.capabilities(teamId: teamId) }
+                CapabilitiesCache.save(fetched, team: teamId)
+                saveSession()
+                json = fetched
+            } catch {
+                _ = handle(error)
+            }
+        }
+        if json == nil, let teamId = selectedTeamId {
+            json = CapabilitiesCache.load(team: teamId)
+        }
+        let found = json
+        return (try? await background { EntitlementNames.from(capabilitiesJson: found) })
+            ?? EntitlementNames()
+    }
+
     // MARK: Signing
 
     /// Why signing can't start yet, if it can't
@@ -364,6 +391,8 @@ final class AccountStore {
             if !result.profiles.isEmpty {
                 recordPPQ(result.profiles.contains { $0.ppqCheck }, team: teamId)
             }
+            // The capabilities it fetched name entitlements: keep them
+            CapabilitiesCache.save(result.capabilitiesJson, team: teamId)
             saveSession()
             return result
         } catch {

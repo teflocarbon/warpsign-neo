@@ -15,6 +15,9 @@ final class InspectionModel {
     private(set) var state: State = .idle
     /// Steps of the current or last inspection
     private(set) var steps: [StepState] = []
+    /// Names for entitlement keys, from the portal (see
+    /// `AccountStore.entitlementNames`)
+    var entitlementNames = EntitlementNames()
 
     private(set) var profiles: [ProfileInfo] = []
     private(set) var profileError: String?

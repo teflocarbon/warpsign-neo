@@ -77,6 +77,7 @@ enum Demo {
     @MainActor static func library() -> LibraryStore {
         var apps: [LibraryApp] = []
         var icons: [UUID: UIImage] = [:]
+        var records: [UUID: SigningRecord] = [:]
         for (index, (sample, id)) in zip(samples, appIds).enumerated() {
             var app = LibraryApp(
                 id: id,
@@ -93,12 +94,21 @@ enum Demo {
                 origin: sample.name == "Arcade 64" ? "Example Repo" : nil
             )
             if sample.signed {
-                app.signedCopies = [signedCopy(for: sample)]
+                let copy = signedCopy(for: sample)
+                app.signedCopies = [copy]
+                records[copy.id] = SigningRecord(
+                    options: SigningOptions(),
+                    customIcon: false,
+                    warnings: [],
+                    profiles: [],
+                    components: components(for: copy, originalId: sample.bundleId).map { SavedComponent($0) },
+                    steps: signingResult.2.map { SavedStep($0) }
+                )
             }
             apps.append(app)
             icons[id] = icon(sample.symbol, sample.colors)
         }
-        return LibraryStore(demoApps: apps, icons: icons)
+        return LibraryStore(demoApps: apps, icons: icons, records: records)
     }
 
     static func signedCopy(for sample: SampleApp) -> SignedCopy {
@@ -233,9 +243,88 @@ enum Demo {
                 SignedProfileInfo(bundlePath: "", bundleId: copy.bundleId, name: "TS \(copy.bundleId) Development", ppqCheck: false, expiresAt: Int64(Date(timeIntervalSinceNow: 86_400 * 364).timeIntervalSince1970)),
                 SignedProfileInfo(bundlePath: "PlugIns/Widget.appex", bundleId: "\(copy.bundleId).widget", name: "TS \(copy.bundleId).widget Development", ppqCheck: false, expiresAt: Int64(Date(timeIntervalSinceNow: 86_400 * 364).timeIntervalSince1970)),
             ],
-            warnings: []
+            warnings: [],
+            components: components(for: copy),
+            capabilitiesJson: "{\"data\":[]}"
         )
         return (result, copy, steps)
+    }
+
+    static func plist(_ dictionary: [String: Any]) -> String {
+        let data = try? PropertyListSerialization.data(fromPropertyList: dictionary, format: .xml, options: 0)
+        return data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+    }
+
+    /// The sample app's components, before and after signing
+    static func components(for copy: SignedCopy, originalId: String = "com.lumen.camera") -> [SignedComponentInfo] {
+        let oldTeam = "QWERT67890"
+        let newId = copy.bundleId
+        let names = [
+            EntitlementNameInfo(key: "application-identifier", name: "App ID", description: nil, capability: nil),
+            EntitlementNameInfo(key: "com.apple.developer.team-identifier", name: "Team ID", description: nil, capability: nil),
+            EntitlementNameInfo(key: "keychain-access-groups", name: "Keychain Groups", description: nil, capability: nil),
+            EntitlementNameInfo(key: "get-task-allow", name: "Debugging", description: nil, capability: nil),
+            EntitlementNameInfo(key: "aps-environment", name: "Push Notifications", description: nil, capability: "PUSH_NOTIFICATIONS"),
+            EntitlementNameInfo(key: "com.apple.security.application-groups", name: "App Groups", description: nil, capability: "APP_GROUPS"),
+            EntitlementNameInfo(key: "com.apple.developer.healthkit", name: "HealthKit", description: nil, capability: "HEALTHKIT"),
+        ]
+        let app = SignedComponentInfo(
+            path: "",
+            isPrimary: true,
+            originalBundleId: originalId,
+            bundleId: newId,
+            originalEntitlementsXml: plist([
+                "application-identifier": "\(oldTeam).\(originalId)",
+                "com.apple.developer.team-identifier": oldTeam,
+                "aps-environment": "production",
+                "com.apple.security.application-groups": ["group.\(originalId)"],
+                "keychain-access-groups": ["\(oldTeam).\(originalId)"],
+                "com.apple.developer.healthkit": true,
+                "get-task-allow": false,
+            ]),
+            entitlementsXml: plist([
+                "application-identifier": "\(team.teamId).\(newId)",
+                "com.apple.developer.team-identifier": team.teamId,
+                "aps-environment": "development",
+                "com.apple.security.application-groups": ["group.\(newId)"],
+                "keychain-access-groups": ["\(team.teamId).\(newId)"],
+            ]),
+            capabilities: ["APP_GROUPS", "PUSH_NOTIFICATIONS"],
+            changes: [
+                EntitlementChangeInfo(key: "application-identifier", kind: .changed, reason: "Remapped to the new team and identifiers"),
+                EntitlementChangeInfo(key: "aps-environment", kind: .changed, reason: "Set to match the provisioning profile type"),
+                EntitlementChangeInfo(key: "com.apple.developer.healthkit", kind: .removed, reason: "No matching capability on the Developer Portal"),
+                EntitlementChangeInfo(key: "com.apple.developer.team-identifier", kind: .changed, reason: "Remapped to the new team and identifiers"),
+                EntitlementChangeInfo(key: "com.apple.security.application-groups", kind: .changed, reason: "Remapped to the new team and identifiers"),
+                EntitlementChangeInfo(key: "get-task-allow", kind: .removed, reason: "Debugging is off in the signing options"),
+                EntitlementChangeInfo(key: "keychain-access-groups", kind: .changed, reason: "Remapped to the new team and identifiers"),
+            ],
+            entitlementNames: names
+        )
+        let widget = SignedComponentInfo(
+            path: "PlugIns/Widget.appex",
+            isPrimary: true,
+            originalBundleId: "\(originalId).widget",
+            bundleId: "\(newId).widget",
+            originalEntitlementsXml: plist([
+                "application-identifier": "\(oldTeam).\(originalId).widget",
+                "com.apple.developer.team-identifier": oldTeam,
+                "com.apple.security.application-groups": ["group.\(originalId)"],
+            ]),
+            entitlementsXml: plist([
+                "application-identifier": "\(team.teamId).\(newId).widget",
+                "com.apple.developer.team-identifier": team.teamId,
+                "com.apple.security.application-groups": ["group.\(newId)"],
+            ]),
+            capabilities: ["APP_GROUPS"],
+            changes: [
+                EntitlementChangeInfo(key: "application-identifier", kind: .changed, reason: "Remapped to the new team and identifiers"),
+                EntitlementChangeInfo(key: "com.apple.developer.team-identifier", kind: .changed, reason: "Remapped to the new team and identifiers"),
+                EntitlementChangeInfo(key: "com.apple.security.application-groups", kind: .changed, reason: "Remapped to the new team and identifiers"),
+            ],
+            entitlementNames: names
+        )
+        return [app, widget]
     }
 
     static var installSteps: [StepState] {

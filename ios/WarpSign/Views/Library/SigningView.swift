@@ -60,6 +60,19 @@ struct SigningView: View {
                         }
                     }
                 }
+                Section {
+                    ForEach(listedComponents(result.components.map { SavedComponent($0) })) { component in
+                        NavigationLink {
+                            SignedComponentView(component: component)
+                        } label: {
+                            SignedComponentRow(component: component)
+                        }
+                    }
+                } header: {
+                    Text("Entitlements")
+                } footer: {
+                    Text("What each part was signed with, and what changed. Frameworks are signed without entitlements.")
+                }
                 Section("Profiles") {
                     ForEach(result.profiles, id: \.bundlePath) { profile in
                         VStack(alignment: .leading, spacing: 3) {
@@ -156,7 +169,10 @@ struct SigningView: View {
             copy.profileExpires = result.profiles
                 .compactMap { $0.expiresAt.map(Date.init(unixTime:)) }
                 .min()
-            library.addSignedCopy(copy, to: app)
+            // Let the last step events (queued on the main thread) land first
+            await Task.yield()
+            let record = SigningRecord(result: result, options: options, customIcon: icon != nil, steps: steps)
+            library.addSignedCopy(copy, record: record, to: app)
             phase = .done(result, copy)
         } catch {
             try? FileManager.default.removeItem(at: output.deletingLastPathComponent())

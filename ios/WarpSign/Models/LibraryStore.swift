@@ -55,6 +55,10 @@ final class LibraryStore {
     var importError: String?
 
     @ObservationIgnored private var icons: [UUID: UIImage] = [:]
+    /// Signing records read so far, by signed copy
+    @ObservationIgnored private var records: [UUID: SigningRecord] = [:]
+    /// Signed copies with no record (signed before records were kept)
+    @ObservationIgnored private var missingRecords: Set<UUID> = []
     /// Screenshots: sample apps, nothing read or written on disk
     @ObservationIgnored private var isDemo = false
 
@@ -72,9 +76,10 @@ final class LibraryStore {
         }
     }
 
-    init(demoApps: [LibraryApp], icons: [UUID: UIImage]) {
+    init(demoApps: [LibraryApp], icons: [UUID: UIImage], records: [UUID: SigningRecord] = [:]) {
         apps = demoApps
         self.icons = icons
+        self.records = records
         isDemo = true
     }
 
@@ -212,8 +217,36 @@ final class LibraryStore {
         return (url, copy)
     }
 
-    func addSignedCopy(_ copy: SignedCopy, to app: LibraryApp) {
+    /// How a signed copy was made, kept beside its IPA as signing.json
+    private func recordURL(_ copy: SignedCopy, of app: LibraryApp) -> URL {
+        signedURL(copy, of: app)
+            .deletingLastPathComponent()
+            .appendingPathComponent("signing.json")
+    }
+
+    /// How a signed copy was made: options, entitlements per component and
+    /// the steps. nil for copies signed before WarpSign kept these.
+    func signingRecord(for copy: SignedCopy, of app: LibraryApp) -> SigningRecord? {
+        if let record = records[copy.id] { return record }
+        guard !isDemo, !missingRecords.contains(copy.id),
+              let data = try? Data(contentsOf: recordURL(copy, of: app)),
+              let record = try? JSONDecoder().decode(SigningRecord.self, from: data)
+        else {
+            missingRecords.insert(copy.id)
+            return nil
+        }
+        records[copy.id] = record
+        return record
+    }
+
+    func addSignedCopy(_ copy: SignedCopy, record: SigningRecord? = nil, to app: LibraryApp) {
         guard let index = apps.firstIndex(where: { $0.id == app.id }) else { return }
+        if let record {
+            records[copy.id] = record
+            if !isDemo, let data = try? JSONEncoder().encode(record) {
+                try? data.write(to: recordURL(copy, of: app), options: .atomic)
+            }
+        }
         apps[index].signedCopies.insert(copy, at: 0)
         save()
     }
@@ -221,6 +254,7 @@ final class LibraryStore {
     func deleteSignedCopy(_ copy: SignedCopy, of app: LibraryApp) {
         guard let index = apps.firstIndex(where: { $0.id == app.id }) else { return }
         apps[index].signedCopies.removeAll { $0.id == copy.id }
+        records[copy.id] = nil
         try? FileManager.default.removeItem(at: signedURL(copy, of: app).deletingLastPathComponent())
         save()
     }

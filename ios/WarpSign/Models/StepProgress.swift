@@ -2,7 +2,8 @@ import Foundation
 
 /// One step of an operation, as shown in the checklist
 struct StepState: Identifiable {
-    enum Status: Equatable {
+    /// Codable so finished steps can be kept with a signed copy
+    enum Status: Equatable, Codable {
         case pending
         case running
         case done(milliseconds: UInt64)
@@ -17,6 +18,19 @@ struct StepState: Identifiable {
     var progress: Double?
 
     var id: Step { step }
+
+    /// A step's lines in a plain-text log
+    static func transcript(title: String, status: Status, log: [String]) -> String {
+        let summary: String
+        switch status {
+        case .pending: summary = "not run"
+        case .running: summary = "running"
+        case .done(let ms): summary = "ok (\(ms) ms)"
+        case .failed(let ms, let message): summary = "FAILED (\(ms) ms): \(message)"
+        }
+        let lines = log.map { "    \($0)" }
+        return (["\(title): \(summary)"] + lines).joined(separator: "\n")
+    }
 }
 
 /// Receives step events from Rust on a background thread and hands them to
@@ -91,17 +105,7 @@ extension Array where Element == StepState {
 
     /// Plain-text log of every step, for copying into a bug report
     var transcript: String {
-        map { state in
-            let status: String
-            switch state.status {
-            case .pending: status = "not run"
-            case .running: status = "running"
-            case .done(let ms): status = "ok (\(ms) ms)"
-            case .failed(let ms, let message): status = "FAILED (\(ms) ms): \(message)"
-            }
-            let lines = state.log.map { "    \($0)" }
-            return (["\(state.title): \(status)"] + lines).joined(separator: "\n")
-        }
-        .joined(separator: "\n")
+        map { StepState.transcript(title: $0.title, status: $0.status, log: $0.log) }
+            .joined(separator: "\n")
     }
 }

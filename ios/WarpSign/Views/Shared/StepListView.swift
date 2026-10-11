@@ -7,30 +7,45 @@ struct StepListView: View {
 
     var body: some View {
         ForEach(steps) { step in
-            StepRow(step: step)
+            StepRow(title: step.title, status: step.status, log: step.log, progress: step.progress)
+        }
+    }
+}
+
+/// The steps of a finished operation, as kept with a signed copy
+struct SavedStepListView: View {
+    let steps: [SavedStep]
+
+    var body: some View {
+        ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
+            StepRow(title: step.title, status: step.status, log: step.log, progress: nil)
         }
     }
 }
 
 private struct StepRow: View {
-    let step: StepState
+    let title: String
+    let status: StepState.Status
+    let log: [String]
+    /// 0...1 while a long step reports how far it is
+    let progress: Double?
     @State private var expanded = false
 
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
-            if case .failed(_, let message) = step.status {
+            if case .failed(_, let message) = status {
                 Text(message)
                     .font(.callout)
                     .foregroundStyle(.red)
                     .textSelection(.enabled)
             }
-            ForEach(Array(step.log.enumerated()), id: \.offset) { _, line in
+            ForEach(Array(log.enumerated()), id: \.offset) { _, line in
                 Text(line)
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
             }
-            if step.log.isEmpty, step.status == .pending {
+            if log.isEmpty, status == .pending {
                 Text("Not run").font(.caption).foregroundStyle(.secondary)
             }
         } label: {
@@ -38,36 +53,36 @@ private struct StepRow: View {
                 HStack(spacing: 12) {
                     statusIcon
                         .frame(width: 22)
-                    Text(step.title)
+                    Text(title)
                     Spacer()
                     if let duration {
                         Text(duration)
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
-                    } else if let progress = step.progress {
+                    } else if let progress {
                         Text(progress, format: .percent.precision(.fractionLength(0)))
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
                 }
-                if let progress = step.progress, step.status == .running {
+                if let progress, status == .running {
                     ProgressView(value: progress)
                         .padding(.leading, 34)
                 }
             }
         }
-        .onChange(of: step.status) { _, status in
+        .onChange(of: status) { _, status in
             // Open a failed step straight away: that's where the answer is
             if case .failed = status { expanded = true }
         }
         .onAppear {
-            if case .failed = step.status { expanded = true }
+            if case .failed = status { expanded = true }
         }
     }
 
     @ViewBuilder
     private var statusIcon: some View {
-        switch step.status {
+        switch status {
         case .pending:
             Image(systemName: "circle")
                 .foregroundStyle(.tertiary)
@@ -83,7 +98,7 @@ private struct StepRow: View {
     }
 
     private var duration: String? {
-        switch step.status {
+        switch status {
         case .done(let ms), .failed(let ms, _):
             return ms < 1000 ? "\(ms) ms" : String(format: "%.1f s", Double(ms) / 1000)
         case .pending, .running:
@@ -94,11 +109,19 @@ private struct StepRow: View {
 
 /// Copies every step's log to the clipboard
 struct CopyLogButton: View {
-    let steps: [StepState]
+    let transcript: String
+
+    init(steps: [StepState]) {
+        transcript = steps.transcript
+    }
+
+    init(savedSteps: [SavedStep]) {
+        transcript = savedSteps.transcript
+    }
 
     var body: some View {
         Button("Copy Log", systemImage: "doc.on.doc") {
-            UIPasteboard.general.string = steps.transcript
+            UIPasteboard.general.string = transcript
         }
     }
 }

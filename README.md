@@ -83,7 +83,10 @@ warpsign identity create           # development + distribution certificates, ke
 warpsign identity export id.p12    # back them up (prints a generated passphrase)
 warpsign sign App.ipa              # -> App-signed.ipa; same options as Python warpsign
 warpsign sign App.ipa --distribution --force-original-id
+warpsign sign App.ipa -e           # also list what each part was signed with, and what changed
 warpsign inspect App.ipa
+warpsign inspect -e App.ipa        # with each component's entitlements
+warpsign capabilities              # the team's portal capabilities and the entitlements they grant
 warpsign profile *.mobileprovision # PPQ check
 warpsign status
 warpsign device list               # the devices signed apps install on
