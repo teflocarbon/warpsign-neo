@@ -4111,6 +4111,7 @@ name = "warpsign-core"
 version = "0.1.0"
 dependencies = [
  "apple-codesign",
+ "base64 0.22.1",
  "bcder",
  "cryptographic-message-syntax",
  "getrandom 0.4.3",
@@ -4123,6 +4124,7 @@ dependencies = [
  "plist",
  "rand_core 0.6.4",
  "rsa",
+ "serde",
  "serde_json",
  "sha1 0.11.0",
  "sha2 0.11.0",

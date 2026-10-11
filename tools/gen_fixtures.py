@@ -39,6 +39,7 @@ from warpsign.src.ipa.app_patcher import (  # noqa: E402
     UIStyle,
 )
 from warpsign.src.ipa.entitlements_processor import EntitlementsProcessor  # noqa: E402
+from warpsign.src.apple.developer_portal_api import DeveloperPortalAPI  # noqa: E402
 
 TEAM_A = "ABCDE12345"
 TEAM_B = "QWERT67890"
@@ -767,6 +768,304 @@ def inspection_cases() -> list:
     return cases
 
 
+# --- Developer Portal requests ---------------------------------------------
+
+# Headers the HTTP stack owns, which neo leaves to the platform transport
+TRANSPORT_HEADERS = {"user-agent", "accept-encoding", "connection", "host", "content-length", "cookie"}
+
+
+class RecordingAdapter:
+    """A requests transport adapter that records each request and answers
+    with the next canned response"""
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.sent = []
+
+    def send(self, request, **kwargs):
+        import requests
+        from requests.structures import CaseInsensitiveDict
+
+        self.sent.append(request)
+        canned = self.responses.pop(0)
+        response = requests.Response()
+        response.status_code = canned["status"]
+        response.headers = CaseInsensitiveDict(canned.get("headers", {}))
+        if "json" in canned:
+            response._content = json.dumps(canned["json"]).encode()
+        else:
+            response._content = canned.get("text", "").encode()
+        response.url = request.url
+        response.request = request
+        response.encoding = "utf-8"
+        return response
+
+    def close(self):
+        pass
+
+
+def recorded_request(request) -> dict:
+    headers = {k: v for k, v in request.headers.items() if k.lower() not in TRANSPORT_HEADERS}
+    body = request.body or b""
+    if isinstance(body, str):
+        body = body.encode()
+    recorded = {"method": request.method, "url": request.url, "headers": headers}
+    content_type = headers.get("Content-Type", "")
+    if body and "json" in content_type:
+        recorded["json"] = json.loads(body)
+    else:
+        recorded["body"] = body.decode()
+    return recorded
+
+
+def jsonable(value):
+    import dataclasses
+    import base64
+
+    if dataclasses.is_dataclass(value):
+        return dataclasses.asdict(value)
+    if isinstance(value, list):
+        return [jsonable(v) for v in value]
+    if isinstance(value, bytes):
+        return {"base64": base64.b64encode(value).decode()}
+    return value
+
+
+def run_portal_case(name, call, args, responses) -> dict:
+    import requests
+
+    adapter = RecordingAdapter(responses)
+    session = requests.Session()
+    session.mount("https://", adapter)
+
+    class Auth:
+        pass
+
+    auth = Auth()
+    auth.session = session
+    auth.csrf = "csrf-token"
+    auth.csrf_ts = "1700000000000"
+    api = DeveloperPortalAPI(auth)
+    with contextlib.redirect_stdout(io.StringIO()):
+        result = getattr(api, call)(**args)
+    assert not adapter.responses, f"{name}: unused responses"
+    return {
+        "name": name,
+        "call": call,
+        "args": args,
+        "responses": responses,
+        "requests": [recorded_request(r) for r in adapter.sent],
+        "result": jsonable(result),
+    }
+
+
+def resource(kind, rid, **attributes):
+    return {"type": kind, "id": rid, "attributes": attributes}
+
+
+# /v1/capabilities for the portal cases: the processor's synthetic response
+# plus a required capability and one with settings warpsign doesn't know
+def with_distribution_names(capabilities):
+    """Python's portal client reads distributionTypes[].name, the processor
+    reads displayValue: the real response must have both"""
+    import copy
+
+    capabilities = copy.deepcopy(capabilities)
+    for item in capabilities:
+        for dist in item["attributes"].get("distributionTypes", []):
+            dist["name"] = dist["displayValue"].upper().replace(" ", "_")
+    return capabilities
+
+
+PORTAL_CAPABILITIES = {
+    "data": with_distribution_names(CAPABILITIES_RESPONSE["data"])
+    + [
+        {
+            "id": "IN_APP_PURCHASE",
+            "attributes": {"name": "In-App Purchase", "optional": False, "entitlements": [], "settings": []},
+        },
+        {
+            "id": "NEW_THING",
+            "attributes": {
+                "name": "Something New",
+                "entitlements": [{"profileKey": "com.apple.developer.new-thing"}],
+                "settings": [{"key": "NEW_THING_MODE", "options": [{"key": "A"}, {"key": "B"}]}],
+            },
+        },
+    ]
+}
+
+
+def portal_cases() -> list:
+    team = NEW_TEAM
+    taken = {"resultCode": 0, "userString": "An App Group with Identifier 'x' is not available. Please enter a different string."}
+    return [
+        run_portal_case(
+            "teams",
+            "list_teams",
+            {},
+            [{"status": 200, "json": {"resultCode": 0, "teams": [
+                {"teamId": team, "name": "Test Team", "status": "active", "entityType": "INDIVIDUAL", "userRoles": ["TEAM_ADMIN"]},
+            ]}}],
+        ),
+        run_portal_case(
+            "certificates",
+            "list_certificates",
+            {"team_id": team},
+            [{"status": 200, "json": {"data": [
+                resource("certificates", "CERT1", serialNumber="5A1B2C3D4E5F6071", ownerId="OWNER1", certificateType="DEVELOPMENT", name="Apple Development: Test User", displayName="Test User"),
+                resource("certificates", "CERT2", serialNumber="0FEDCBA987654321", ownerId="OWNER1", certificateType="DISTRIBUTION", name="Apple Distribution: Test User"),
+            ]}}],
+        ),
+        run_portal_case(
+            "bundle_ids",
+            "list_bundle_ids",
+            {"team_id": team},
+            [{"status": 200, "json": {"data": [
+                resource("bundleIds", "BUNDLE1", identifier="com.example.app", name="WS App app"),
+            ]}}],
+        ),
+        run_portal_case(
+            "app_groups",
+            "list_app_group_ids",
+            {"team_id": team},
+            [{"status": 200, "json": {"resultCode": 0, "applicationGroupList": [
+                {"applicationGroup": "GROUP1", "identifier": "group.com.example.app", "name": "WS App Group"},
+            ]}}],
+        ),
+        run_portal_case(
+            "cloud_containers",
+            "list_icloud_container_ids",
+            {"team_id": team},
+            [{"status": 200, "json": {"data": [
+                resource("cloudContainers", "CLOUD1", identifier="iCloud.com.example.app", name="WS iCloud"),
+            ]}}],
+        ),
+        run_portal_case(
+            "devices",
+            "list_devices",
+            {"team_id": team},
+            [{"status": 200, "json": {"data": [
+                resource("devices", "DEV1", name="iPhone", udid="00008110-0001", status="ENABLED", deviceClass="IPHONE", platform="IOS", model="iPhone 15"),
+                resource("devices", "DEV2", name="Mac", udid="MAC-1", status="ENABLED", deviceClass="MAC", platform="MAC_OS", model=None),
+                resource("devices", "DEV3", name="iPad", udid="00008110-0003", status="ENABLED", deviceClass="IPAD", platform="IOS", model=None),
+            ]}}],
+        ),
+        run_portal_case(
+            "profiles",
+            "list_profiles",
+            {"team_id": team},
+            [{"status": 200, "json": {"data": [
+                resource("profiles", "PROF1", name="TS com.example.app Development", profileState="ACTIVE", platform="IOS", profileTypeLabel="iOS App Development"),
+            ]}}],
+        ),
+        run_portal_case(
+            "capabilities",
+            "fetch_available_user_entitlements",
+            {"team_id": team, "return_raw": True},
+            [{"status": 200, "json": PORTAL_CAPABILITIES}],
+        ),
+        run_portal_case(
+            "set_capabilities",
+            "set_entitlements_for_bundle_id",
+            {
+                "team_id": team,
+                "bundle_id_resource_id": "BUNDLE1",
+                "bundle_identifier": "com.example.app",
+                "capabilities_to_enable": ["PUSH_NOTIFICATIONS", "APP_GROUPS", "ICLOUD", "ASSOCIATED_DOMAINS", "NEW_THING"],
+                "group_ids": {"APP_GROUPS": ["GROUP1", "GROUP2"], "ICLOUD": ["CLOUD1"]},
+            },
+            [{"status": 200, "json": PORTAL_CAPABILITIES}, {"status": 200, "json": {"data": {}}}],
+        ),
+        run_portal_case(
+            "register_bundle_id",
+            "register_bundle_id",
+            {"team_id": team, "identifier": "com.example.app", "name": "WS App app"},
+            [{"status": 201, "json": {"data": resource("bundleIds", "BUNDLE1", identifier="com.example.app", name="WS App app")}}],
+        ),
+        run_portal_case(
+            "register_existing_bundle_id",
+            "register_bundle_id",
+            {"team_id": team, "identifier": "com.example.app", "name": "WS App app"},
+            [
+                {"status": 409, "json": {"errors": [{"status": "409", "resultCode": 9400, "detail": "An App ID with Identifier 'com.example.app' is not available."}]}},
+                {"status": 200, "json": {"data": [
+                    resource("bundleIds", "OTHER", identifier="com.example.app.widget", name="WS Widget"),
+                    resource("bundleIds", "BUNDLE1", identifier="com.example.app", name="WS App app"),
+                ]}},
+            ],
+        ),
+        run_portal_case(
+            "register_app_group",
+            "register_app_group",
+            {"team_id": team, "identifier": "group.com.example.app", "name": "WS App Group group com example app"},
+            [{"status": 200, "json": {"resultCode": 0, "applicationGroup": {"applicationGroup": "GROUP1", "identifier": "group.com.example.app", "name": "WS App Group group com example app"}}}],
+        ),
+        run_portal_case(
+            "register_taken_app_group",
+            "register_app_group",
+            {"team_id": team, "identifier": "group.com.example.app", "name": "WS App Group group com example app"},
+            [
+                {"status": 200, "json": taken},
+                {"status": 200, "json": {"resultCode": 0, "applicationGroupList": [
+                    {"applicationGroup": "GROUP1", "identifier": "group.com.example.app", "name": "WS App Group"},
+                ]}},
+            ],
+        ),
+        run_portal_case(
+            "register_cloud_container",
+            "register_icloud_container",
+            {"team_id": team, "identifier": "iCloud.com.example.app", "name": "WS iCloud Container iCloud com example app"},
+            [{"status": 200, "json": {"resultCode": 0, "cloudContainer": {"cloudContainer": "CLOUD1", "identifier": "iCloud.com.example.app", "name": "WS iCloud Container iCloud com example app"}}}],
+        ),
+        run_portal_case(
+            "register_taken_cloud_container",
+            "register_icloud_container",
+            {"team_id": team, "identifier": "iCloud.com.example.app", "name": "WS iCloud Container iCloud com example app"},
+            [
+                {"status": 200, "json": taken},
+                {"status": 200, "json": {"data": [
+                    resource("cloudContainers", "CLOUD1", identifier="iCloud.com.example.app", name="WS iCloud"),
+                ]}},
+            ],
+        ),
+        run_portal_case(
+            "create_profile",
+            "create_or_regen_provisioning_profile",
+            {
+                "team_id": team,
+                "profile_id": "",
+                "app_id_id": "BUNDLE1",
+                "profile_name": "TS com.example.app Development",
+                "certificate_ids": ["CERT1"],
+                "device_ids": ["DEV1", "DEV3"],
+                "distribution_type": "development",
+            },
+            [
+                {"status": 200, "json": {"resultCode": 0, "provisioningProfile": {"provisioningProfileId": "PROF1"}}},
+                {"status": 200, "text": "profile-bytes"},
+            ],
+        ),
+        run_portal_case(
+            "regenerate_adhoc_profile",
+            "create_or_regen_provisioning_profile",
+            {
+                "team_id": team,
+                "profile_id": "PROF2",
+                "app_id_id": "BUNDLE1",
+                "profile_name": "TS com.example.app Ad Hoc",
+                "certificate_ids": ["CERT2"],
+                "device_ids": ["DEV1"],
+                "distribution_type": "adhoc",
+            },
+            [
+                {"status": 200, "json": {"resultCode": 0, "provisioningProfile": {"provisioningProfileId": "PROF2"}}},
+                {"status": 200, "text": "profile-bytes"},
+            ],
+        ),
+    ]
+
+
 if __name__ == "__main__":
     write("python_random", python_random_cases())
     write("random_ids", random_id_cases())
@@ -778,3 +1077,4 @@ if __name__ == "__main__":
     write("app_inspection", inspection_cases())
     write("info_plist_patching", info_plist_cases())
     write("srp", srp_cases())
+    write("portal_requests", portal_cases())

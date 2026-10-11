@@ -14,8 +14,18 @@ Decisions and known pitfalls for porting Python warpsign's portal client. Agreed
 ## API
 
 - **Capabilities come from `/v1/capabilities` every time**; never hardcode the entitlement → capability mapping.
-- **Port `CAPABILITY_SETTINGS` as-is.** Some capabilities need extra settings, and the API doesn't say which option to choose. If a capability has settings that aren't in the table, skip just that capability with a clear warning, rather than failing the whole update.
+- **Port `CAPABILITY_SETTINGS` as-is.** Some capabilities need extra settings, and the API doesn't say which option to choose. As built: neo first sends exactly Python warpsign's request. Only if the portal rejects it, and some requested capabilities have settings that aren't in the table, does it retry once without those, reporting them as skipped. So nothing changes wherever Python's request worked.
 - **Surface every portal failure as an error with Apple's message.** Python warpsign returned `None`/`[]` and carried on.
 - **Reuse provisioning profiles by name** (regenerate them) instead of creating a new one on every sign.
 - **Keep the bundle ID that registration returns** instead of looking it up again in a list limited to 1000 entries.
 - **Capture a real `/v1/capabilities` response** (with identifying details removed) as a fixture once there's an account to test with.
+
+## As built (October 2026)
+
+`crates/warpsign-core/src/portal/`, untested against Apple so far:
+
+- **`http.rs`**: the platform supplies a dumb `Transport` (URLSession on iOS). Cookies and redirects are handled in Rust, so a session behaves the same everywhere and serialises to JSON (`SessionState`) for the Keychain. The transport must not follow redirects or touch cookies.
+- **`auth.rs`**: widget key, hashcash, SRP `signin/init` and `signin/complete`, 2FA (device code, SMS), `2sv/trust`, then the portal page for CSRF tokens and `getTeams`. Also takes fresh `csrf`/`csrf_ts` from any response header, as fastlane does.
+- **`api.rs`**: the `DeveloperPortalAPI` port. `tests/portal_parity.rs` replays Python's calls (captured by `tools/gen_fixtures.py` into `fixtures/portal_requests.json`) and checks every request's method, URL, headers and body match. Deliberate differences: errors instead of `None`; no `Host`/`Connection`/bogus `Accept-Encoding` headers (the transport owns those); CSRF headers left out when unknown (Python sent `csrf_ts: None`).
+- **New, with no Python reference**: certificate creation from a CSR (`POST v1/certificates`, App Store Connect API shape), verified only against mocks. Revoking is deliberately not implemented: the app sends you to developer.apple.com for that.
+- **Free accounts**: rejected when `getTeams` returns no teams. Whether a free account gets an empty list or something else is unverified, so a 403 on the first portal request is also reported with Apple's message.

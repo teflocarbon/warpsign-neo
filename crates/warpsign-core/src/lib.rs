@@ -9,6 +9,7 @@ pub mod inspect;
 pub mod ipa;
 pub mod metadata;
 pub mod pipeline;
+pub mod portal;
 pub mod profile;
 pub mod progress;
 mod pyrandom;

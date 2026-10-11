@@ -1,0 +1,2140 @@
+{
+  "cases": [
+    {
+      "args": {},
+      "call": "list_teams",
+      "name": "teams",
+      "requests": [
+        {
+          "headers": {
+            "Accept": "application/json, text/javascript",
+            "Content-Type": "application/json",
+            "X-Requested-With": "XMLHttpRequest"
+          },
+          "json": {
+            "includeInMigrationTeams": 1
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/QH65B2/account/getTeams"
+        }
+      ],
+      "responses": [
+        {
+          "json": {
+            "resultCode": 0,
+            "teams": [
+              {
+                "entityType": "INDIVIDUAL",
+                "name": "Test Team",
+                "status": "active",
+                "teamId": "ZZZZZ99999",
+                "userRoles": [
+                  "TEAM_ADMIN"
+                ]
+              }
+            ]
+          },
+          "status": 200
+        }
+      ],
+      "result": [
+        {
+          "name": "Test Team",
+          "roles": [
+            "TEAM_ADMIN"
+          ],
+          "status": "active",
+          "team_id": "ZZZZZ99999",
+          "type": "INDIVIDUAL"
+        }
+      ]
+    },
+    {
+      "args": {
+        "team_id": "ZZZZZ99999"
+      },
+      "call": "list_certificates",
+      "name": "certificates",
+      "requests": [
+        {
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Content-Type": "application/vnd.api+json",
+            "X-HTTP-Method-Override": "GET",
+            "X-Requested-With": "XMLHttpRequest"
+          },
+          "json": {
+            "teamId": "ZZZZZ99999",
+            "urlEncodedQueryParams": "limit=1000&sort=displayName"
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/v1/certificates"
+        }
+      ],
+      "responses": [
+        {
+          "json": {
+            "data": [
+              {
+                "attributes": {
+                  "certificateType": "DEVELOPMENT",
+                  "displayName": "Test User",
+                  "name": "Apple Development: Test User",
+                  "ownerId": "OWNER1",
+                  "serialNumber": "5A1B2C3D4E5F6071"
+                },
+                "id": "CERT1",
+                "type": "certificates"
+              },
+              {
+                "attributes": {
+                  "certificateType": "DISTRIBUTION",
+                  "name": "Apple Distribution: Test User",
+                  "ownerId": "OWNER1",
+                  "serialNumber": "0FEDCBA987654321"
+                },
+                "id": "CERT2",
+                "type": "certificates"
+              }
+            ]
+          },
+          "status": 200
+        }
+      ],
+      "result": [
+        {
+          "certificate_type": "DEVELOPMENT",
+          "id": "CERT1",
+          "name": "Apple Development: Test User",
+          "owner_id": "OWNER1",
+          "serial_number": "5A1B2C3D4E5F6071"
+        },
+        {
+          "certificate_type": "DISTRIBUTION",
+          "id": "CERT2",
+          "name": "Apple Distribution: Test User",
+          "owner_id": "OWNER1",
+          "serial_number": "0FEDCBA987654321"
+        }
+      ]
+    },
+    {
+      "args": {
+        "team_id": "ZZZZZ99999"
+      },
+      "call": "list_bundle_ids",
+      "name": "bundle_ids",
+      "requests": [
+        {
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Content-Type": "application/vnd.api+json",
+            "X-HTTP-Method-Override": "GET",
+            "X-Requested-With": "XMLHttpRequest"
+          },
+          "json": {
+            "teamId": "ZZZZZ99999",
+            "urlEncodedQueryParams": "limit=1000&sort=name&filter[platform]=IOS,MACOS"
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/v1/bundleIds"
+        }
+      ],
+      "responses": [
+        {
+          "json": {
+            "data": [
+              {
+                "attributes": {
+                  "identifier": "com.example.app",
+                  "name": "WS App app"
+                },
+                "id": "BUNDLE1",
+                "type": "bundleIds"
+              }
+            ]
+          },
+          "status": 200
+        }
+      ],
+      "result": [
+        {
+          "id": "BUNDLE1",
+          "identifier": "com.example.app",
+          "name": "WS App app"
+        }
+      ]
+    },
+    {
+      "args": {
+        "team_id": "ZZZZZ99999"
+      },
+      "call": "list_app_group_ids",
+      "name": "app_groups",
+      "requests": [
+        {
+          "body": "onlyCountLists=true&pageSize=1000&pageNumber=1&sort=name%3Dasc&teamId=ZZZZZ99999",
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Requested-With": "XMLHttpRequest"
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/QH65B2/account/ios/identifiers/listApplicationGroups.action"
+        }
+      ],
+      "responses": [
+        {
+          "json": {
+            "applicationGroupList": [
+              {
+                "applicationGroup": "GROUP1",
+                "identifier": "group.com.example.app",
+                "name": "WS App Group"
+              }
+            ],
+            "resultCode": 0
+          },
+          "status": 200
+        }
+      ],
+      "result": [
+        {
+          "id": "GROUP1",
+          "identifier": "group.com.example.app",
+          "name": "WS App Group"
+        }
+      ]
+    },
+    {
+      "args": {
+        "team_id": "ZZZZZ99999"
+      },
+      "call": "list_icloud_container_ids",
+      "name": "cloud_containers",
+      "requests": [
+        {
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Content-Type": "application/vnd.api+json",
+            "X-HTTP-Method-Override": "GET",
+            "X-Requested-With": "XMLHttpRequest"
+          },
+          "json": {
+            "teamId": "ZZZZZ99999",
+            "urlEncodedQueryParams": "limit=1000"
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/v1/cloudContainers"
+        }
+      ],
+      "responses": [
+        {
+          "json": {
+            "data": [
+              {
+                "attributes": {
+                  "identifier": "iCloud.com.example.app",
+                  "name": "WS iCloud"
+                },
+                "id": "CLOUD1",
+                "type": "cloudContainers"
+              }
+            ]
+          },
+          "status": 200
+        }
+      ],
+      "result": [
+        {
+          "id": "CLOUD1",
+          "identifier": "iCloud.com.example.app",
+          "name": "WS iCloud"
+        }
+      ]
+    },
+    {
+      "args": {
+        "team_id": "ZZZZZ99999"
+      },
+      "call": "list_devices",
+      "name": "devices",
+      "requests": [
+        {
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Content-Type": "application/vnd.api+json",
+            "X-HTTP-Method-Override": "GET",
+            "X-Requested-With": "XMLHttpRequest"
+          },
+          "json": {
+            "teamId": "ZZZZZ99999",
+            "urlEncodedQueryParams": "limit=1000&offset=0&filter[status]=ENABLED"
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/v1/devices"
+        }
+      ],
+      "responses": [
+        {
+          "json": {
+            "data": [
+              {
+                "attributes": {
+                  "deviceClass": "IPHONE",
+                  "model": "iPhone 15",
+                  "name": "iPhone",
+                  "platform": "IOS",
+                  "status": "ENABLED",
+                  "udid": "00008110-0001"
+                },
+                "id": "DEV1",
+                "type": "devices"
+              },
+              {
+                "attributes": {
+                  "deviceClass": "MAC",
+                  "model": null,
+                  "name": "Mac",
+                  "platform": "MAC_OS",
+                  "status": "ENABLED",
+                  "udid": "MAC-1"
+                },
+                "id": "DEV2",
+                "type": "devices"
+              },
+              {
+                "attributes": {
+                  "deviceClass": "IPAD",
+                  "model": null,
+                  "name": "iPad",
+                  "platform": "IOS",
+                  "status": "ENABLED",
+                  "udid": "00008110-0003"
+                },
+                "id": "DEV3",
+                "type": "devices"
+              }
+            ]
+          },
+          "status": 200
+        }
+      ],
+      "result": [
+        {
+          "device_class": "IPHONE",
+          "id": "DEV1",
+          "model": "iPhone 15",
+          "name": "iPhone",
+          "platform": "IOS",
+          "status": "ENABLED",
+          "udid": "00008110-0001"
+        },
+        {
+          "device_class": "IPAD",
+          "id": "DEV3",
+          "model": null,
+          "name": "iPad",
+          "platform": "IOS",
+          "status": "ENABLED",
+          "udid": "00008110-0003"
+        }
+      ]
+    },
+    {
+      "args": {
+        "team_id": "ZZZZZ99999"
+      },
+      "call": "list_profiles",
+      "name": "profiles",
+      "requests": [
+        {
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Content-Type": "application/vnd.api+json",
+            "X-HTTP-Method-Override": "GET",
+            "X-Requested-With": "XMLHttpRequest"
+          },
+          "json": {
+            "teamId": "ZZZZZ99999",
+            "urlEncodedQueryParams": "limit=1000&fields[profiles]=name,platform,platformName,profileTypeLabel,expirationDate,profileState&sort=name"
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/v1/profiles"
+        }
+      ],
+      "responses": [
+        {
+          "json": {
+            "data": [
+              {
+                "attributes": {
+                  "name": "TS com.example.app Development",
+                  "platform": "IOS",
+                  "profileState": "ACTIVE",
+                  "profileTypeLabel": "iOS App Development"
+                },
+                "id": "PROF1",
+                "type": "profiles"
+              }
+            ]
+          },
+          "status": 200
+        }
+      ],
+      "result": [
+        {
+          "id": "PROF1",
+          "name": "TS com.example.app Development",
+          "platform": "IOS",
+          "profile_state": "ACTIVE",
+          "profile_type_label": "iOS App Development"
+        }
+      ]
+    },
+    {
+      "args": {
+        "return_raw": true,
+        "team_id": "ZZZZZ99999"
+      },
+      "call": "fetch_available_user_entitlements",
+      "name": "capabilities",
+      "requests": [
+        {
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Content-Type": "application/vnd.api+json",
+            "X-HTTP-Method-Override": "GET",
+            "X-Requested-With": "XMLHttpRequest"
+          },
+          "json": {
+            "teamId": "ZZZZZ99999",
+            "urlEncodedQueryParams": "filter[platform]=IOS,MACOS"
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/v1/capabilities?filter%5BcapabilityType%5D=capability%2Cservice"
+        }
+      ],
+      "responses": [
+        {
+          "json": {
+            "data": [
+              {
+                "attributes": {
+                  "description": "Push Notifications capability",
+                  "distributionTypes": [
+                    {
+                      "displayValue": "Development",
+                      "name": "DEVELOPMENT"
+                    },
+                    {
+                      "displayValue": "Ad hoc",
+                      "name": "AD_HOC"
+                    }
+                  ],
+                  "entitlements": [
+                    {
+                      "profileKey": "aps-environment"
+                    }
+                  ],
+                  "name": "Push Notifications",
+                  "settings": [],
+                  "supportedSDKs": [
+                    {
+                      "displayValue": "iOS"
+                    }
+                  ]
+                },
+                "id": "PUSH_NOTIFICATIONS"
+              },
+              {
+                "attributes": {
+                  "description": "App Groups capability",
+                  "distributionTypes": [
+                    {
+                      "displayValue": "Development",
+                      "name": "DEVELOPMENT"
+                    },
+                    {
+                      "displayValue": "Ad hoc",
+                      "name": "AD_HOC"
+                    }
+                  ],
+                  "entitlements": [
+                    {
+                      "profileKey": "com.apple.security.application-groups"
+                    }
+                  ],
+                  "name": "App Groups",
+                  "settings": [],
+                  "supportedSDKs": [
+                    {
+                      "displayValue": "iOS"
+                    }
+                  ]
+                },
+                "id": "APP_GROUPS"
+              },
+              {
+                "attributes": {
+                  "description": "iCloud capability",
+                  "distributionTypes": [
+                    {
+                      "displayValue": "Development",
+                      "name": "DEVELOPMENT"
+                    },
+                    {
+                      "displayValue": "Ad hoc",
+                      "name": "AD_HOC"
+                    }
+                  ],
+                  "entitlements": [
+                    {
+                      "profileKey": "com.apple.developer.icloud-container-identifiers"
+                    },
+                    {
+                      "profileKey": "com.apple.developer.ubiquity-container-identifiers"
+                    }
+                  ],
+                  "name": "iCloud",
+                  "settings": [
+                    {
+                      "options": [
+                        {
+                          "entitlements": [
+                            {
+                              "profileKey": "com.apple.developer.icloud-services"
+                            },
+                            {
+                              "profileKey": "com.apple.developer.ubiquity-kvstore-identifier"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ],
+                  "supportedSDKs": [
+                    {
+                      "displayValue": "iOS"
+                    }
+                  ]
+                },
+                "id": "ICLOUD"
+              },
+              {
+                "attributes": {
+                  "description": "Associated Domains capability",
+                  "distributionTypes": [
+                    {
+                      "displayValue": "Development",
+                      "name": "DEVELOPMENT"
+                    },
+                    {
+                      "displayValue": "Ad hoc",
+                      "name": "AD_HOC"
+                    }
+                  ],
+                  "entitlements": [
+                    {
+                      "profileKey": "com.apple.developer.associated-domains"
+                    }
+                  ],
+                  "name": "Associated Domains",
+                  "settings": [],
+                  "supportedSDKs": [
+                    {
+                      "displayValue": "iOS"
+                    }
+                  ]
+                },
+                "id": "ASSOCIATED_DOMAINS"
+              },
+              {
+                "attributes": {
+                  "description": "Apple Pay capability",
+                  "distributionTypes": [
+                    {
+                      "displayValue": "Development",
+                      "name": "DEVELOPMENT"
+                    },
+                    {
+                      "displayValue": "Ad hoc",
+                      "name": "AD_HOC"
+                    }
+                  ],
+                  "entitlements": [
+                    {
+                      "profileKey": "com.apple.developer.in-app-payments"
+                    }
+                  ],
+                  "name": "Apple Pay",
+                  "settings": [],
+                  "supportedSDKs": [
+                    {
+                      "displayValue": "iOS"
+                    }
+                  ]
+                },
+                "id": "IN_APP_PAYMENTS"
+              },
+              {
+                "attributes": {
+                  "description": "Development Only capability",
+                  "distributionTypes": [
+                    {
+                      "displayValue": "Development",
+                      "name": "DEVELOPMENT"
+                    }
+                  ],
+                  "entitlements": [
+                    {
+                      "profileKey": "com.example.dev-only"
+                    }
+                  ],
+                  "name": "Development Only",
+                  "settings": [],
+                  "supportedSDKs": [
+                    {
+                      "displayValue": "iOS"
+                    }
+                  ]
+                },
+                "id": "DEV_ONLY"
+              },
+              {
+                "attributes": {
+                  "description": "Mac Only capability",
+                  "distributionTypes": [
+                    {
+                      "displayValue": "Development",
+                      "name": "DEVELOPMENT"
+                    },
+                    {
+                      "displayValue": "Ad hoc",
+                      "name": "AD_HOC"
+                    }
+                  ],
+                  "entitlements": [
+                    {
+                      "profileKey": "com.example.mac-only"
+                    }
+                  ],
+                  "name": "Mac Only",
+                  "settings": [],
+                  "supportedSDKs": [
+                    {
+                      "displayValue": "macOS"
+                    }
+                  ]
+                },
+                "id": "MAC_ONLY"
+              },
+              {
+                "attributes": {
+                  "description": "Associated Domains v2 capability",
+                  "distributionTypes": [
+                    {
+                      "displayValue": "Development",
+                      "name": "DEVELOPMENT"
+                    },
+                    {
+                      "displayValue": "Ad hoc",
+                      "name": "AD_HOC"
+                    }
+                  ],
+                  "entitlements": [
+                    {
+                      "profileKey": "com.apple.developer.associated-domains"
+                    }
+                  ],
+                  "name": "Associated Domains v2",
+                  "settings": [],
+                  "supportedSDKs": [
+                    {
+                      "displayValue": "iOS"
+                    }
+                  ]
+                },
+                "id": "ASSOCIATED_DOMAINS_V2"
+              },
+              {
+                "attributes": {
+                  "description": "No Keys capability",
+                  "distributionTypes": [
+                    {
+                      "displayValue": "Development",
+                      "name": "DEVELOPMENT"
+                    },
+                    {
+                      "displayValue": "Ad hoc",
+                      "name": "AD_HOC"
+                    }
+                  ],
+                  "entitlements": [],
+                  "name": "No Keys",
+                  "settings": [],
+                  "supportedSDKs": [
+                    {
+                      "displayValue": "iOS"
+                    }
+                  ]
+                },
+                "id": "NO_KEYS"
+              },
+              {
+                "attributes": {
+                  "entitlements": [],
+                  "name": "In-App Purchase",
+                  "optional": false,
+                  "settings": []
+                },
+                "id": "IN_APP_PURCHASE"
+              },
+              {
+                "attributes": {
+                  "entitlements": [
+                    {
+                      "profileKey": "com.apple.developer.new-thing"
+                    }
+                  ],
+                  "name": "Something New",
+                  "settings": [
+                    {
+                      "key": "NEW_THING_MODE",
+                      "options": [
+                        {
+                          "key": "A"
+                        },
+                        {
+                          "key": "B"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "id": "NEW_THING"
+              }
+            ]
+          },
+          "status": 200
+        }
+      ],
+      "result": {
+        "data": [
+          {
+            "attributes": {
+              "description": "Push Notifications capability",
+              "distributionTypes": [
+                {
+                  "displayValue": "Development",
+                  "name": "DEVELOPMENT"
+                },
+                {
+                  "displayValue": "Ad hoc",
+                  "name": "AD_HOC"
+                }
+              ],
+              "entitlements": [
+                {
+                  "profileKey": "aps-environment"
+                }
+              ],
+              "name": "Push Notifications",
+              "settings": [],
+              "supportedSDKs": [
+                {
+                  "displayValue": "iOS"
+                }
+              ]
+            },
+            "id": "PUSH_NOTIFICATIONS"
+          },
+          {
+            "attributes": {
+              "description": "App Groups capability",
+              "distributionTypes": [
+                {
+                  "displayValue": "Development",
+                  "name": "DEVELOPMENT"
+                },
+                {
+                  "displayValue": "Ad hoc",
+                  "name": "AD_HOC"
+                }
+              ],
+              "entitlements": [
+                {
+                  "profileKey": "com.apple.security.application-groups"
+                }
+              ],
+              "name": "App Groups",
+              "settings": [],
+              "supportedSDKs": [
+                {
+                  "displayValue": "iOS"
+                }
+              ]
+            },
+            "id": "APP_GROUPS"
+          },
+          {
+            "attributes": {
+              "description": "iCloud capability",
+              "distributionTypes": [
+                {
+                  "displayValue": "Development",
+                  "name": "DEVELOPMENT"
+                },
+                {
+                  "displayValue": "Ad hoc",
+                  "name": "AD_HOC"
+                }
+              ],
+              "entitlements": [
+                {
+                  "profileKey": "com.apple.developer.icloud-container-identifiers"
+                },
+                {
+                  "profileKey": "com.apple.developer.ubiquity-container-identifiers"
+                }
+              ],
+              "name": "iCloud",
+              "settings": [
+                {
+                  "options": [
+                    {
+                      "entitlements": [
+                        {
+                          "profileKey": "com.apple.developer.icloud-services"
+                        },
+                        {
+                          "profileKey": "com.apple.developer.ubiquity-kvstore-identifier"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "supportedSDKs": [
+                {
+                  "displayValue": "iOS"
+                }
+              ]
+            },
+            "id": "ICLOUD"
+          },
+          {
+            "attributes": {
+              "description": "Associated Domains capability",
+              "distributionTypes": [
+                {
+                  "displayValue": "Development",
+                  "name": "DEVELOPMENT"
+                },
+                {
+                  "displayValue": "Ad hoc",
+                  "name": "AD_HOC"
+                }
+              ],
+              "entitlements": [
+                {
+                  "profileKey": "com.apple.developer.associated-domains"
+                }
+              ],
+              "name": "Associated Domains",
+              "settings": [],
+              "supportedSDKs": [
+                {
+                  "displayValue": "iOS"
+                }
+              ]
+            },
+            "id": "ASSOCIATED_DOMAINS"
+          },
+          {
+            "attributes": {
+              "description": "Apple Pay capability",
+              "distributionTypes": [
+                {
+                  "displayValue": "Development",
+                  "name": "DEVELOPMENT"
+                },
+                {
+                  "displayValue": "Ad hoc",
+                  "name": "AD_HOC"
+                }
+              ],
+              "entitlements": [
+                {
+                  "profileKey": "com.apple.developer.in-app-payments"
+                }
+              ],
+              "name": "Apple Pay",
+              "settings": [],
+              "supportedSDKs": [
+                {
+                  "displayValue": "iOS"
+                }
+              ]
+            },
+            "id": "IN_APP_PAYMENTS"
+          },
+          {
+            "attributes": {
+              "description": "Development Only capability",
+              "distributionTypes": [
+                {
+                  "displayValue": "Development",
+                  "name": "DEVELOPMENT"
+                }
+              ],
+              "entitlements": [
+                {
+                  "profileKey": "com.example.dev-only"
+                }
+              ],
+              "name": "Development Only",
+              "settings": [],
+              "supportedSDKs": [
+                {
+                  "displayValue": "iOS"
+                }
+              ]
+            },
+            "id": "DEV_ONLY"
+          },
+          {
+            "attributes": {
+              "description": "Mac Only capability",
+              "distributionTypes": [
+                {
+                  "displayValue": "Development",
+                  "name": "DEVELOPMENT"
+                },
+                {
+                  "displayValue": "Ad hoc",
+                  "name": "AD_HOC"
+                }
+              ],
+              "entitlements": [
+                {
+                  "profileKey": "com.example.mac-only"
+                }
+              ],
+              "name": "Mac Only",
+              "settings": [],
+              "supportedSDKs": [
+                {
+                  "displayValue": "macOS"
+                }
+              ]
+            },
+            "id": "MAC_ONLY"
+          },
+          {
+            "attributes": {
+              "description": "Associated Domains v2 capability",
+              "distributionTypes": [
+                {
+                  "displayValue": "Development",
+                  "name": "DEVELOPMENT"
+                },
+                {
+                  "displayValue": "Ad hoc",
+                  "name": "AD_HOC"
+                }
+              ],
+              "entitlements": [
+                {
+                  "profileKey": "com.apple.developer.associated-domains"
+                }
+              ],
+              "name": "Associated Domains v2",
+              "settings": [],
+              "supportedSDKs": [
+                {
+                  "displayValue": "iOS"
+                }
+              ]
+            },
+            "id": "ASSOCIATED_DOMAINS_V2"
+          },
+          {
+            "attributes": {
+              "description": "No Keys capability",
+              "distributionTypes": [
+                {
+                  "displayValue": "Development",
+                  "name": "DEVELOPMENT"
+                },
+                {
+                  "displayValue": "Ad hoc",
+                  "name": "AD_HOC"
+                }
+              ],
+              "entitlements": [],
+              "name": "No Keys",
+              "settings": [],
+              "supportedSDKs": [
+                {
+                  "displayValue": "iOS"
+                }
+              ]
+            },
+            "id": "NO_KEYS"
+          },
+          {
+            "attributes": {
+              "entitlements": [],
+              "name": "In-App Purchase",
+              "optional": false,
+              "settings": []
+            },
+            "id": "IN_APP_PURCHASE"
+          },
+          {
+            "attributes": {
+              "entitlements": [
+                {
+                  "profileKey": "com.apple.developer.new-thing"
+                }
+              ],
+              "name": "Something New",
+              "settings": [
+                {
+                  "key": "NEW_THING_MODE",
+                  "options": [
+                    {
+                      "key": "A"
+                    },
+                    {
+                      "key": "B"
+                    }
+                  ]
+                }
+              ]
+            },
+            "id": "NEW_THING"
+          }
+        ]
+      }
+    },
+    {
+      "args": {
+        "bundle_id_resource_id": "BUNDLE1",
+        "bundle_identifier": "com.example.app",
+        "capabilities_to_enable": [
+          "PUSH_NOTIFICATIONS",
+          "APP_GROUPS",
+          "ICLOUD",
+          "ASSOCIATED_DOMAINS",
+          "NEW_THING"
+        ],
+        "group_ids": {
+          "APP_GROUPS": [
+            "GROUP1",
+            "GROUP2"
+          ],
+          "ICLOUD": [
+            "CLOUD1"
+          ]
+        },
+        "team_id": "ZZZZZ99999"
+      },
+      "call": "set_entitlements_for_bundle_id",
+      "name": "set_capabilities",
+      "requests": [
+        {
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Content-Type": "application/vnd.api+json",
+            "X-HTTP-Method-Override": "GET",
+            "X-Requested-With": "XMLHttpRequest"
+          },
+          "json": {
+            "teamId": "ZZZZZ99999",
+            "urlEncodedQueryParams": "filter[platform]=IOS,MACOS"
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/v1/capabilities?filter%5BcapabilityType%5D=capability%2Cservice"
+        },
+        {
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Content-Type": "application/vnd.api+json",
+            "Origin": "https://developer.apple.com",
+            "Referer": "https://developer.apple.com/account/resources/identifiers/bundleId/edit/BUNDLE1",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "XMLHttpRequest": "XMLHttpRequest",
+            "csrf": "csrf-token",
+            "csrf_ts": "1700000000000"
+          },
+          "json": {
+            "data": {
+              "attributes": {
+                "identifier": "com.example.app",
+                "name": "com.example.app",
+                "permissions": {
+                  "delete": true,
+                  "edit": true
+                },
+                "seedId": "ZZZZZ99999",
+                "teamId": "ZZZZZ99999",
+                "wildcard": false
+              },
+              "id": "BUNDLE1",
+              "relationships": {
+                "bundleIdCapabilities": {
+                  "data": [
+                    {
+                      "attributes": {
+                        "enabled": true,
+                        "settings": [
+                          {
+                            "key": "PUSH_NOTIFICATION_FEATURES",
+                            "options": [
+                              {
+                                "key": "PUSH_NOTIFICATION_FEATURE_BROADCAST"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      "relationships": {
+                        "capability": {
+                          "data": {
+                            "id": "PUSH_NOTIFICATIONS",
+                            "type": "capabilities"
+                          }
+                        }
+                      },
+                      "type": "bundleIdCapabilities"
+                    },
+                    {
+                      "attributes": {
+                        "enabled": true,
+                        "settings": []
+                      },
+                      "relationships": {
+                        "appGroups": {
+                          "data": [
+                            {
+                              "id": "GROUP1",
+                              "type": "appGroups"
+                            },
+                            {
+                              "id": "GROUP2",
+                              "type": "appGroups"
+                            }
+                          ]
+                        },
+                        "capability": {
+                          "data": {
+                            "id": "APP_GROUPS",
+                            "type": "capabilities"
+                          }
+                        }
+                      },
+                      "type": "bundleIdCapabilities"
+                    },
+                    {
+                      "attributes": {
+                        "enabled": true,
+                        "settings": [
+                          {
+                            "key": "ICLOUD_VERSION",
+                            "options": [
+                              {
+                                "key": "XCODE_6"
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      "relationships": {
+                        "capability": {
+                          "data": {
+                            "id": "ICLOUD",
+                            "type": "capabilities"
+                          }
+                        },
+                        "cloudContainers": {
+                          "data": [
+                            {
+                              "id": "CLOUD1",
+                              "type": "cloudContainers"
+                            }
+                          ]
+                        }
+                      },
+                      "type": "bundleIdCapabilities"
+                    },
+                    {
+                      "attributes": {
+                        "enabled": true,
+                        "settings": []
+                      },
+                      "relationships": {
+                        "capability": {
+                          "data": {
+                            "id": "ASSOCIATED_DOMAINS",
+                            "type": "capabilities"
+                          }
+                        }
+                      },
+                      "type": "bundleIdCapabilities"
+                    },
+                    {
+                      "attributes": {
+                        "enabled": false,
+                        "settings": []
+                      },
+                      "relationships": {
+                        "capability": {
+                          "data": {
+                            "id": "IN_APP_PAYMENTS",
+                            "type": "capabilities"
+                          }
+                        }
+                      },
+                      "type": "bundleIdCapabilities"
+                    },
+                    {
+                      "attributes": {
+                        "enabled": false,
+                        "settings": []
+                      },
+                      "relationships": {
+                        "capability": {
+                          "data": {
+                            "id": "DEV_ONLY",
+                            "type": "capabilities"
+                          }
+                        }
+                      },
+                      "type": "bundleIdCapabilities"
+                    },
+                    {
+                      "attributes": {
+                        "enabled": false,
+                        "settings": []
+                      },
+                      "relationships": {
+                        "capability": {
+                          "data": {
+                            "id": "MAC_ONLY",
+                            "type": "capabilities"
+                          }
+                        }
+                      },
+                      "type": "bundleIdCapabilities"
+                    },
+                    {
+                      "attributes": {
+                        "enabled": false,
+                        "settings": []
+                      },
+                      "relationships": {
+                        "capability": {
+                          "data": {
+                            "id": "ASSOCIATED_DOMAINS_V2",
+                            "type": "capabilities"
+                          }
+                        }
+                      },
+                      "type": "bundleIdCapabilities"
+                    },
+                    {
+                      "attributes": {
+                        "enabled": false,
+                        "settings": []
+                      },
+                      "relationships": {
+                        "capability": {
+                          "data": {
+                            "id": "NO_KEYS",
+                            "type": "capabilities"
+                          }
+                        }
+                      },
+                      "type": "bundleIdCapabilities"
+                    },
+                    {
+                      "attributes": {
+                        "enabled": true,
+                        "settings": []
+                      },
+                      "relationships": {
+                        "capability": {
+                          "data": {
+                            "id": "IN_APP_PURCHASE",
+                            "type": "capabilities"
+                          }
+                        }
+                      },
+                      "type": "bundleIdCapabilities"
+                    },
+                    {
+                      "attributes": {
+                        "enabled": true,
+                        "settings": []
+                      },
+                      "relationships": {
+                        "capability": {
+                          "data": {
+                            "id": "NEW_THING",
+                            "type": "capabilities"
+                          }
+                        }
+                      },
+                      "type": "bundleIdCapabilities"
+                    }
+                  ]
+                }
+              },
+              "type": "bundleIds"
+            }
+          },
+          "method": "PATCH",
+          "url": "https://developer.apple.com/services-account/v1/bundleIds/BUNDLE1"
+        }
+      ],
+      "responses": [
+        {
+          "json": {
+            "data": [
+              {
+                "attributes": {
+                  "description": "Push Notifications capability",
+                  "distributionTypes": [
+                    {
+                      "displayValue": "Development",
+                      "name": "DEVELOPMENT"
+                    },
+                    {
+                      "displayValue": "Ad hoc",
+                      "name": "AD_HOC"
+                    }
+                  ],
+                  "entitlements": [
+                    {
+                      "profileKey": "aps-environment"
+                    }
+                  ],
+                  "name": "Push Notifications",
+                  "settings": [],
+                  "supportedSDKs": [
+                    {
+                      "displayValue": "iOS"
+                    }
+                  ]
+                },
+                "id": "PUSH_NOTIFICATIONS"
+              },
+              {
+                "attributes": {
+                  "description": "App Groups capability",
+                  "distributionTypes": [
+                    {
+                      "displayValue": "Development",
+                      "name": "DEVELOPMENT"
+                    },
+                    {
+                      "displayValue": "Ad hoc",
+                      "name": "AD_HOC"
+                    }
+                  ],
+                  "entitlements": [
+                    {
+                      "profileKey": "com.apple.security.application-groups"
+                    }
+                  ],
+                  "name": "App Groups",
+                  "settings": [],
+                  "supportedSDKs": [
+                    {
+                      "displayValue": "iOS"
+                    }
+                  ]
+                },
+                "id": "APP_GROUPS"
+              },
+              {
+                "attributes": {
+                  "description": "iCloud capability",
+                  "distributionTypes": [
+                    {
+                      "displayValue": "Development",
+                      "name": "DEVELOPMENT"
+                    },
+                    {
+                      "displayValue": "Ad hoc",
+                      "name": "AD_HOC"
+                    }
+                  ],
+                  "entitlements": [
+                    {
+                      "profileKey": "com.apple.developer.icloud-container-identifiers"
+                    },
+                    {
+                      "profileKey": "com.apple.developer.ubiquity-container-identifiers"
+                    }
+                  ],
+                  "name": "iCloud",
+                  "settings": [
+                    {
+                      "options": [
+                        {
+                          "entitlements": [
+                            {
+                              "profileKey": "com.apple.developer.icloud-services"
+                            },
+                            {
+                              "profileKey": "com.apple.developer.ubiquity-kvstore-identifier"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ],
+                  "supportedSDKs": [
+                    {
+                      "displayValue": "iOS"
+                    }
+                  ]
+                },
+                "id": "ICLOUD"
+              },
+              {
+                "attributes": {
+                  "description": "Associated Domains capability",
+                  "distributionTypes": [
+                    {
+                      "displayValue": "Development",
+                      "name": "DEVELOPMENT"
+                    },
+                    {
+                      "displayValue": "Ad hoc",
+                      "name": "AD_HOC"
+                    }
+                  ],
+                  "entitlements": [
+                    {
+                      "profileKey": "com.apple.developer.associated-domains"
+                    }
+                  ],
+                  "name": "Associated Domains",
+                  "settings": [],
+                  "supportedSDKs": [
+                    {
+                      "displayValue": "iOS"
+                    }
+                  ]
+                },
+                "id": "ASSOCIATED_DOMAINS"
+              },
+              {
+                "attributes": {
+                  "description": "Apple Pay capability",
+                  "distributionTypes": [
+                    {
+                      "displayValue": "Development",
+                      "name": "DEVELOPMENT"
+                    },
+                    {
+                      "displayValue": "Ad hoc",
+                      "name": "AD_HOC"
+                    }
+                  ],
+                  "entitlements": [
+                    {
+                      "profileKey": "com.apple.developer.in-app-payments"
+                    }
+                  ],
+                  "name": "Apple Pay",
+                  "settings": [],
+                  "supportedSDKs": [
+                    {
+                      "displayValue": "iOS"
+                    }
+                  ]
+                },
+                "id": "IN_APP_PAYMENTS"
+              },
+              {
+                "attributes": {
+                  "description": "Development Only capability",
+                  "distributionTypes": [
+                    {
+                      "displayValue": "Development",
+                      "name": "DEVELOPMENT"
+                    }
+                  ],
+                  "entitlements": [
+                    {
+                      "profileKey": "com.example.dev-only"
+                    }
+                  ],
+                  "name": "Development Only",
+                  "settings": [],
+                  "supportedSDKs": [
+                    {
+                      "displayValue": "iOS"
+                    }
+                  ]
+                },
+                "id": "DEV_ONLY"
+              },
+              {
+                "attributes": {
+                  "description": "Mac Only capability",
+                  "distributionTypes": [
+                    {
+                      "displayValue": "Development",
+                      "name": "DEVELOPMENT"
+                    },
+                    {
+                      "displayValue": "Ad hoc",
+                      "name": "AD_HOC"
+                    }
+                  ],
+                  "entitlements": [
+                    {
+                      "profileKey": "com.example.mac-only"
+                    }
+                  ],
+                  "name": "Mac Only",
+                  "settings": [],
+                  "supportedSDKs": [
+                    {
+                      "displayValue": "macOS"
+                    }
+                  ]
+                },
+                "id": "MAC_ONLY"
+              },
+              {
+                "attributes": {
+                  "description": "Associated Domains v2 capability",
+                  "distributionTypes": [
+                    {
+                      "displayValue": "Development",
+                      "name": "DEVELOPMENT"
+                    },
+                    {
+                      "displayValue": "Ad hoc",
+                      "name": "AD_HOC"
+                    }
+                  ],
+                  "entitlements": [
+                    {
+                      "profileKey": "com.apple.developer.associated-domains"
+                    }
+                  ],
+                  "name": "Associated Domains v2",
+                  "settings": [],
+                  "supportedSDKs": [
+                    {
+                      "displayValue": "iOS"
+                    }
+                  ]
+                },
+                "id": "ASSOCIATED_DOMAINS_V2"
+              },
+              {
+                "attributes": {
+                  "description": "No Keys capability",
+                  "distributionTypes": [
+                    {
+                      "displayValue": "Development",
+                      "name": "DEVELOPMENT"
+                    },
+                    {
+                      "displayValue": "Ad hoc",
+                      "name": "AD_HOC"
+                    }
+                  ],
+                  "entitlements": [],
+                  "name": "No Keys",
+                  "settings": [],
+                  "supportedSDKs": [
+                    {
+                      "displayValue": "iOS"
+                    }
+                  ]
+                },
+                "id": "NO_KEYS"
+              },
+              {
+                "attributes": {
+                  "entitlements": [],
+                  "name": "In-App Purchase",
+                  "optional": false,
+                  "settings": []
+                },
+                "id": "IN_APP_PURCHASE"
+              },
+              {
+                "attributes": {
+                  "entitlements": [
+                    {
+                      "profileKey": "com.apple.developer.new-thing"
+                    }
+                  ],
+                  "name": "Something New",
+                  "settings": [
+                    {
+                      "key": "NEW_THING_MODE",
+                      "options": [
+                        {
+                          "key": "A"
+                        },
+                        {
+                          "key": "B"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "id": "NEW_THING"
+              }
+            ]
+          },
+          "status": 200
+        },
+        {
+          "json": {
+            "data": {}
+          },
+          "status": 200
+        }
+      ],
+      "result": true
+    },
+    {
+      "args": {
+        "identifier": "com.example.app",
+        "name": "WS App app",
+        "team_id": "ZZZZZ99999"
+      },
+      "call": "register_bundle_id",
+      "name": "register_bundle_id",
+      "requests": [
+        {
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Content-Type": "application/vnd.api+json",
+            "Origin": "https://developer.apple.com",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "X-Requested-With": "XMLHttpRequest",
+            "csrf": "csrf-token",
+            "csrf_ts": "1700000000000"
+          },
+          "json": {
+            "data": {
+              "attributes": {
+                "identifier": "com.example.app",
+                "name": "WS App app",
+                "seedId": "ZZZZZ99999",
+                "teamId": "ZZZZZ99999"
+              },
+              "relationships": {
+                "bundleIdCapabilities": {
+                  "data": []
+                }
+              },
+              "type": "bundleIds"
+            }
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/v1/bundleIds"
+        }
+      ],
+      "responses": [
+        {
+          "json": {
+            "data": {
+              "attributes": {
+                "identifier": "com.example.app",
+                "name": "WS App app"
+              },
+              "id": "BUNDLE1",
+              "type": "bundleIds"
+            }
+          },
+          "status": 201
+        }
+      ],
+      "result": {
+        "id": "BUNDLE1",
+        "identifier": "com.example.app",
+        "name": "WS App app"
+      }
+    },
+    {
+      "args": {
+        "identifier": "com.example.app",
+        "name": "WS App app",
+        "team_id": "ZZZZZ99999"
+      },
+      "call": "register_bundle_id",
+      "name": "register_existing_bundle_id",
+      "requests": [
+        {
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Content-Type": "application/vnd.api+json",
+            "Origin": "https://developer.apple.com",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "X-Requested-With": "XMLHttpRequest",
+            "csrf": "csrf-token",
+            "csrf_ts": "1700000000000"
+          },
+          "json": {
+            "data": {
+              "attributes": {
+                "identifier": "com.example.app",
+                "name": "WS App app",
+                "seedId": "ZZZZZ99999",
+                "teamId": "ZZZZZ99999"
+              },
+              "relationships": {
+                "bundleIdCapabilities": {
+                  "data": []
+                }
+              },
+              "type": "bundleIds"
+            }
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/v1/bundleIds"
+        },
+        {
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Content-Type": "application/vnd.api+json",
+            "X-HTTP-Method-Override": "GET",
+            "X-Requested-With": "XMLHttpRequest"
+          },
+          "json": {
+            "teamId": "ZZZZZ99999",
+            "urlEncodedQueryParams": "filter[identifier]=com.example.app"
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/v1/bundleIds"
+        }
+      ],
+      "responses": [
+        {
+          "json": {
+            "errors": [
+              {
+                "detail": "An App ID with Identifier 'com.example.app' is not available.",
+                "resultCode": 9400,
+                "status": "409"
+              }
+            ]
+          },
+          "status": 409
+        },
+        {
+          "json": {
+            "data": [
+              {
+                "attributes": {
+                  "identifier": "com.example.app.widget",
+                  "name": "WS Widget"
+                },
+                "id": "OTHER",
+                "type": "bundleIds"
+              },
+              {
+                "attributes": {
+                  "identifier": "com.example.app",
+                  "name": "WS App app"
+                },
+                "id": "BUNDLE1",
+                "type": "bundleIds"
+              }
+            ]
+          },
+          "status": 200
+        }
+      ],
+      "result": {
+        "id": "BUNDLE1",
+        "identifier": "com.example.app",
+        "name": "WS App app"
+      }
+    },
+    {
+      "args": {
+        "identifier": "group.com.example.app",
+        "name": "WS App Group group com example app",
+        "team_id": "ZZZZZ99999"
+      },
+      "call": "register_app_group",
+      "name": "register_app_group",
+      "requests": [
+        {
+          "body": "name=WS+App+Group+group+com+example+app&identifier=group.com.example.app&teamId=ZZZZZ99999",
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Origin": "https://developer.apple.com",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "X-Requested-With": "XMLHttpRequest",
+            "csrf": "csrf-token",
+            "csrf_ts": "1700000000000"
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/QH65B2/account/ios/identifiers/addApplicationGroup.action"
+        }
+      ],
+      "responses": [
+        {
+          "json": {
+            "applicationGroup": {
+              "applicationGroup": "GROUP1",
+              "identifier": "group.com.example.app",
+              "name": "WS App Group group com example app"
+            },
+            "resultCode": 0
+          },
+          "status": 200
+        }
+      ],
+      "result": {
+        "id": "GROUP1",
+        "identifier": "group.com.example.app",
+        "name": "WS App Group group com example app"
+      }
+    },
+    {
+      "args": {
+        "identifier": "group.com.example.app",
+        "name": "WS App Group group com example app",
+        "team_id": "ZZZZZ99999"
+      },
+      "call": "register_app_group",
+      "name": "register_taken_app_group",
+      "requests": [
+        {
+          "body": "name=WS+App+Group+group+com+example+app&identifier=group.com.example.app&teamId=ZZZZZ99999",
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Origin": "https://developer.apple.com",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "X-Requested-With": "XMLHttpRequest",
+            "csrf": "csrf-token",
+            "csrf_ts": "1700000000000"
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/QH65B2/account/ios/identifiers/addApplicationGroup.action"
+        },
+        {
+          "body": "onlyCountLists=true&pageSize=1000&pageNumber=1&sort=name%3Dasc&teamId=ZZZZZ99999",
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Requested-With": "XMLHttpRequest"
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/QH65B2/account/ios/identifiers/listApplicationGroups.action"
+        }
+      ],
+      "responses": [
+        {
+          "json": {
+            "resultCode": 0,
+            "userString": "An App Group with Identifier 'x' is not available. Please enter a different string."
+          },
+          "status": 200
+        },
+        {
+          "json": {
+            "applicationGroupList": [
+              {
+                "applicationGroup": "GROUP1",
+                "identifier": "group.com.example.app",
+                "name": "WS App Group"
+              }
+            ],
+            "resultCode": 0
+          },
+          "status": 200
+        }
+      ],
+      "result": {
+        "id": "GROUP1",
+        "identifier": "group.com.example.app",
+        "name": "WS App Group"
+      }
+    },
+    {
+      "args": {
+        "identifier": "iCloud.com.example.app",
+        "name": "WS iCloud Container iCloud com example app",
+        "team_id": "ZZZZZ99999"
+      },
+      "call": "register_icloud_container",
+      "name": "register_cloud_container",
+      "requests": [
+        {
+          "body": "name=WS+iCloud+Container+iCloud+com+example+app&identifier=iCloud.com.example.app&teamId=ZZZZZ99999",
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Origin": "https://developer.apple.com",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "X-Requested-With": "XMLHttpRequest",
+            "csrf": "csrf-token",
+            "csrf_ts": "1700000000000"
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/QH65B2/account/cloudContainer/addCloudContainer.action"
+        }
+      ],
+      "responses": [
+        {
+          "json": {
+            "cloudContainer": {
+              "cloudContainer": "CLOUD1",
+              "identifier": "iCloud.com.example.app",
+              "name": "WS iCloud Container iCloud com example app"
+            },
+            "resultCode": 0
+          },
+          "status": 200
+        }
+      ],
+      "result": {
+        "id": "CLOUD1",
+        "identifier": "iCloud.com.example.app",
+        "name": "WS iCloud Container iCloud com example app"
+      }
+    },
+    {
+      "args": {
+        "identifier": "iCloud.com.example.app",
+        "name": "WS iCloud Container iCloud com example app",
+        "team_id": "ZZZZZ99999"
+      },
+      "call": "register_icloud_container",
+      "name": "register_taken_cloud_container",
+      "requests": [
+        {
+          "body": "name=WS+iCloud+Container+iCloud+com+example+app&identifier=iCloud.com.example.app&teamId=ZZZZZ99999",
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Origin": "https://developer.apple.com",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-origin",
+            "X-Requested-With": "XMLHttpRequest",
+            "csrf": "csrf-token",
+            "csrf_ts": "1700000000000"
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/QH65B2/account/cloudContainer/addCloudContainer.action"
+        },
+        {
+          "headers": {
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Content-Type": "application/vnd.api+json",
+            "X-HTTP-Method-Override": "GET",
+            "X-Requested-With": "XMLHttpRequest"
+          },
+          "json": {
+            "teamId": "ZZZZZ99999",
+            "urlEncodedQueryParams": "limit=1000"
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/v1/cloudContainers"
+        }
+      ],
+      "responses": [
+        {
+          "json": {
+            "resultCode": 0,
+            "userString": "An App Group with Identifier 'x' is not available. Please enter a different string."
+          },
+          "status": 200
+        },
+        {
+          "json": {
+            "data": [
+              {
+                "attributes": {
+                  "identifier": "iCloud.com.example.app",
+                  "name": "WS iCloud"
+                },
+                "id": "CLOUD1",
+                "type": "cloudContainers"
+              }
+            ]
+          },
+          "status": 200
+        }
+      ],
+      "result": {
+        "id": "CLOUD1",
+        "identifier": "iCloud.com.example.app",
+        "name": "WS iCloud"
+      }
+    },
+    {
+      "args": {
+        "app_id_id": "BUNDLE1",
+        "certificate_ids": [
+          "CERT1"
+        ],
+        "device_ids": [
+          "DEV1",
+          "DEV3"
+        ],
+        "distribution_type": "development",
+        "profile_id": "",
+        "profile_name": "TS com.example.app Development",
+        "team_id": "ZZZZZ99999"
+      },
+      "call": "create_or_regen_provisioning_profile",
+      "name": "create_profile",
+      "requests": [
+        {
+          "body": "appIdId=BUNDLE1&provisioningProfileId=&distributionType=limited&provisioningProfileName=TS+com.example.app+Development&certificateIds=CERT1&deviceIds=DEV1%2CDEV3&teamId=ZZZZZ99999&subPlatform=&isExcludeAudiences=&returnFullObjects=false",
+          "headers": {
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Requested-With": "XMLHttpRequest",
+            "csrf": "csrf-token",
+            "csrf_ts": "1700000000000"
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/QH65B2/account/ios/profile/regenProvisioningProfile.action"
+        },
+        {
+          "body": "",
+          "headers": {
+            "Accept": "*/*",
+            "X-Requested-With": "XMLHttpRequest"
+          },
+          "method": "GET",
+          "url": "https://developer.apple.com/services-account/QH65B2/account/ios/profile/downloadProfileContent?teamId=ZZZZZ99999&provisioningProfileId=PROF1"
+        }
+      ],
+      "responses": [
+        {
+          "json": {
+            "provisioningProfile": {
+              "provisioningProfileId": "PROF1"
+            },
+            "resultCode": 0
+          },
+          "status": 200
+        },
+        {
+          "status": 200,
+          "text": "profile-bytes"
+        }
+      ],
+      "result": {
+        "base64": "cHJvZmlsZS1ieXRlcw=="
+      }
+    },
+    {
+      "args": {
+        "app_id_id": "BUNDLE1",
+        "certificate_ids": [
+          "CERT2"
+        ],
+        "device_ids": [
+          "DEV1"
+        ],
+        "distribution_type": "adhoc",
+        "profile_id": "PROF2",
+        "profile_name": "TS com.example.app Ad Hoc",
+        "team_id": "ZZZZZ99999"
+      },
+      "call": "create_or_regen_provisioning_profile",
+      "name": "regenerate_adhoc_profile",
+      "requests": [
+        {
+          "body": "appIdId=BUNDLE1&provisioningProfileId=PROF2&distributionType=adhoc&provisioningProfileName=TS+com.example.app+Ad+Hoc&certificateIds=CERT2&deviceIds=DEV1&teamId=ZZZZZ99999&subPlatform=&isExcludeAudiences=&returnFullObjects=false",
+          "headers": {
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Requested-With": "XMLHttpRequest",
+            "csrf": "csrf-token",
+            "csrf_ts": "1700000000000"
+          },
+          "method": "POST",
+          "url": "https://developer.apple.com/services-account/QH65B2/account/ios/profile/regenProvisioningProfile.action"
+        },
+        {
+          "body": "",
+          "headers": {
+            "Accept": "*/*",
+            "X-Requested-With": "XMLHttpRequest"
+          },
+          "method": "GET",
+          "url": "https://developer.apple.com/services-account/QH65B2/account/ios/profile/downloadProfileContent?teamId=ZZZZZ99999&provisioningProfileId=PROF2"
+        }
+      ],
+      "responses": [
+        {
+          "json": {
+            "provisioningProfile": {
+              "provisioningProfileId": "PROF2"
+            },
+            "resultCode": 0
+          },
+          "status": 200
+        },
+        {
+          "status": 200,
+          "text": "profile-bytes"
+        }
+      ],
+      "result": {
+        "base64": "cHJvZmlsZS1ieXRlcw=="
+      }
+    }
+  ],
+  "source": {
+    "python": "3.13.16",
+    "warpsign_commit": "d96e33b3ec2c1a5bb3665eff64f80d84cb880518"
+  }
+}
