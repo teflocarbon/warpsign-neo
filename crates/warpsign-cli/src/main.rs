@@ -132,6 +132,9 @@ struct SignArgs {
     /// Change the app's visible name
     #[arg(long)]
     bundle_name: Option<String>,
+    /// Change the app's icon (PNG or JPEG, ideally square)
+    #[arg(long)]
+    icon: Option<PathBuf>,
     /// Keep identifiers as they are (only for apps you own)
     #[arg(long)]
     no_encode_ids: bool,
@@ -591,8 +594,15 @@ fn sign(store: &Store, args: SignArgs) -> Result<()> {
         let stem = args.ipa.file_stem().unwrap_or_default().to_string_lossy();
         args.ipa.with_file_name(format!("{stem}-signed.ipa"))
     });
+    let icon = match &args.icon {
+        Some(path) => {
+            Some(std::fs::read(path).with_context(|| format!("reading {}", path.display()))?)
+        }
+        None => None,
+    };
     let options = SignOptions {
         patching: PatchingOptions {
+            icon,
             patch_ids: !args.no_patch_ids,
             force_original_id: args.force_original_id,
             bundle_name: args.bundle_name,

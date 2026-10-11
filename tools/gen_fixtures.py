@@ -575,6 +575,7 @@ def info_plist_cases() -> list:
         ("force_original_id", {"force_original_id": True}, {"force_original_id": True}),
         ("no_patch_ids", {"patch_ids": False}, {}),
         ("no_encode_ids", {}, {"randomize": False}),
+        ("icon", {"icon_png": test_icon_png()}, {}),
     ]
     cases = []
     for name, options, mapping_overrides in option_sets:
@@ -595,6 +596,10 @@ def info_plist_cases() -> list:
         with tempfile.TemporaryDirectory() as tmp:
             app = Path(tmp) / "App.app"
             app.mkdir()
+            if "icon_png" in python_options:
+                icon = Path(tmp) / "icon.png"
+                icon.write_bytes(base64.b64decode(python_options.pop("icon_png")))
+                python_options["icon_path"] = icon
             with contextlib.redirect_stdout(io.StringIO()):
                 patcher = AppPatcher(app, PatchingOptions(**python_options), mapper)
                 for entry in FULL_APP_INFO_PLISTS:
@@ -609,6 +614,19 @@ def info_plist_cases() -> list:
                         patched = plistlib.load(f)
                     case["info_plists"].append({**entry, "expected": patched})
 
+                if "icon_path" in python_options:
+                    from PIL import Image
+
+                    case["icon_files"] = sorted(
+                        [normalise_icon_name(f.name), list(Image.open(f).size)]
+                        for f in app.iterdir()
+                        if f.name.startswith("cyan_")
+                    )
+                    for entry in case["info_plists"]:
+                        entry["expected"] = json.loads(
+                            normalise_icon_name(json.dumps(entry["expected"]))
+                        )
+
                 # Then a binary, with the patcher state the plists left
                 # (as SignOrchestrator does): every ID it knows, embedded
                 binary = app / "Binary"
@@ -621,6 +639,23 @@ def info_plist_cases() -> list:
                 }
         cases.append(case)
     return cases
+
+
+def test_icon_png() -> str:
+    """A small square PNG for the icon case"""
+    from PIL import Image
+
+    image = Image.new("RGB", (64, 64), (90, 60, 200))
+    out = io.BytesIO()
+    image.save(out, "PNG")
+    return base64.b64encode(out.getvalue()).decode()
+
+
+def normalise_icon_name(text: str) -> str:
+    """IconHandler names icons cyan_<7 random hex>a: pin the random part"""
+    import re
+
+    return re.sub(r"cyan_[0-9a-f]{7}a", "cyan_0000000a", text)
 
 
 def binary_blob(mapper) -> bytes:

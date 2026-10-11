@@ -1550,6 +1550,273 @@
         "group.com.example.app",
         "iCloud.com.example.app"
       ]
+    },
+    {
+      "binary": {
+        "expected": "z/rt/gwAAAFaWlpaWjk5OTk5AHByZWZpeC5aWlpaWjk5OTk5LnN1ZmZpeABaWlpaWjk5OTk5WlpaWlo5OTk5OVpaWlpaOTk5OTkuNG5vLnF2NGNscngueGphAHByZWZpeC5aWlpaWjk5OTk5LjRuby5xdjRjbHJ4LnhqYS5zdWZmaXgAWlpaWlo5OTk5OS40bm8ucXY0Y2xyeC54amFaWlpaWjk5OTk5LjRuby5xdjRjbHJ4LnhqYVpaWlpaOTk5OTkuY29tLmV4YW1wbGUubGVnYWN5AHByZWZpeC5aWlpaWjk5OTk5LmNvbS5leGFtcGxlLmxlZ2FjeS5zdWZmaXgAWlpaWlo5OTk5OS5jb20uZXhhbXBsZS5sZWdhY3laWlpaWjk5OTk5LmNvbS5leGFtcGxlLmxlZ2FjeTRuby5xdjRjbHJ4LnhqYQBwcmVmaXguNG5vLnF2NGNscngueGphLnN1ZmZpeAA0bm8ucXY0Y2xyeC54amE0bm8ucXY0Y2xyeC54amE0bm8ucXY0Y2xyeC54amEuc2hhcmUAcHJlZml4LjRuby5xdjRjbHJ4LnhqYS5zaGFyZS5zdWZmaXgANG5vLnF2NGNscngueGphLnNoYXJlNG5vLnF2NGNscngueGphLnNoYXJlNG5vLnF2NGNscngueGphLndpZGdldABwcmVmaXguNG5vLnF2NGNscngueGphLndpZGdldC5zdWZmaXgANG5vLnF2NGNscngueGphLndpZGdldDRuby5xdjRjbHJ4LnhqYS53aWRnZXRncm91cC5aWlpaWjk5OTk5LnNoYXJlZABwcmVmaXguZ3JvdXAuWlpaWlo5OTk5OS5zaGFyZWQuc3VmZml4AGdyb3VwLlpaWlpaOTk5OTkuc2hhcmVkZ3JvdXAuWlpaWlo5OTk5OS5zaGFyZWRncm91cC40bm8ucXY0Y2xyeC54amEAcHJlZml4Lmdyb3VwLjRuby5xdjRjbHJ4LnhqYS5zdWZmaXgAZ3JvdXAuNG5vLnF2NGNscngueGphZ3JvdXAuNG5vLnF2NGNscngueGphaUNsb3VkLjRuby5xdjRjbHJ4LnhqYQBwcmVmaXguaUNsb3VkLjRuby5xdjRjbHJ4LnhqYS5zdWZmaXgAaUNsb3VkLjRuby5xdjRjbHJ4LnhqYWlDbG91ZC40bm8ucXY0Y2xyeC54amFaWlpaWjk5OTk5LjRuby5xdjRjbHJ4LnhqYQA=",
+        "input": "z/rt/gwAAAFBQkNERTEyMzQ1AHByZWZpeC5BQkNERTEyMzQ1LnN1ZmZpeABBQkNERTEyMzQ1QUJDREUxMjM0NUFCQ0RFMTIzNDUuY29tLmV4YW1wbGUuYXBwAHByZWZpeC5BQkNERTEyMzQ1LmNvbS5leGFtcGxlLmFwcC5zdWZmaXgAQUJDREUxMjM0NS5jb20uZXhhbXBsZS5hcHBBQkNERTEyMzQ1LmNvbS5leGFtcGxlLmFwcEFCQ0RFMTIzNDUuY29tLmV4YW1wbGUubGVnYWN5AHByZWZpeC5BQkNERTEyMzQ1LmNvbS5leGFtcGxlLmxlZ2FjeS5zdWZmaXgAQUJDREUxMjM0NS5jb20uZXhhbXBsZS5sZWdhY3lBQkNERTEyMzQ1LmNvbS5leGFtcGxlLmxlZ2FjeWNvbS5leGFtcGxlLmFwcABwcmVmaXguY29tLmV4YW1wbGUuYXBwLnN1ZmZpeABjb20uZXhhbXBsZS5hcHBjb20uZXhhbXBsZS5hcHBjb20uZXhhbXBsZS5hcHAuc2hhcmUAcHJlZml4LmNvbS5leGFtcGxlLmFwcC5zaGFyZS5zdWZmaXgAY29tLmV4YW1wbGUuYXBwLnNoYXJlY29tLmV4YW1wbGUuYXBwLnNoYXJlY29tLmV4YW1wbGUuYXBwLndpZGdldABwcmVmaXguY29tLmV4YW1wbGUuYXBwLndpZGdldC5zdWZmaXgAY29tLmV4YW1wbGUuYXBwLndpZGdldGNvbS5leGFtcGxlLmFwcC53aWRnZXRncm91cC5BQkNERTEyMzQ1LnNoYXJlZABwcmVmaXguZ3JvdXAuQUJDREUxMjM0NS5zaGFyZWQuc3VmZml4AGdyb3VwLkFCQ0RFMTIzNDUuc2hhcmVkZ3JvdXAuQUJDREUxMjM0NS5zaGFyZWRncm91cC5jb20uZXhhbXBsZS5hcHAAcHJlZml4Lmdyb3VwLmNvbS5leGFtcGxlLmFwcC5zdWZmaXgAZ3JvdXAuY29tLmV4YW1wbGUuYXBwZ3JvdXAuY29tLmV4YW1wbGUuYXBwaUNsb3VkLmNvbS5leGFtcGxlLmFwcABwcmVmaXguaUNsb3VkLmNvbS5leGFtcGxlLmFwcC5zdWZmaXgAaUNsb3VkLmNvbS5leGFtcGxlLmFwcGlDbG91ZC5jb20uZXhhbXBsZS5hcHBBQkNERTEyMzQ1LmNvbS5leGFtcGxlLmFwcAA="
+      },
+      "components": [
+        {
+          "bundle_id": "com.example.app",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app",
+            "aps-environment": "production",
+            "com.apple.developer.associated-domains": [
+              "applinks:example.com"
+            ],
+            "com.apple.developer.icloud-container-identifiers": [
+              "iCloud.com.example.app",
+              "ABCDE12345.com.example.legacy"
+            ],
+            "com.apple.developer.icloud-services": [
+              "CloudKit",
+              "CloudDocuments"
+            ],
+            "com.apple.developer.team-identifier": "ABCDE12345",
+            "com.apple.developer.ubiquity-container-identifiers": [
+              "ABCDE12345.com.example.legacy"
+            ],
+            "com.apple.developer.ubiquity-kvstore-identifier": "ABCDE12345.com.example.app",
+            "com.apple.security.application-groups": [
+              "group.com.example.app",
+              "group.ABCDE12345.shared"
+            ],
+            "get-task-allow": false,
+            "keychain-access-groups": [
+              "ABCDE12345.com.example.app",
+              "ABCDE12345.shared",
+              "com.apple.token"
+            ]
+          }
+        },
+        {
+          "bundle_id": "com.example.app.widget",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app.widget",
+            "com.apple.developer.team-identifier": "ABCDE12345",
+            "com.apple.security.application-groups": [
+              "group.com.example.app"
+            ],
+            "keychain-access-groups": [
+              "ABCDE12345.com.example.app.widget"
+            ]
+          }
+        },
+        {
+          "bundle_id": "com.example.app.share",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app.share",
+            "com.apple.security.application-groups": [
+              "group.com.example.app"
+            ]
+          }
+        }
+      ],
+      "force_original_id": false,
+      "icon_files": [
+        [
+          "cyan_0000000a60x60@2x.png",
+          [
+            120,
+            120
+          ]
+        ],
+        [
+          "cyan_0000000a60x60@3x.png",
+          [
+            180,
+            180
+          ]
+        ],
+        [
+          "cyan_0000000a76x76@2.17x~ipad.png",
+          [
+            167,
+            167
+          ]
+        ],
+        [
+          "cyan_0000000a76x76@2x~ipad.png",
+          [
+            152,
+            152
+          ]
+        ]
+      ],
+      "info_plists": [
+        {
+          "expected": {
+            "AppIdentifierPrefix": "ZZZZZ99999.",
+            "CFBundleDisplayName": "Example",
+            "CFBundleExecutable": "App",
+            "CFBundleIcons": {
+              "CFBundlePrimaryIcon": {
+                "CFBundleIconFiles": [
+                  "cyan_0000000a60x60"
+                ],
+                "CFBundleIconName": "cyan_0000000a"
+              }
+            },
+            "CFBundleIcons~ipad": {
+              "CFBundlePrimaryIcon": {
+                "CFBundleIconFiles": [
+                  "cyan_0000000a60x60",
+                  "cyan_0000000a76x76"
+                ],
+                "CFBundleIconName": "cyan_0000000a"
+              }
+            },
+            "CFBundleIdentifier": "4no.qv4clrx.xja",
+            "CFBundleName": "Example",
+            "CFBundleURLTypes": [
+              {
+                "CFBundleURLSchemes": [
+                  "4no.qv4clrx.xja",
+                  "examplescheme"
+                ]
+              }
+            ],
+            "MinimumOSVersion": "15.0",
+            "NSUserActivityTypes": [
+              "4no.qv4clrx.xja.activity"
+            ],
+            "SharedContainerGroup": "group.4no.qv4clrx.xja",
+            "UIDeviceFamily": [
+              1
+            ],
+            "UIStatusBarStyle": "UIStatusBarStyleDefault",
+            "UISupportedDevices": [
+              "iPhone14,2"
+            ],
+            "UIViewControllerBasedStatusBarAppearance": true,
+            "com.apple.developer.associated-domains": [
+              "applinks:example.com"
+            ],
+            "com.apple.developer.icloud-container-identifiers": [
+              "iCloud.4no.qv4clrx.xja"
+            ],
+            "com.apple.security.application-groups": [
+              "group.4no.qv4clrx.xja"
+            ],
+            "keychain-access-groups": [
+              "ZZZZZ99999.4no.qv4clrx.xja"
+            ]
+          },
+          "info_plist": {
+            "AppIdentifierPrefix": "ABCDE12345.",
+            "CFBundleDisplayName": "Example",
+            "CFBundleExecutable": "App",
+            "CFBundleIdentifier": "com.example.app",
+            "CFBundleName": "Example",
+            "CFBundleURLTypes": [
+              {
+                "CFBundleURLSchemes": [
+                  "com.example.app",
+                  "examplescheme"
+                ]
+              }
+            ],
+            "MinimumOSVersion": "15.0",
+            "NSUserActivityTypes": [
+              "com.example.app.activity"
+            ],
+            "SharedContainerGroup": "group.com.example.app",
+            "UIDeviceFamily": [
+              1
+            ],
+            "UIStatusBarStyle": "UIStatusBarStyleDefault",
+            "UISupportedDevices": [
+              "iPhone14,2"
+            ],
+            "UIViewControllerBasedStatusBarAppearance": true,
+            "com.apple.developer.associated-domains": [
+              "applinks:example.com"
+            ],
+            "com.apple.developer.icloud-container-identifiers": [
+              "iCloud.com.example.app"
+            ],
+            "com.apple.security.application-groups": [
+              "group.com.example.app"
+            ],
+            "keychain-access-groups": "ABCDE12345.com.example.app"
+          },
+          "path": ""
+        },
+        {
+          "expected": {
+            "AppGroup": "group.4no.qv4clrx.xja",
+            "CFBundleExecutable": "Widget",
+            "CFBundleIdentifier": "4no.qv4clrx.xja.widget",
+            "CFBundleName": "Widget",
+            "MinimumOSVersion": "15.0",
+            "NSExtension": {
+              "NSExtensionPointIdentifier": "com.apple.widgetkit-extension"
+            }
+          },
+          "info_plist": {
+            "AppGroup": "group.com.example.app",
+            "CFBundleExecutable": "Widget",
+            "CFBundleIdentifier": "com.example.app.widget",
+            "CFBundleName": "Widget",
+            "MinimumOSVersion": "15.0",
+            "NSExtension": {
+              "NSExtensionPointIdentifier": "com.apple.widgetkit-extension"
+            }
+          },
+          "path": "PlugIns/Widget.appex"
+        },
+        {
+          "expected": {
+            "CFBundleExecutable": "Share",
+            "CFBundleIdentifier": "4no.qv4clrx.xja.share",
+            "NSExtension": {
+              "NSExtensionAttributes": {
+                "HostBundle": "4no.qv4clrx.xja"
+              },
+              "NSExtensionPointIdentifier": "com.apple.share-services"
+            }
+          },
+          "info_plist": {
+            "CFBundleExecutable": "Share",
+            "CFBundleIdentifier": "com.example.app.share",
+            "NSExtension": {
+              "NSExtensionAttributes": {
+                "HostBundle": "com.example.app"
+              },
+              "NSExtensionPointIdentifier": "com.apple.share-services"
+            }
+          },
+          "path": "PlugIns/Share.appex"
+        }
+      ],
+      "main_bundle_id": "com.example.app",
+      "name": "icon",
+      "new_team_id": "ZZZZZ99999",
+      "options": {
+        "icon_png": "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAY0lEQVR4nO3PQQ3AIADAQEAXSlCMrIngcVnSU9DOs+/4s6UDXjWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgNaA1oDWgfTkoAd6wVLuNAAAAAElFTkSuQmCC"
+      },
+      "original_team_ids": [
+        "ABCDE12345"
+      ],
+      "profile_type": "development",
+      "randomize": true,
+      "registered_identifiers": [
+        "4no.qv4clrx.xja",
+        "4no.qv4clrx.xja.share",
+        "4no.qv4clrx.xja.widget",
+        "ABCDE12345.com.example.legacy",
+        "com.example.app",
+        "com.example.app.share",
+        "com.example.app.widget",
+        "group.4no.qv4clrx.xja",
+        "group.ABCDE12345.shared",
+        "group.ZZZZZ99999.shared",
+        "group.com.example.app",
+        "iCloud.4no.qv4clrx.9f5qsq",
+        "iCloud.4no.qv4clrx.xja",
+        "iCloud.com.example.app"
+      ]
     }
   ],
   "source": {

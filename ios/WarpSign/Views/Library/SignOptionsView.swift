@@ -1,4 +1,6 @@
+import PhotosUI
 import SwiftUI
+import UIKit
 
 /// Everything about how an app gets signed, then the button
 struct SignOptionsView: View {
@@ -6,6 +8,9 @@ struct SignOptionsView: View {
     let app: LibraryApp
     @State private var options = SigningOptions.saved
     @State private var signing = false
+    @State private var iconItem: PhotosPickerItem?
+    /// The chosen icon, as PNG
+    @State private var icon: Data?
 
     private var blocker: String? {
         account.signingBlocker(for: options.certificate.type)
@@ -52,6 +57,23 @@ struct SignOptionsView: View {
 
             Section("App") {
                 TextField("Name (\(app.displayName))", text: $options.bundleName)
+                HStack {
+                    PhotosPicker(selection: $iconItem, matching: .images) {
+                        Label(icon == nil ? "Change Icon…" : "Icon", systemImage: "photo")
+                    }
+                    .buttonStyle(.borderless)
+                    Spacer()
+                    if let icon, let image = UIImage(data: icon) {
+                        AppIconView(image: image, size: 36)
+                        Button("Reset", systemImage: "xmark.circle.fill") {
+                            self.icon = nil
+                            iconItem = nil
+                        }
+                        .labelStyle(.iconOnly)
+                        .foregroundStyle(.secondary)
+                        .buttonStyle(.borderless)
+                    }
+                }
                 Toggle("Support All Devices", isOn: $options.patchAllDevices)
                 Toggle("File Sharing", isOn: $options.patchFileSharing)
                 Toggle("ProMotion (120 Hz)", isOn: $options.patchPromotion)
@@ -110,7 +132,17 @@ struct SignOptionsView: View {
         .navigationTitle("Sign")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $signing) {
-            SigningView(app: app, options: options)
+            SigningView(app: app, options: options, icon: icon)
+        }
+        .onChange(of: iconItem) { _, item in
+            guard let item else { return }
+            Task {
+                // Photos can be HEIC: hand warpsign-core a PNG
+                if let data = try? await item.loadTransferable(type: Data.self),
+                   let png = UIImage(data: data)?.pngData() {
+                    icon = png
+                }
+            }
         }
     }
 

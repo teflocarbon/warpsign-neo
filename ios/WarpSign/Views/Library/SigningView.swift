@@ -6,6 +6,8 @@ struct SigningView: View {
     @Environment(LibraryStore.self) private var library
     let app: LibraryApp
     let options: SigningOptions
+    /// New icon as PNG, if one was chosen
+    var icon: Data?
 
     private enum Phase {
         case signing
@@ -124,7 +126,7 @@ struct SigningView: View {
                 ipa: LibraryStore.ipaURL(of: app.id),
                 output: output,
                 kind: options.certificate.type,
-                settings: options.settings,
+                settings: options.settings(icon: icon),
                 observer: recorder
             )
             var copy = draft

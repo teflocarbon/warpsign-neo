@@ -240,6 +240,8 @@ pub enum InterfaceStyle {
 pub struct SignSettings {
     /// New display name
     pub bundle_name: Option<String>,
+    /// New icon: PNG or JPEG, ideally square and 1024 pixels
+    pub icon: Option<Vec<u8>>,
     /// Give identifiers a new stable form (default on; off only for apps
     /// you own)
     pub encode_ids: bool,
@@ -266,6 +268,7 @@ pub fn default_sign_settings() -> SignSettings {
     let options = SignOptions::default();
     SignSettings {
         bundle_name: None,
+        icon: None,
         encode_ids: options.encode_ids,
         patch_ids: options.patching.patch_ids,
         force_original_id: options.patching.force_original_id,
@@ -289,6 +292,7 @@ impl From<SignSettings> for SignOptions {
                 patch_ids: settings.patch_ids,
                 force_original_id: settings.force_original_id,
                 bundle_name: settings.bundle_name.filter(|name| !name.trim().is_empty()),
+                icon: settings.icon,
                 patch_all_devices: settings.patch_all_devices,
                 patch_file_sharing: settings.patch_file_sharing,
                 patch_promotion: settings.patch_promotion,

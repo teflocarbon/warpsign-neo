@@ -51,10 +51,12 @@ struct SigningOptions: Codable, Equatable {
     var interfaceStyle: StyleChoice = .automatic
     var removeUrlSchemes = false
 
-    var settings: SignSettings {
+    /// For warpsign-core, with a new icon (PNG) if one was chosen
+    func settings(icon: Data?) -> SignSettings {
         let name = bundleName.trimmingCharacters(in: .whitespaces)
         return SignSettings(
             bundleName: name.isEmpty ? nil : name,
+            icon: icon,
             encodeIds: encodeIds,
             patchIds: patchIds,
             forceOriginalId: forceOriginalId,

@@ -284,6 +284,41 @@ fn app_inspection_matches() {
     }
 }
 
+/// Python's IconHandler names icons `cyan_<7 random hex>a`: pin the random
+/// part, as tools/gen_fixtures.py does
+fn normalise_icon_names(value: Json) -> Json {
+    match value {
+        Json::String(text) => {
+            let mut result = String::new();
+            let mut rest = text.as_str();
+            while let Some(index) = rest.find("cyan_") {
+                let (before, after) = rest.split_at(index);
+                result.push_str(before);
+                let random = &after[5..];
+                if random.len() >= 8
+                    && random[..7].bytes().all(|b| b.is_ascii_hexdigit())
+                    && random.as_bytes()[7] == b'a'
+                {
+                    result.push_str("cyan_0000000a");
+                    rest = &random[8..];
+                } else {
+                    result.push_str("cyan_");
+                    rest = random;
+                }
+            }
+            result.push_str(rest);
+            Json::String(result)
+        }
+        Json::Array(items) => Json::Array(items.into_iter().map(normalise_icon_names).collect()),
+        Json::Object(map) => Json::Object(
+            map.into_iter()
+                .map(|(key, value)| (key, normalise_icon_names(value)))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
 fn patching_options(options: &Json) -> warpsign_core::info_plist::PatchingOptions {
     use warpsign_core::info_plist::{PatchingOptions, StatusBarStyle, UiStyle};
 
@@ -296,6 +331,11 @@ fn patching_options(options: &Json) -> warpsign_core::info_plist::PatchingOption
             .get("bundle_name")
             .and_then(Json::as_str)
             .map(String::from),
+        icon: options.get("icon_png").and_then(Json::as_str).map(|png| {
+            base64::engine::general_purpose::STANDARD
+                .decode(png)
+                .unwrap()
+        }),
         patch_all_devices: flag("patch_all_devices").unwrap_or_default(),
         patch_file_sharing: flag("patch_file_sharing").unwrap_or_default(),
         patch_promotion: flag("patch_promotion").unwrap_or_default(),
@@ -361,16 +401,36 @@ fn info_plist_patching_matches() {
                 .unwrap();
 
             assert_eq!(
-                dict_to_json(&patched),
+                normalise_icon_names(dict_to_json(&patched)),
                 entry["expected"],
                 "{name}: Info.plist of {relative:?}"
             );
             let on_disk = plist::Value::from_file(&path).unwrap();
             assert_eq!(
-                plist_to_json(&on_disk),
+                normalise_icon_names(plist_to_json(&on_disk)),
                 entry["expected"],
                 "{name}: file on disk"
             );
+        }
+
+        if let Some(expected) = case.get("icon_files") {
+            let mut files: Vec<Json> = std::fs::read_dir(dir.path())
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .filter(|path| {
+                    path.file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .starts_with("cyan_")
+                })
+                .map(|path| {
+                    let (width, height) = image::image_dimensions(&path).unwrap();
+                    let name = path.file_name().unwrap().to_string_lossy().into_owned();
+                    json!([normalise_icon_names(Json::String(name)), [width, height]])
+                })
+                .collect();
+            files.sort_by_key(|file| file[0].as_str().unwrap().to_string());
+            assert_eq!(&Json::Array(files), expected, "{name}: icon files");
         }
 
         // Then a binary, with the state the Info.plists left

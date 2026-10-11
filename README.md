@@ -60,7 +60,7 @@ tools/                  Fixture generator, test data builders, iOS build, macOS 
 ## iOS app
 
 - **Library**: import IPAs from Files or the share sheet, or download them from sources. Shows icons, versions and sizes without unpacking, and flags IPAs that are still App Store encrypted (they install but crash).
-- **Signing**: every Python warpsign option, remembered between signs. Signing runs as ten named steps shown live; each step expands to its log, and the log can be copied for bug reports. The result is shared from the app.
+- **Signing**: Python warpsign's options (name, icon, identifiers, device and display tweaks, debugging), remembered between signs. Signing runs as ten named steps shown live; each step expands to its log, and the log can be copied for bug reports. The result is shared from the app.
 - **Sources**: AltStore-format repos, with search, screenshots, versions and downloads.
 - **Settings**: sign in with your Apple ID (device or SMS two-factor codes; the session lives in the Keychain), pick a team, create the development and distribution certificates, back them up as one passphrase-protected `.p12`, restore a backup, and check certificates with Apple. Diagnostics check provisioning profiles for PPQ.
 
@@ -88,6 +88,8 @@ warpsign profile *.mobileprovision # PPQ check
 warpsign status
 warpsign device list               # the devices signed apps install on
 ```
+
+Not ported yet: `--patch-liquid-glass`, `--hide-home-indicator` and `--inject-warpsign-fix`, which edit Mach-O load commands (Python warpsign used LIEF).
 
 The session and identities live in the config directory (`~/.config/warpsign`, `~/Library/Application Support/warpsign` or `%APPDATA%\warpsign`; override with `--config-dir` or `WARPSIGN_CONFIG_DIR`), readable only by you. `identity import` takes a phone's backup, so the CLI and the app can share certificates. For automation, `WARPSIGN_P12_PASSPHRASE` supplies the import passphrase.
 

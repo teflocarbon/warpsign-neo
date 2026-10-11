@@ -2,9 +2,8 @@
 //! app (name, device support, file sharing, display options), and byte-level
 //! replacement of mapped IDs anywhere in the file.
 //!
-//! Port of Python warpsign's `AppPatcher.patch_info_plist`, pinned by
-//! `fixtures/info_plist_patching.json`. Changing the app icon is not ported
-//! yet.
+//! Port of Python warpsign's `AppPatcher.patch_info_plist` (and its
+//! `IconHandler`), pinned by `fixtures/info_plist_patching.json`.
 
 use std::path::Path;
 
@@ -21,6 +20,8 @@ pub enum InfoPlistError {
     },
     #[error("{path} is not a valid Info.plist: {message}")]
     Invalid { path: String, message: String },
+    #[error("the new icon can't be used: {0}")]
+    Icon(String),
     #[error("can't replace {old} with {new} in binaries: the lengths differ")]
     LengthMismatch { old: String, new: String },
 }
@@ -55,6 +56,8 @@ pub struct PatchingOptions {
     pub force_original_id: bool,
     /// New display name for the main app
     pub bundle_name: Option<String>,
+    /// New icon for the main app: PNG or JPEG, ideally square
+    pub icon: Option<Vec<u8>>,
     /// Allow iPhone and iPad, drop device restrictions, lower MinimumOSVersion
     pub patch_all_devices: bool,
     /// Enable Files app and iTunes file sharing
@@ -79,6 +82,7 @@ impl Default for PatchingOptions {
             patch_ids: true,
             force_original_id: false,
             bundle_name: None,
+            icon: None,
             patch_all_devices: false,
             patch_file_sharing: false,
             patch_promotion: false,
@@ -149,6 +153,10 @@ impl InfoPlistPatcher {
 
         self.patch_identifiers(&mut info, mapping, is_main_app);
         if is_main_app {
+            if let Some(icon) = &self.options.icon {
+                let app_dir = path.parent().unwrap_or(Path::new("."));
+                set_icon(app_dir, icon, &mut info)?;
+            }
             self.patch_main_app(&mut info);
         }
 
@@ -391,6 +399,61 @@ impl InfoPlistPatcher {
             })
             .collect()
     }
+}
+
+/// Write the icon at the sizes iOS wants and point Info.plist at them, under
+/// a new name so the asset catalog's icon isn't used. Python warpsign's
+/// `IconHandler.update_app_icon` (from cyan): same names, sizes and keys.
+fn set_icon(app_dir: &Path, icon: &[u8], info: &mut Dictionary) -> Result<(), InfoPlistError> {
+    let image = image::load_from_memory(icon).map_err(|e| InfoPlistError::Icon(e.to_string()))?;
+
+    let mut random = [0u8; 4];
+    getrandom::fill(&mut random).expect("system random number generator");
+    let hex: String = random.iter().map(|b| format!("{b:02x}")).collect();
+    // Can't end with a digit
+    let uid = format!("cyan_{}a", &hex[..7]);
+    let i60 = format!("{uid}60x60");
+    let i76 = format!("{uid}76x76");
+
+    for (name, size) in [
+        (format!("{i60}@2x.png"), 120),
+        (format!("{i60}@3x.png"), 180),
+        (format!("{i76}@2x~ipad.png"), 152),
+        (format!("{i76}@2.17x~ipad.png"), 167),
+    ] {
+        let path = app_dir.join(&name);
+        image
+            .resize_exact(size, size, image::imageops::FilterType::CatmullRom)
+            .save_with_format(&path, image::ImageFormat::Png)
+            .map_err(|e| InfoPlistError::Icon(format!("{name}: {e}")))?;
+    }
+
+    let primary = |files: Vec<&String>| {
+        let mut icon = Dictionary::new();
+        icon.insert(
+            "CFBundleIconFiles".into(),
+            Value::Array(
+                files
+                    .into_iter()
+                    .map(|f| Value::String(f.clone()))
+                    .collect(),
+            ),
+        );
+        icon.insert("CFBundleIconName".into(), Value::String(uid.clone()));
+        Value::Dictionary(icon)
+    };
+    for (key, files) in [
+        ("CFBundleIcons", vec![&i60]),
+        ("CFBundleIcons~ipad", vec![&i60, &i76]),
+    ] {
+        if !matches!(info.get(key), Some(Value::Dictionary(_))) {
+            info.insert(key.into(), Value::Dictionary(Dictionary::new()));
+        }
+        if let Some(Value::Dictionary(icons)) = info.get_mut(key) {
+            icons.insert("CFBundlePrimaryIcon".into(), primary(files));
+        }
+    }
+    Ok(())
 }
 
 fn set(info: &mut Dictionary, key: &str, value: Value) {
