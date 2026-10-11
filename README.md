@@ -23,6 +23,14 @@ This is the successor to [warpsign](https://github.com/teflocarbon/warpsign). Py
 
 **Getting the app onto a phone** only needs a basic sign with anything. On first launch it logs in, creates its own certificate through the portal and registers the device. After that it can provision itself, and everything else.
 
+## Not supported
+
+warpsign-neo is for your own **paid** Apple Developer account, with provisioning done through the Developer Portal. These are deliberately out of scope:
+
+- **Free Apple accounts.** They can't create the explicit App IDs and capabilities warpsign relies on.
+- **Wildcard provisioning profiles.** Every app and extension gets its own explicit App ID.
+- **Bringing your own certificate and profile** to sign with, Feather-style. Neo creates and manages them through the portal.
+
 ## Compatibility with Python warpsign
 
 Encoded bundle IDs must stay identical between the two implementations. Otherwise an app re-signed with warpsign-neo gets a new bundle ID, which iOS treats as a different app, so updates lose their data.
@@ -49,7 +57,10 @@ tools/                  Fixture generator, test data builders, iOS build, macOS 
 
 ## iOS app
 
-So far the app opens an IPA (from its picker, or Files and the share sheet) and shows what's inside: bundle ID, version, team IDs and every component, all read by the Rust core.
+So far the app can:
+
+- open an IPA (from its picker, or Files and the share sheet) and show what's inside it: bundle ID, version, team IDs and every component. The work happens in the Rust core as named steps, shown as a live checklist; each step expands to its log, and the whole log can be copied for bug reports.
+- check provisioning profiles from your account: name, team, devices, expiry, whether PPQ checking is on, and whether it's an (unsupported) wildcard profile.
 
 To build it on a Mac (Xcode, rustup and `brew install xcodegen`):
 

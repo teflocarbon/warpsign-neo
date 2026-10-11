@@ -63,3 +63,20 @@ fn encoded_ids_are_fine_with_ppq() {
 fn keeping_original_ids_is_fine_without_ppq() {
     assert!(check_ppq_risk(&[profile("no-ppq"), profile("legacy")], true).is_ok());
 }
+
+#[test]
+fn detects_wildcard_profiles() {
+    assert!(profile("wildcard").is_wildcard());
+    assert!(!profile("ppq").is_wildcard());
+}
+
+#[test]
+fn reads_expiration_date() {
+    let expires = profile("ppq").expiration_date.unwrap();
+    let seconds = expires
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    // 2030-01-01T00:00:00Z
+    assert_eq!(seconds, 1_893_456_000);
+}

@@ -5,11 +5,14 @@
 //! thread in Swift.
 
 use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
 
 use plist::Value;
-use warpsign_core::inspect::{inspect_app, slash_path, team_ids};
-use warpsign_core::ipa::extract_ipa;
+use warpsign_core::inspect::slash_path;
+use warpsign_core::pipeline::{self, INSPECT_STEPS, PipelineError};
 use warpsign_core::profile::ProvisioningProfile;
+use warpsign_core::progress::{self, ProgressObserver};
 
 uniffi::setup_scaffolding!();
 
@@ -53,6 +56,74 @@ pub struct ProfileInfo {
     pub device_count: u32,
     /// Apps signed with this profile check in with Apple on first launch
     pub ppq_check: bool,
+    /// Wildcard profiles aren't supported
+    pub is_wildcard: bool,
+    /// Seconds since 1970
+    pub expires_at: Option<i64>,
+}
+
+/// A stage of processing an IPA (mirrors warpsign_core::progress::Step)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, uniffi::Enum)]
+pub enum Step {
+    Extract,
+    InspectComponents,
+    ReadTeamIds,
+}
+
+impl From<progress::Step> for Step {
+    fn from(step: progress::Step) -> Self {
+        match step {
+            progress::Step::Extract => Step::Extract,
+            progress::Step::InspectComponents => Step::InspectComponents,
+            progress::Step::ReadTeamIds => Step::ReadTeamIds,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct StepInfo {
+    pub step: Step,
+    pub title: String,
+}
+
+/// Implemented in Swift to follow progress. Called from a background
+/// thread, in order, while the operation runs.
+#[uniffi::export(with_foreign)]
+pub trait StepObserver: Send + Sync {
+    fn step_started(&self, step: Step);
+    fn step_log(&self, step: Step, message: String);
+    /// `error` is set if the step failed; nothing runs after a failed step
+    fn step_finished(&self, step: Step, elapsed_ms: u64, error: Option<String>);
+}
+
+struct ObserverBridge(Arc<dyn StepObserver>);
+
+impl ProgressObserver for ObserverBridge {
+    fn step_started(&self, step: progress::Step) {
+        self.0.step_started(step.into());
+    }
+    fn step_log(&self, step: progress::Step, message: &str) {
+        self.0.step_log(step.into(), message.to_string());
+    }
+    fn step_finished(&self, step: progress::Step, elapsed: Duration, error: Option<&str>) {
+        self.0.step_finished(
+            step.into(),
+            elapsed.as_millis().try_into().unwrap_or(u64::MAX),
+            error.map(String::from),
+        );
+    }
+}
+
+/// The steps `inspect_ipa` runs, in order, so they can be shown up front
+#[uniffi::export]
+pub fn inspect_steps() -> Vec<StepInfo> {
+    INSPECT_STEPS
+        .iter()
+        .map(|&step| StepInfo {
+            step: step.into(),
+            title: step.title().to_string(),
+        })
+        .collect()
 }
 
 /// warpsign-core's version
@@ -62,38 +133,41 @@ pub fn core_version() -> String {
 }
 
 /// Extract an IPA into `work_dir` (which must be empty or not exist) and
-/// describe the app inside it
+/// describe the app inside it, reporting each step to `observer`
 #[uniffi::export]
-pub fn inspect_ipa(ipa_path: String, work_dir: String) -> Result<AppInfo, WarpsignError> {
-    let app = extract_ipa(Path::new(&ipa_path), Path::new(&work_dir)).map_err(|e| {
-        WarpsignError::Ipa {
+pub fn inspect_ipa(
+    ipa_path: String,
+    work_dir: String,
+    observer: Arc<dyn StepObserver>,
+) -> Result<AppInfo, WarpsignError> {
+    let app = pipeline::inspect_ipa(
+        Path::new(&ipa_path),
+        Path::new(&work_dir),
+        &ObserverBridge(observer),
+    )
+    .map_err(|e| match e {
+        PipelineError::Ipa(_) => WarpsignError::Ipa {
             message: e.to_string(),
-        }
+        },
+        _ => WarpsignError::Inspect {
+            message: e.to_string(),
+        },
     })?;
-    let components = inspect_app(&app).map_err(|e| WarpsignError::Inspect {
-        message: e.to_string(),
-    })?;
-    let main =
-        components
-            .iter()
-            .find(|c| c.is_main_app())
-            .ok_or_else(|| WarpsignError::Inspect {
-                message: "the app has no main executable".into(),
-            })?;
+
+    let main = app.main();
     let info_string = |key: &str| {
         main.info_plist
             .get(key)
             .and_then(Value::as_string)
             .map(String::from)
     };
-
     Ok(AppInfo {
-        app_path: app.display().to_string(),
+        app_path: app.app_dir.display().to_string(),
         bundle_id: main.bundle_id.clone(),
         display_name: info_string("CFBundleDisplayName").or_else(|| info_string("CFBundleName")),
         version: info_string("CFBundleShortVersionString"),
-        team_ids: team_ids(&components),
-        components: components
+        components: app
+            .components
             .iter()
             .map(|c| Component {
                 path: slash_path(&c.path),
@@ -101,6 +175,7 @@ pub fn inspect_ipa(ipa_path: String, work_dir: String) -> Result<AppInfo, Warpsi
                 is_primary: c.is_primary,
             })
             .collect(),
+        team_ids: app.team_ids.clone(),
     })
 }
 
@@ -113,7 +188,14 @@ pub fn read_profile(path: String) -> Result<ProfileInfo, WarpsignError> {
     let profile = ProvisioningProfile::parse(&data).map_err(|e| WarpsignError::Profile {
         message: e.to_string(),
     })?;
+    let expires_at = profile.expiration_date.and_then(|date| {
+        date.duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .and_then(|d| i64::try_from(d.as_secs()).ok())
+    });
     Ok(ProfileInfo {
+        is_wildcard: profile.is_wildcard(),
+        expires_at,
         name: profile.name,
         uuid: profile.uuid,
         team_ids: profile.team_ids,

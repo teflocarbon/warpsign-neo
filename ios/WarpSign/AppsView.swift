@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct ContentView: View {
+struct AppsView: View {
     @Environment(AppModel.self) private var model
     @State private var showingImporter = false
 
@@ -12,7 +12,7 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             content
-                .navigationTitle("WarpSign")
+                .navigationTitle("Apps")
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
                         Button("Open IPA", systemImage: "plus") {
@@ -44,21 +44,36 @@ struct ContentView: View {
                     .buttonStyle(.borderedProminent)
             }
         case .inspecting(let fileName):
-            ProgressView("Reading \(fileName)…")
+            List {
+                Section("Reading \(fileName)") {
+                    StepListView(steps: model.steps)
+                }
+            }
         case .inspected(let info):
-            AppInfoView(info: info)
+            AppInfoView(info: info, steps: model.steps)
         case .failed(let message):
-            ContentUnavailableView(
-                "Couldn't Read App",
-                systemImage: "exclamationmark.triangle",
-                description: Text(message)
-            )
+            List {
+                Section {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
+                }
+                Section {
+                    StepListView(steps: model.steps)
+                } header: {
+                    Text("Steps")
+                } footer: {
+                    CopyLogButton(steps: model.steps)
+                }
+            }
         }
     }
 }
 
 struct AppInfoView: View {
     let info: AppInfo
+    let steps: [StepState]
+    @State private var showingSteps = false
 
     var body: some View {
         List {
@@ -80,8 +95,15 @@ struct AppInfoView: View {
                 }
             }
             Section {
+                DisclosureGroup("Steps", isExpanded: $showingSteps) {
+                    StepListView(steps: steps)
+                }
             } footer: {
-                Text("warpsign-core \(coreVersion())")
+                HStack {
+                    Text("warpsign-core \(coreVersion())")
+                    Spacer()
+                    CopyLogButton(steps: steps)
+                }
             }
         }
     }
@@ -94,19 +116,32 @@ struct ComponentRow: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text(component.path.isEmpty ? "App" : component.path)
-                    .font(.body)
                 if component.isPrimary {
-                    Text("App ID")
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.tint.opacity(0.15), in: .capsule)
+                    Badge("App ID", color: .accentColor)
                 }
             }
             Text(component.bundleId)
-                .font(.caption)
-                .monospaced()
+                .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
         }
+    }
+}
+
+struct Badge: View {
+    let text: String
+    let color: Color
+
+    init(_ text: String, color: Color) {
+        self.text = text
+        self.color = color
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(color.opacity(0.15), in: .capsule)
     }
 }

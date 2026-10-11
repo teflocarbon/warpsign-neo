@@ -41,7 +41,7 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        # Let IPAs be opened in WarpSign from Files and the share sheet
+        # Let IPAs and profiles be opened in WarpSign from Files and the share sheet
         LSSupportsOpeningDocumentsInPlace: false
         CFBundleDocumentTypes:
           - CFBundleTypeName: iOS App
@@ -49,6 +49,11 @@ targets:
             LSHandlerRank: Alternate
             LSItemContentTypes:
               - com.apple.itunes.ipa
+          - CFBundleTypeName: Provisioning Profile
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - com.apple.mobileprovision
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: com.apple.itunes.ipa
             UTTypeDescription: iOS App
@@ -58,3 +63,10 @@ targets:
             UTTypeTagSpecification:
               public.filename-extension:
                 - ipa
+          - UTTypeIdentifier: com.apple.mobileprovision
+            UTTypeDescription: Provisioning Profile
+            UTTypeConformsTo:
+              - public.data
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - mobileprovision

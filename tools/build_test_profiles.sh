@@ -18,7 +18,7 @@ openssl pkcs12 -legacy -in "$DATA/test-cert.p12" -passin pass:secret -nokeys -ou
 openssl pkcs12 -legacy -in "$DATA/test-cert.p12" -passin pass:secret -nocerts -nodes -out "$WORK/key.pem" 2>/dev/null
 
 python3 - "$WORK" <<'PY'
-import plistlib, sys
+import datetime, plistlib, sys
 work = sys.argv[1]
 base = {
     "AppIDName": "WS App",
@@ -34,11 +34,18 @@ base = {
         "keychain-access-groups": ["ZZZZZ99999.*"],
     },
     "Version": 1,
+    "ExpirationDate": datetime.datetime(2030, 1, 1, tzinfo=datetime.timezone.utc),
 }
 profiles = {
     "ppq": {**base, "Name": "WS ppq Development", "UUID": "11111111-1111-1111-1111-111111111111", "PPQCheck": True},
     "no-ppq": {**base, "Name": "WS no-ppq Development", "UUID": "22222222-2222-2222-2222-222222222222", "PPQCheck": False},
     "legacy": {**base, "Name": "WS legacy Development", "UUID": "33333333-3333-3333-3333-333333333333"},
+    "wildcard": {
+        **base,
+        "Name": "Wildcard Development",
+        "UUID": "44444444-4444-4444-4444-444444444444",
+        "Entitlements": {**base["Entitlements"], "application-identifier": "ZZZZZ99999.*"},
+    },
 }
 for name, profile in profiles.items():
     with open(f"{work}/{name}.plist", "wb") as f:
@@ -46,7 +53,7 @@ for name, profile in profiles.items():
 PY
 
 mkdir -p "$OUT"
-for name in ppq no-ppq legacy; do
+for name in ppq no-ppq legacy wildcard; do
     openssl cms -sign -nodetach -binary -outform DER \
         -signer "$WORK/cert.pem" -inkey "$WORK/key.pem" \
         -in "$WORK/$name.plist" -out "$OUT/$name.mobileprovision"

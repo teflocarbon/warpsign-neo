@@ -25,6 +25,7 @@ pub struct ProvisioningProfile {
     /// first launch. Teams created after 6 June 2021 get this; older teams
     /// don't, and their profiles omit the key.
     pub ppq_check: bool,
+    pub expiration_date: Option<std::time::SystemTime>,
     /// The whole plist, for anything not exposed above
     pub plist: Dictionary,
 }
@@ -72,8 +73,22 @@ impl ProvisioningProfile {
                 .get("PPQCheck")
                 .and_then(Value::as_boolean)
                 .unwrap_or(false),
+            expiration_date: plist
+                .get("ExpirationDate")
+                .and_then(Value::as_date)
+                .map(Into::into),
             plist,
         })
+    }
+
+    /// Whether this is a wildcard profile (App ID ending in `*`). warpsign
+    /// registers an explicit App ID per app and extension, so wildcard
+    /// profiles aren't supported.
+    pub fn is_wildcard(&self) -> bool {
+        self.entitlements
+            .get("application-identifier")
+            .and_then(Value::as_string)
+            .is_some_and(|app_id| app_id.ends_with('*'))
     }
 }
 
