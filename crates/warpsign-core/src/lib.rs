@@ -3,6 +3,8 @@
 pub mod bundle_mapping;
 pub mod entitlements;
 mod pyrandom;
+pub mod signature;
+pub mod signing;
 
 #[doc(hidden)]
 pub use pyrandom::PyRandom;

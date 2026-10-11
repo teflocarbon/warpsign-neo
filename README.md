@@ -4,7 +4,7 @@ Sign iOS apps with your paid Apple Developer account, on the device itself or fr
 
 This is the successor to [warpsign](https://github.com/teflocarbon/warpsign). Python warpsign does the provisioning work well (dedicated App IDs per app and extension, only the capabilities an app actually uses, app groups and iCloud containers registered and linked, deterministic ID encoding), but it needs macOS for signing, and its "no Mac" path is a GitHub Actions workflow. warpsign-neo keeps that behaviour and drops the Mac.
 
-> Status: early. The ID mapping and entitlement processing are ported and verified against Python warpsign. Nothing signs or talks to Apple yet.
+> Status: early. The ID mapping and entitlement processing are ported and verified against Python warpsign. Bundles can be signed in-process on any OS with apple-codesign (not yet verified on a device, see `docs/spikes/rcodesign.md`). Nothing talks to Apple yet.
 
 ## Plan
 
@@ -41,7 +41,7 @@ python tools/gen_fixtures.py /path/to/warpsign
 crates/warpsign-core/   Shared logic (library)
 docs/spikes/            Findings from experiments (e.g. signing with rcodesign)
 fixtures/               Reference outputs from Python warpsign
-tools/                  Fixture generator, macOS A/B test for rcodesign
+tools/                  Fixture generator, test app builder, macOS A/B test for rcodesign
 ```
 
 ## Development
