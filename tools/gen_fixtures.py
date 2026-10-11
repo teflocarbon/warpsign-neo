@@ -273,6 +273,25 @@ def mapping_cases() -> list:
             ],
             original_team_ids=[TEAM_A, TEAM_B],
         ),
+        # Wallet pass type IDs carry a team prefix: TEAM.* (Twitter's) or
+        # TEAM.pass.example; other teams' stay as they are
+        mapping_case(
+            "wallet_pass_type_ids",
+            [
+                component(
+                    "com.example.app",
+                    **{
+                        "application-identifier": f"{TEAM_A}.com.example.app",
+                        "com.apple.developer.pass-type-identifiers": [
+                            f"{TEAM_A}.*",
+                            f"{TEAM_B}.pass.com.example.card",
+                            "UNKNOWN123.pass.other",
+                        ],
+                    },
+                ),
+            ],
+            original_team_ids=[TEAM_A, TEAM_B],
+        ),
         mapping_case(
             "kvstore_short_form",
             [

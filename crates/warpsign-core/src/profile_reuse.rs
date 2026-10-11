@@ -127,6 +127,22 @@ pub fn check(
     Ok(())
 }
 
+/// The entitlements in `entitlements` that `profile` doesn't grant, which
+/// iOS refuses to install an app over ("A valid provisioning profile for
+/// this executable was not found")
+pub fn ungranted(profile: &ProvisioningProfile, entitlements: &Dictionary) -> Vec<String> {
+    entitlements
+        .iter()
+        .filter(|(key, wanted)| {
+            !profile
+                .entitlements
+                .get(key.as_str())
+                .is_some_and(|allowed| grants(allowed, wanted))
+        })
+        .map(|(key, _)| key.clone())
+        .collect()
+}
+
 /// Whether a profile's entitlement value allows a signed one. Profiles use
 /// `*` as a wildcard (`TEAMID.*`, or `*` alone), list what may be signed
 /// in arrays, and use `true` to allow either value of a boolean.

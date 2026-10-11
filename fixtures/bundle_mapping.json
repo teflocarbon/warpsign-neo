@@ -817,6 +817,64 @@
           "bundle_id": "com.example.app",
           "entitlements": {
             "application-identifier": "ABCDE12345.com.example.app",
+            "com.apple.developer.pass-type-identifiers": [
+              "ABCDE12345.*",
+              "QWERT67890.pass.com.example.card",
+              "UNKNOWN123.pass.other"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "app_groups": [],
+        "binary_patches": {
+          "ABCDE12345": "ZZZZZ99999",
+          "QWERT67890": "ZZZZZ99999",
+          "com.example.app": "4no.qv4clrx.xja"
+        },
+        "icloud_containers": [],
+        "mapped_bundle_ids": [
+          "4no.qv4clrx.xja"
+        ],
+        "mapped_entitlements": [
+          {
+            "application-identifier": "ZZZZZ99999.4no.qv4clrx.xja",
+            "com.apple.developer.pass-type-identifiers": [
+              "ZZZZZ99999.*",
+              "ZZZZZ99999.pass.com.example.card",
+              "UNKNOWN123.pass.other"
+            ],
+            "com.apple.developer.team-identifier": "ZZZZZ99999"
+          }
+        ],
+        "mappings": {
+          "com.example.app": {
+            "id_type": "BUNDLE",
+            "new_id": "4no.qv4clrx.xja"
+          }
+        },
+        "registered_identifiers": [
+          "4no.qv4clrx.xja",
+          "com.example.app"
+        ]
+      },
+      "force_original_id": false,
+      "main_bundle_id": "com.example.app",
+      "name": "wallet_pass_type_ids",
+      "new_team_id": "ZZZZZ99999",
+      "original_team_ids": [
+        "ABCDE12345",
+        "QWERT67890"
+      ],
+      "profile_type": "development",
+      "randomize": true
+    },
+    {
+      "components": [
+        {
+          "bundle_id": "com.example.app",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app",
             "com.apple.developer.ubiquity-kvstore-identifier": "ABCDE12345.x"
           }
         }
@@ -1060,6 +1118,6 @@
   ],
   "source": {
     "python": "3.13.16",
-    "warpsign_commit": "d96e33b3ec2c1a5bb3665eff64f80d84cb880518"
+    "warpsign_commit": "4ac33de7db3b5982386c5751c9c23e19d131c6cd"
   }
 }

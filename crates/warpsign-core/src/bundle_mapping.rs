@@ -71,6 +71,16 @@ fn char_len(s: &str) -> usize {
 }
 
 impl BundleMapping {
+    /// `value` with an original team ID prefix moved to this team
+    fn with_this_team(&self, value: &str) -> String {
+        match value.split_once('.') {
+            Some((prefix, rest)) if self.original_team_ids.iter().any(|team| team == prefix) => {
+                format!("{}.{rest}", self.team_id)
+            }
+            _ => value.to_owned(),
+        }
+    }
+
     pub fn new(
         original_team_ids: Vec<String>,
         new_team_id: impl Into<String>,
@@ -283,6 +293,20 @@ impl BundleMapping {
         self.map_list_entitlement(&mut result, "application-groups", IdType::AppGroup);
         for key in ICLOUD_CONTAINER_KEYS {
             self.map_list_entitlement(&mut result, key, IdType::ICloud);
+        }
+
+        // Wallet pass type IDs start with a team ID ("TEAMID.*" or
+        // "TEAMID.pass.example"); the profile only grants this team's
+        let pass_types_key = "com.apple.developer.pass-type-identifiers";
+        if let Some(Value::Array(pass_types)) = result.get(pass_types_key).cloned() {
+            let moved = pass_types
+                .into_iter()
+                .map(|value| match value {
+                    Value::String(id) => Value::String(self.with_this_team(&id)),
+                    other => other,
+                })
+                .collect();
+            result.insert(pass_types_key.to_owned(), Value::Array(moved));
         }
 
         let kvstore_key = "com.apple.developer.ubiquity-kvstore-identifier";

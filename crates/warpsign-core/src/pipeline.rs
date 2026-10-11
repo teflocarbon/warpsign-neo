@@ -16,7 +16,7 @@ use crate::ipa::{IpaError, extract_ipa, package_ipa};
 use crate::portal::api::PortalProfile;
 use crate::portal::{Portal, PortalError};
 use crate::profile::{PpqRisk, ProfileError, ProvisioningProfile, check_ppq_risk};
-use crate::profile_reuse::{NotReusable, ProfileCache, check, portal_date};
+use crate::profile_reuse::{NotReusable, ProfileCache, check, portal_date, ungranted};
 use crate::progress::{ProgressObserver, Step, StepLog, run_step};
 use crate::signature;
 use crate::signing::{BundleEntitlements, SigningError, sign_app_bundle};
@@ -818,8 +818,9 @@ pub fn sign_ipa(
         // Keeping the original bundle ID with a PPQ profile risks the
         // Apple ID: refuse before anything is signed
         check_ppq_risk(&parsed, force_original_id)?;
-        Ok(profiles)
+        Ok((profiles, parsed))
     })?;
+    let (profiles, parsed_profiles) = profiles;
 
     run_step(observer, Step::PatchBinaries, |log| {
         // App Store DRM metadata. Python warpsign removed it after signing,
@@ -859,6 +860,19 @@ pub fn sign_ipa(
                 describe(component),
                 entitlements.len()
             ));
+            // Named now, rather than as installd's "A valid provisioning
+            // profile for this executable was not found"
+            if let Some(profile) = parsed_profiles.get(bundle_entitlements.len()) {
+                for key in ungranted(profile, &entitlements) {
+                    let value = entitlements.get(&key).map(short_value).unwrap_or_default();
+                    let warning = format!(
+                        "{}: its provisioning profile doesn't grant {key} ({value}), so iOS will refuse to install the app",
+                        describe(component)
+                    );
+                    log.log(format!("Warning: {warning}"));
+                    warnings.push(warning);
+                }
+            }
             bundle_entitlements.push(BundleEntitlements {
                 bundle_path: slash_path(&component.path),
                 entitlements,
@@ -960,6 +974,17 @@ pub fn sign_ipa(
 
 /// The entitlements to sign a primary component with, as in Python
 /// warpsign's `_sign_components` and `patch_app_binary`
+/// An entitlement value on one line, for messages
+fn short_value(value: &Value) -> String {
+    match value {
+        Value::String(text) => text.clone(),
+        Value::Boolean(flag) => flag.to_string(),
+        Value::Integer(number) => number.to_string(),
+        Value::Array(items) => items.iter().map(short_value).collect::<Vec<_>>().join(", "),
+        _ => "…".into(),
+    }
+}
+
 /// Folders of apps that can't come along with a re-signed app, and why
 const UNSUPPORTED_APPS: [(&str, &str); 3] = [
     (

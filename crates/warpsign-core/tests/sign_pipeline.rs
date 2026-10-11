@@ -932,7 +932,7 @@ fn a_profile_missing_an_entitlement_updates_only_its_app_id() {
 fn names_bundles_that_got_no_profile() {
     // An app somewhere unusual: not a component Python warpsign finds, so
     // it gets no profile of its own
-    let fake = FakePortal::new("no-ppq.mobileprovision");
+    let fake = realistic_portal();
     let (_dir, result, _) = sign_with(&fake, &SignOptions::default(), TEAM, |app| {
         copy_dir(
             &app.join("PlugIns/Widget.appex"),
@@ -950,18 +950,14 @@ fn names_bundles_that_got_no_profile() {
     );
 
     // A normal app has nothing to warn about
-    let (_dir, result, _) = sign(
-        &FakePortal::new("no-ppq.mobileprovision"),
-        &SignOptions::default(),
-        TEAM,
-    );
+    let (_dir, result, _) = sign(&realistic_portal(), &SignOptions::default(), TEAM);
     let warnings = result.unwrap().warnings;
     assert!(!warnings.iter().any(|w| w.contains("iOS")), "{warnings:?}");
 }
 
 #[test]
 fn removes_app_clips_and_watch_apps() {
-    let fake = FakePortal::new("no-ppq.mobileprovision");
+    let fake = realistic_portal();
     let (dir, result, _) = sign_with(&fake, &SignOptions::default(), TEAM, |app| {
         copy_dir(
             &app.join("PlugIns/Widget.appex"),
@@ -985,4 +981,23 @@ fn removes_app_clips_and_watch_apps() {
     let app = extract_ipa(&signed.output, &out).unwrap();
     assert!(!app.join("AppClips").exists());
     assert!(!app.join("Watch").exists());
+}
+
+#[test]
+fn names_entitlements_the_profile_does_not_grant() {
+    // The test profile grants none of this app's identifiers
+    let fake = FakePortal::new("no-ppq.mobileprovision");
+    let (_dir, result, _) = sign(&fake, &SignOptions::default(), TEAM);
+    let warnings = result.unwrap().warnings;
+    let expected = [
+        "App: its provisioning profile doesn't grant com.apple.security.application-groups",
+        "App: its provisioning profile doesn't grant aps-environment (development)",
+        "PlugIns/Widget.appex: its provisioning profile doesn't grant application-identifier",
+    ];
+    for start in expected {
+        assert!(
+            warnings.iter().any(|warning| warning.starts_with(start)),
+            "{start} in {warnings:?}"
+        );
+    }
 }
