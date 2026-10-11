@@ -2,6 +2,7 @@
 
 pub mod bundle_mapping;
 pub mod entitlements;
+pub mod info_plist;
 pub mod inspect;
 pub mod ipa;
 mod pyrandom;

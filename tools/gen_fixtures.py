@@ -32,6 +32,12 @@ sys.path.insert(0, str(WARPSIGN_DIR))
 
 from warpsign.src.core.bundle_mapper import BundleMapping  # noqa: E402
 from warpsign.src.ipa import ipa_inspector  # noqa: E402
+from warpsign.src.ipa.app_patcher import (  # noqa: E402
+    AppPatcher,
+    PatchingOptions,
+    StatusBarStyle,
+    UIStyle,
+)
 from warpsign.src.ipa.entitlements_processor import EntitlementsProcessor  # noqa: E402
 
 TEAM_A = "ABCDE12345"
@@ -102,8 +108,12 @@ def python_random_cases() -> list:
 # --- Bundle mapping -------------------------------------------------------
 
 
-def run_mapping_case(case: dict) -> dict:
-    """Mirror how SignOrchestrator drives BundleMapping during a sign"""
+def prepare_mapper(case: dict):
+    """Mirror how SignOrchestrator sets up BundleMapping before patching.
+
+    Returns (mapper, mapped_bundle_ids, app_groups, icloud_containers), with
+    the mapper's registered identifiers set.
+    """
     mapper = BundleMapping(
         original_team_ids=case["original_team_ids"],
         new_team_id=case["new_team_id"],
@@ -141,6 +151,13 @@ def run_mapping_case(case: dict) -> dict:
             if team_id in component["bundle_id"]:
                 registered.update({team_id, mapper.team_id})
     mapper.registered_identifiers = registered
+    return mapper, mapped_bundle_ids, app_groups, icloud_containers
+
+
+def run_mapping_case(case: dict) -> dict:
+    """Mirror how SignOrchestrator drives BundleMapping during a sign"""
+    mapper, mapped_bundle_ids, app_groups, icloud_containers = prepare_mapper(case)
+    registered = mapper.registered_identifiers
 
     # _sign_components: map entitlements against the Info.plist bundle ID
     mapped_entitlements = [
@@ -217,8 +234,8 @@ WIDGET_ENTITLEMENTS = {
 }
 
 
-def mapping_cases() -> list:
-    full_app = [
+def full_app_components() -> list:
+    return [
         component("com.example.app", **FULL_ENTITLEMENTS),
         component("com.example.app.widget", **WIDGET_ENTITLEMENTS),
         component(
@@ -229,6 +246,10 @@ def mapping_cases() -> list:
             },
         ),
     ]
+
+
+def mapping_cases() -> list:
+    full_app = full_app_components()
     cases = [
         mapping_case("full_app_development", full_app),
         mapping_case("full_app_adhoc", full_app, profile_type="adhoc"),
@@ -401,6 +422,119 @@ def entitlements_processor_cases() -> list:
     return cases
 
 
+# --- Info.plist patching --------------------------------------------------
+
+# Info.plists for full_app_components(), main app first (the order warpsign
+# patches them in). IDs appear in places only the byte-level patching reaches.
+FULL_APP_INFO_PLISTS = [
+    {
+        "path": "",
+        "info_plist": {
+            "CFBundleIdentifier": "com.example.app",
+            "CFBundleExecutable": "App",
+            "CFBundleName": "Example",
+            "CFBundleDisplayName": "Example",
+            "AppIdentifierPrefix": f"{TEAM_A}.",
+            "MinimumOSVersion": "15.0",
+            "UIDeviceFamily": [1],
+            "UISupportedDevices": ["iPhone14,2"],
+            "UIStatusBarStyle": "UIStatusBarStyleDefault",
+            "UIViewControllerBasedStatusBarAppearance": True,
+            "CFBundleURLTypes": [
+                {"CFBundleURLSchemes": ["com.example.app", "examplescheme"]}
+            ],
+            "NSUserActivityTypes": ["com.example.app.activity"],
+            "SharedContainerGroup": "group.com.example.app",
+            "com.apple.security.application-groups": ["group.com.example.app"],
+            "keychain-access-groups": f"{TEAM_A}.com.example.app",
+            "com.apple.developer.icloud-container-identifiers": ["iCloud.com.example.app"],
+            "com.apple.developer.associated-domains": ["applinks:example.com"],
+        },
+    },
+    {
+        "path": "PlugIns/Widget.appex",
+        "info_plist": {
+            "CFBundleIdentifier": "com.example.app.widget",
+            "CFBundleExecutable": "Widget",
+            "CFBundleName": "Widget",
+            "MinimumOSVersion": "15.0",
+            "NSExtension": {"NSExtensionPointIdentifier": "com.apple.widgetkit-extension"},
+            "AppGroup": "group.com.example.app",
+        },
+    },
+    {
+        "path": "PlugIns/Share.appex",
+        "info_plist": {
+            "CFBundleIdentifier": "com.example.app.share",
+            "CFBundleExecutable": "Share",
+            "NSExtension": {
+                "NSExtensionPointIdentifier": "com.apple.share-services",
+                "NSExtensionAttributes": {"HostBundle": "com.example.app"},
+            },
+        },
+    },
+]
+
+ALL_MAIN_APP_PATCHES = {
+    "bundle_name": "My App",
+    "patch_all_devices": True,
+    "patch_file_sharing": True,
+    "patch_promotion": True,
+    "patch_fullscreen": True,
+    "patch_orientation": True,
+    "patch_game_mode": True,
+    "patch_status_bar": "hidden",
+    "patch_user_interface_style": "dark",
+    "remove_url_schemes": True,
+}
+
+
+def info_plist_cases() -> list:
+    option_sets = [
+        ("defaults", {}, {}),
+        ("all_main_app_patches", ALL_MAIN_APP_PATCHES, {}),
+        ("status_bar_light_ui_light", {"patch_status_bar": "light", "patch_user_interface_style": "light"}, {}),
+        ("status_bar_dark", {"patch_status_bar": "dark"}, {}),
+        ("force_original_id", {"force_original_id": True}, {"force_original_id": True}),
+        ("no_patch_ids", {"patch_ids": False}, {}),
+        ("no_encode_ids", {}, {"randomize": False}),
+    ]
+    cases = []
+    for name, options, mapping_overrides in option_sets:
+        case = mapping_case(name, full_app_components(), **mapping_overrides)
+        mapper, _, _, _ = prepare_mapper(case)
+        case["registered_identifiers"] = sorted(mapper.registered_identifiers)
+        case["options"] = options
+
+        python_options = dict(options)
+        if "patch_status_bar" in python_options:
+            python_options["patch_status_bar"] = StatusBarStyle(python_options["patch_status_bar"])
+        if "patch_user_interface_style" in python_options:
+            python_options["patch_user_interface_style"] = UIStyle(
+                python_options["patch_user_interface_style"]
+            )
+
+        case["info_plists"] = []
+        with tempfile.TemporaryDirectory() as tmp:
+            app = Path(tmp) / "App.app"
+            app.mkdir()
+            with contextlib.redirect_stdout(io.StringIO()):
+                patcher = AppPatcher(app, PatchingOptions(**python_options), mapper)
+                for entry in FULL_APP_INFO_PLISTS:
+                    path = app / entry["path"] / "Info.plist"
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(path, "wb") as f:
+                        plistlib.dump(entry["info_plist"], f)
+                    patcher.patch_info_plist(
+                        path, bundle_mapper=mapper, is_main_app=entry["path"] == ""
+                    )
+                    with open(path, "rb") as f:
+                        patched = plistlib.load(f)
+                    case["info_plists"].append({**entry, "expected": patched})
+        cases.append(case)
+    return cases
+
+
 # --- App inspection -------------------------------------------------------
 
 
@@ -567,3 +701,4 @@ if __name__ == "__main__":
         f.write("\n")
     write("entitlements_processor", entitlements_processor_cases())
     write("app_inspection", inspection_cases())
+    write("info_plist_patching", info_plist_cases())

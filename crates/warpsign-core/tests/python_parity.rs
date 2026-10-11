@@ -282,3 +282,94 @@ fn app_inspection_matches() {
         );
     }
 }
+
+fn patching_options(options: &Json) -> warpsign_core::info_plist::PatchingOptions {
+    use warpsign_core::info_plist::{PatchingOptions, StatusBarStyle, UiStyle};
+
+    let flag = |key: &str| options.get(key).and_then(Json::as_bool);
+    let defaults = PatchingOptions::default();
+    PatchingOptions {
+        patch_ids: flag("patch_ids").unwrap_or(defaults.patch_ids),
+        force_original_id: flag("force_original_id").unwrap_or_default(),
+        bundle_name: options
+            .get("bundle_name")
+            .and_then(Json::as_str)
+            .map(String::from),
+        patch_all_devices: flag("patch_all_devices").unwrap_or_default(),
+        patch_file_sharing: flag("patch_file_sharing").unwrap_or_default(),
+        patch_promotion: flag("patch_promotion").unwrap_or_default(),
+        patch_fullscreen: flag("patch_fullscreen").unwrap_or_default(),
+        patch_orientation: flag("patch_orientation").unwrap_or_default(),
+        patch_game_mode: flag("patch_game_mode").unwrap_or_default(),
+        patch_status_bar: match options.get("patch_status_bar").and_then(Json::as_str) {
+            None => StatusBarStyle::Default,
+            Some("hidden") => StatusBarStyle::Hidden,
+            Some("light") => StatusBarStyle::Light,
+            Some("dark") => StatusBarStyle::Dark,
+            Some(other) => panic!("unknown status bar style {other}"),
+        },
+        patch_user_interface_style: match options
+            .get("patch_user_interface_style")
+            .and_then(Json::as_str)
+        {
+            None => UiStyle::Automatic,
+            Some("light") => UiStyle::Light,
+            Some("dark") => UiStyle::Dark,
+            Some(other) => panic!("unknown UI style {other}"),
+        },
+        remove_url_schemes: flag("remove_url_schemes").unwrap_or_default(),
+    }
+}
+
+/// Mirrors `info_plist_cases` in tools/gen_fixtures.py
+#[test]
+fn info_plist_patching_matches() {
+    use warpsign_core::info_plist::InfoPlistPatcher;
+
+    for case in cases(&load_fixture("info_plist_patching.json")) {
+        let name = str_of(&case["name"]);
+
+        let mut mapping = BundleMapping::new(
+            strings(&case["original_team_ids"]),
+            str_of(&case["new_team_id"]),
+            str_of(&case["main_bundle_id"]),
+            case["randomize"].as_bool().unwrap(),
+        );
+        mapping.force_original_id = case["force_original_id"].as_bool().unwrap();
+        mapping.profile_type = str_of(&case["profile_type"]).parse().unwrap();
+        for component in case["components"].as_array().unwrap() {
+            mapping.map_bundle_id(str_of(&component["bundle_id"]));
+            mapping.extract_resources_from_entitlements(&dict(&component["entitlements"]));
+        }
+        mapping.registered_identifiers = strings(&case["registered_identifiers"])
+            .into_iter()
+            .collect::<HashSet<_>>();
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut patcher = InfoPlistPatcher::new(patching_options(&case["options"]));
+        for entry in case["info_plists"].as_array().unwrap() {
+            let relative = str_of(&entry["path"]);
+            let path = dir.path().join(relative).join("Info.plist");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            json_to_plist(&entry["info_plist"])
+                .to_file_xml(&path)
+                .unwrap();
+
+            let patched = patcher
+                .patch_file(&path, &mut mapping, relative.is_empty())
+                .unwrap();
+
+            assert_eq!(
+                dict_to_json(&patched),
+                entry["expected"],
+                "{name}: Info.plist of {relative:?}"
+            );
+            let on_disk = plist::Value::from_file(&path).unwrap();
+            assert_eq!(
+                plist_to_json(&on_disk),
+                entry["expected"],
+                "{name}: file on disk"
+            );
+        }
+    }
+}
