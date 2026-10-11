@@ -1,0 +1,36 @@
+name: iOS IPA
+
+# Manual: an unsigned Release WarpSign.ipa, for signing with warpsign itself
+# (macOS runners cost 10x the minutes of Linux ones)
+on:
+  workflow_dispatch:
+
+jobs:
+  ipa:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Build Rust core, bindings and Xcode project
+        run: tools/build_ios.sh
+      - name: Build app for device (unsigned)
+        run: >
+          xcodebuild -project ios/WarpSign.xcodeproj -scheme WarpSign
+          -configuration Release -destination 'generic/platform=iOS'
+          -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+      - name: Package IPA
+        run: |
+          mkdir -p ipa/Payload
+          cp -R build/Build/Products/Release-iphoneos/WarpSign.app ipa/Payload/
+          (cd ipa && zip -qry ../WarpSign.ipa Payload)
+          unzip -l WarpSign.ipa | tail -1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WarpSign-ipa
+          path: WarpSign.ipa
+          if-no-files-found: error
