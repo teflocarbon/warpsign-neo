@@ -120,11 +120,21 @@ final class LibraryStore {
         }
     }
 
+    /// IPAs can be large, and can be downloaded again: keep them out of
+    /// iCloud backups
+    nonisolated private static func excludeFromBackup() {
+        var directory = Self.directory
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? directory.setResourceValues(values)
+    }
+
     nonisolated private static func add(_ url: URL, origin: String?, move: Bool) throws -> LibraryApp {
         let id = UUID()
         let folder = folder(of: id)
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
+        excludeFromBackup()
         let destination = ipaURL(of: id)
         do {
             try withSecurityScopedAccess(to: url) {
