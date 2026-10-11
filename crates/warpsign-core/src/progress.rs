@@ -34,6 +34,10 @@ pub enum Step {
     UploadApp,
     /// Have the device install it
     InstallApp,
+    /// Wait for the user to accept iOS's install prompt
+    WaitForInstall,
+    /// Serve the IPA to iOS's installer
+    SendToIos,
 }
 
 impl Step {
@@ -52,6 +56,8 @@ impl Step {
             Step::ConnectDevice => "Connect to device",
             Step::UploadApp => "Copy to device",
             Step::InstallApp => "Install",
+            Step::WaitForInstall => "Waiting for you to tap Install",
+            Step::SendToIos => "Send to iOS",
         }
     }
 }

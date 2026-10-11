@@ -107,6 +107,8 @@ pub enum Step {
     ConnectDevice,
     UploadApp,
     InstallApp,
+    WaitForInstall,
+    SendToIos,
 }
 
 impl From<progress::Step> for Step {
@@ -125,6 +127,8 @@ impl From<progress::Step> for Step {
             progress::Step::ConnectDevice => Step::ConnectDevice,
             progress::Step::UploadApp => Step::UploadApp,
             progress::Step::InstallApp => Step::InstallApp,
+            progress::Step::WaitForInstall => Step::WaitForInstall,
+            progress::Step::SendToIos => Step::SendToIos,
         }
     }
 }

@@ -77,6 +77,9 @@ enum Command {
         #[arg(long)]
         udid: Option<String>,
     },
+    /// Write the install manifests published in teflocarbon/warpsign-manifests
+    #[command(hide = true)]
+    Manifests { dir: PathBuf },
     /// Make a pairing file for WarpSign on a USB-connected iPhone or iPad,
     /// so it can install apps on itself (through LocalDevVPN)
     Pair {
@@ -242,6 +245,7 @@ fn run(cli: Cli) -> Result<()> {
         Command::Sign(args) => sign(&store, args),
         Command::Install { ipa, udid } => install(&ipa, udid),
         Command::Pair { udid, output } => pair(udid, output),
+        Command::Manifests { dir } => write_manifests(&dir),
     }
 }
 
@@ -693,6 +697,19 @@ fn sign(store: &Store, args: SignArgs) -> Result<()> {
 fn install(ipa: &Path, udid: Option<String>) -> Result<()> {
     device::install_ipa(&Target::Usb { udid }, ipa, &Printer::default())?;
     println!("Installed {}", ipa.display());
+    Ok(())
+}
+
+fn write_manifests(dir: &Path) -> Result<()> {
+    use warpsign_core::serve::{SERVER_PORT, SLOTS, manifest};
+    std::fs::create_dir_all(dir)?;
+    for slot in 0..SLOTS {
+        std::fs::write(dir.join(format!("app{slot}.plist")), manifest(slot))?;
+    }
+    println!(
+        "Wrote {SLOTS} manifests to {} (port {SERVER_PORT})",
+        dir.display()
+    );
     Ok(())
 }
 

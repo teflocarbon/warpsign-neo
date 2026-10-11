@@ -14,6 +14,7 @@ pub mod portal;
 pub mod profile;
 pub mod progress;
 mod pyrandom;
+pub mod serve;
 pub mod signature;
 pub mod signing;
 pub mod source;

@@ -1,9 +1,10 @@
 //! Installing on this device through the loopback VPN, for Swift.
 
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use warpsign_core::device::{self, DeviceError, INSTALL_STEPS, Target};
+use warpsign_core::serve::{self, InstallServer, SERVER_INSTALL_STEPS, SLOTS};
 
 use crate::{ObserverBridge, StepInfo, StepObserver, WarpsignError};
 
@@ -75,4 +76,70 @@ pub fn install_ipa(
         &ObserverBridge(observer),
     )
     .map_err(device_error)
+}
+
+/// Installing through iOS's own installer, ESign-style: serves the IPA on
+/// loopback while iOS fetches it via a published manifest. No setup.
+#[derive(uniffi::Object)]
+pub struct WebInstall {
+    server: Mutex<Option<InstallServer>>,
+    link: String,
+}
+
+#[uniffi::export]
+impl WebInstall {
+    /// Start serving `ipa_path` for manifest `slot` (rotate through
+    /// `web_install_slots()`), reporting the steps to `observer`. Open
+    /// `install_link()` next.
+    #[uniffi::constructor]
+    pub fn start(
+        ipa_path: String,
+        icon_png: Option<Vec<u8>>,
+        slot: u32,
+        observer: Arc<dyn StepObserver>,
+    ) -> Result<Arc<Self>, WarpsignError> {
+        let slot = slot % SLOTS;
+        let server = InstallServer::start(
+            Path::new(&ipa_path),
+            icon_png,
+            slot,
+            Box::new(ObserverBridge(observer)),
+        )
+        .map_err(|e| WarpsignError::Device {
+            message: e.to_string(),
+        })?;
+        Ok(Arc::new(Self {
+            server: Mutex::new(Some(server)),
+            link: serve::install_link(slot),
+        }))
+    }
+
+    /// The itms-services link that makes iOS ask to install the app
+    pub fn install_link(&self) -> String {
+        self.link.clone()
+    }
+
+    /// Stop serving (also happens when released)
+    pub fn stop(&self) {
+        let mut server = self.server.lock().unwrap_or_else(|e| e.into_inner());
+        server.take();
+    }
+}
+
+/// How many manifest slots there are to rotate through
+#[uniffi::export]
+pub fn web_install_slots() -> u32 {
+    SLOTS
+}
+
+/// The steps a web install reports, in order
+#[uniffi::export]
+pub fn web_install_steps() -> Vec<StepInfo> {
+    SERVER_INSTALL_STEPS
+        .iter()
+        .map(|&step| StepInfo {
+            step: step.into(),
+            title: step.title().to_string(),
+        })
+        .collect()
 }
