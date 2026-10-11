@@ -1,0 +1,383 @@
+{
+  "cases": [
+    {
+      "entitlements": {
+        "App": {
+          "application-identifier": "ABCDE12345.com.example.app",
+          "com.apple.developer.team-identifier": "ABCDE12345",
+          "keychain-access-groups": [
+            "ABCDE12345.com.example.app",
+            "com.apple.token"
+          ]
+        },
+        "Frameworks/Alpha.framework/Alpha": {
+          "com.example.framework-entitlement": true
+        },
+        "PlugIns/Widget.appex/Widget": {
+          "application-identifier": "ABCDE12345.com.example.app.widget"
+        }
+      },
+      "expected": {
+        "components": [
+          {
+            "bundle_id": "com.example.app",
+            "entitlements": {
+              "application-identifier": "ABCDE12345.com.example.app",
+              "com.apple.developer.team-identifier": "ABCDE12345",
+              "keychain-access-groups": [
+                "ABCDE12345.com.example.app",
+                "com.apple.token"
+              ]
+            },
+            "entitlements_bundle_id": "com.example.app",
+            "executable": "App",
+            "is_primary": true,
+            "path": ""
+          },
+          {
+            "bundle_id": "Inner",
+            "entitlements": {},
+            "entitlements_bundle_id": null,
+            "executable": "PlugIns/Widget.appex/Frameworks/Inner.framework/Inner",
+            "is_primary": false,
+            "path": "PlugIns/Widget.appex/Frameworks/Inner.framework"
+          },
+          {
+            "bundle_id": "libInner",
+            "entitlements": {},
+            "entitlements_bundle_id": null,
+            "executable": "PlugIns/Widget.appex/Frameworks/libInner.dylib",
+            "is_primary": false,
+            "path": "PlugIns/Widget.appex/Frameworks/libInner.dylib"
+          },
+          {
+            "bundle_id": "com.example.app.intents",
+            "entitlements": {},
+            "entitlements_bundle_id": null,
+            "executable": "Extensions/Intents.appex/Intents",
+            "is_primary": true,
+            "path": "Extensions/Intents.appex"
+          },
+          {
+            "bundle_id": "Alpha",
+            "entitlements": {
+              "com.example.framework-entitlement": true
+            },
+            "entitlements_bundle_id": null,
+            "executable": "Frameworks/Alpha.framework/Alpha",
+            "is_primary": false,
+            "path": "Frameworks/Alpha.framework"
+          },
+          {
+            "bundle_id": "Legacy",
+            "entitlements": {},
+            "entitlements_bundle_id": null,
+            "executable": "Frameworks/Legacy.framework/Legacy",
+            "is_primary": false,
+            "path": "Frameworks/Legacy.framework"
+          },
+          {
+            "bundle_id": "Renamed",
+            "entitlements": {},
+            "entitlements_bundle_id": null,
+            "executable": "Frameworks/Renamed.framework/RenamedBinary",
+            "is_primary": false,
+            "path": "Frameworks/Renamed.framework"
+          },
+          {
+            "bundle_id": "libswiftCore",
+            "entitlements": {},
+            "entitlements_bundle_id": null,
+            "executable": "Frameworks/libswiftCore.dylib",
+            "is_primary": false,
+            "path": "Frameworks/libswiftCore.dylib"
+          },
+          {
+            "bundle_id": "Resources",
+            "entitlements": {},
+            "entitlements_bundle_id": null,
+            "executable": "PlugIns/Resources.bundle/ResourcesBinary",
+            "is_primary": false,
+            "path": "PlugIns/Resources.bundle"
+          },
+          {
+            "bundle_id": "com.example.app.share",
+            "entitlements": {},
+            "entitlements_bundle_id": null,
+            "executable": "PlugIns/Share Extension.appex/Share Extension",
+            "is_primary": true,
+            "path": "PlugIns/Share Extension.appex"
+          },
+          {
+            "bundle_id": "com.example.app.widget",
+            "entitlements": {
+              "application-identifier": "ABCDE12345.com.example.app.widget"
+            },
+            "entitlements_bundle_id": "com.example.app.widget",
+            "executable": "PlugIns/Widget.appex/Widget",
+            "is_primary": true,
+            "path": "PlugIns/Widget.appex"
+          }
+        ],
+        "team_ids": [
+          "ABCDE12345"
+        ]
+      },
+      "files": [
+        {
+          "info_plist": {
+            "AppIdentifierPrefix": "ABCDE12345.",
+            "CFBundleExecutable": "App",
+            "CFBundleIdentifier": "com.example.app"
+          },
+          "path": "Info.plist"
+        },
+        {
+          "path": "App"
+        },
+        {
+          "info_plist": {
+            "CFBundleExecutable": "Alpha"
+          },
+          "path": "Frameworks/Alpha.framework/Info.plist"
+        },
+        {
+          "path": "Frameworks/Alpha.framework/Alpha"
+        },
+        {
+          "info_plist": {
+            "CFBundleExecutable": "RenamedBinary"
+          },
+          "path": "Frameworks/Renamed.framework/Info.plist"
+        },
+        {
+          "path": "Frameworks/Renamed.framework/RenamedBinary"
+        },
+        {
+          "path": "Frameworks/Legacy.framework/Legacy"
+        },
+        {
+          "path": "Frameworks/libswiftCore.dylib"
+        },
+        {
+          "info_plist": {
+            "CFBundleExecutable": "Missing"
+          },
+          "path": "Frameworks/Missing.framework/Info.plist"
+        },
+        {
+          "info_plist": {
+            "CFBundleExecutable": "Widget",
+            "CFBundleIdentifier": "com.example.app.widget"
+          },
+          "path": "PlugIns/Widget.appex/Info.plist"
+        },
+        {
+          "path": "PlugIns/Widget.appex/Widget"
+        },
+        {
+          "info_plist": {
+            "CFBundleExecutable": "Inner"
+          },
+          "path": "PlugIns/Widget.appex/Frameworks/Inner.framework/Info.plist"
+        },
+        {
+          "path": "PlugIns/Widget.appex/Frameworks/Inner.framework/Inner"
+        },
+        {
+          "path": "PlugIns/Widget.appex/Frameworks/libInner.dylib"
+        },
+        {
+          "info_plist": {
+            "CFBundleExecutable": "Share Extension",
+            "CFBundleIdentifier": "com.example.app.share"
+          },
+          "path": "PlugIns/Share Extension.appex/Info.plist"
+        },
+        {
+          "path": "PlugIns/Share Extension.appex/Share Extension"
+        },
+        {
+          "info_plist": {
+            "CFBundleExecutable": "ResourcesBinary"
+          },
+          "path": "PlugIns/Resources.bundle/Info.plist"
+        },
+        {
+          "path": "PlugIns/Resources.bundle/ResourcesBinary"
+        },
+        {
+          "path": "PlugIns/NoInfo.appex/NoInfo"
+        },
+        {
+          "info_plist": {
+            "CFBundleIdentifier": "com.example.app.noexe"
+          },
+          "path": "PlugIns/NoExecutable.appex/Info.plist"
+        },
+        {
+          "info_plist": {
+            "CFBundleExecutable": "Gone",
+            "CFBundleIdentifier": "com.example.app.gone"
+          },
+          "path": "PlugIns/MissingBinary.appex/Info.plist"
+        },
+        {
+          "info_plist": {
+            "CFBundleExecutable": "Intents",
+            "CFBundleIdentifier": "com.example.app.intents"
+          },
+          "path": "Extensions/Intents.appex/Info.plist"
+        },
+        {
+          "path": "Extensions/Intents.appex/Intents"
+        },
+        {
+          "path": "Settings.bundle/Root.plist"
+        },
+        {
+          "path": "Assets.car"
+        }
+      ],
+      "name": "typical_app"
+    },
+    {
+      "entitlements": {},
+      "expected": {
+        "components": [
+          {
+            "bundle_id": "com.example.app",
+            "entitlements": {},
+            "entitlements_bundle_id": null,
+            "executable": "App",
+            "is_primary": true,
+            "path": ""
+          },
+          {
+            "bundle_id": "com.example.app.watchkitapp.ext",
+            "entitlements": {},
+            "entitlements_bundle_id": null,
+            "executable": "Watch/WatchApp.app/PlugIns/WatchExt.appex/WatchExt",
+            "is_primary": true,
+            "path": "Watch/WatchApp.app/PlugIns/WatchExt.appex"
+          }
+        ],
+        "team_ids": []
+      },
+      "files": [
+        {
+          "info_plist": {
+            "CFBundleExecutable": "App",
+            "CFBundleIdentifier": "com.example.app"
+          },
+          "path": "Info.plist"
+        },
+        {
+          "path": "App"
+        },
+        {
+          "info_plist": {
+            "CFBundleExecutable": "WatchApp",
+            "CFBundleIdentifier": "com.example.app.watchkitapp"
+          },
+          "path": "Watch/WatchApp.app/Info.plist"
+        },
+        {
+          "path": "Watch/WatchApp.app/WatchApp"
+        },
+        {
+          "info_plist": {
+            "CFBundleExecutable": "WatchExt",
+            "CFBundleIdentifier": "com.example.app.watchkitapp.ext"
+          },
+          "path": "Watch/WatchApp.app/PlugIns/WatchExt.appex/Info.plist"
+        },
+        {
+          "path": "Watch/WatchApp.app/PlugIns/WatchExt.appex/WatchExt"
+        }
+      ],
+      "name": "watch_app"
+    },
+    {
+      "entitlements": {
+        "App": {
+          "application-identifier": "ABCDE12345.com.example.app",
+          "com.apple.developer.team-identifier": "ABCDE12345",
+          "keychain-access-groups": [
+            "QWERT67890.com.example.shared",
+            "com.apple.token",
+            "noprefixgroup",
+            "ab-de12345.not-alphanumeric"
+          ]
+        },
+        "PlugIns/Sso.appex/Sso": {
+          "application-identifier": "CCCCC33333.com.example.app.sso"
+        }
+      },
+      "expected": {
+        "components": [
+          {
+            "bundle_id": "com.example.app",
+            "entitlements": {
+              "application-identifier": "ABCDE12345.com.example.app",
+              "com.apple.developer.team-identifier": "ABCDE12345",
+              "keychain-access-groups": [
+                "QWERT67890.com.example.shared",
+                "com.apple.token",
+                "noprefixgroup",
+                "ab-de12345.not-alphanumeric"
+              ]
+            },
+            "entitlements_bundle_id": "com.example.app",
+            "executable": "App",
+            "is_primary": true,
+            "path": ""
+          },
+          {
+            "bundle_id": "com.example.app.sso",
+            "entitlements": {
+              "application-identifier": "CCCCC33333.com.example.app.sso"
+            },
+            "entitlements_bundle_id": "com.example.app.sso",
+            "executable": "PlugIns/Sso.appex/Sso",
+            "is_primary": true,
+            "path": "PlugIns/Sso.appex"
+          }
+        ],
+        "team_ids": [
+          "ABCDE12345",
+          "CCCCC33333",
+          "QWERT67890"
+        ]
+      },
+      "files": [
+        {
+          "info_plist": {
+            "AppIdentifierPrefix": "SHORT.",
+            "CFBundleExecutable": "App",
+            "CFBundleIdentifier": "com.example.app"
+          },
+          "path": "Info.plist"
+        },
+        {
+          "path": "App"
+        },
+        {
+          "info_plist": {
+            "CFBundleExecutable": "Sso",
+            "CFBundleIdentifier": "com.example.app.sso"
+          },
+          "path": "PlugIns/Sso.appex/Info.plist"
+        },
+        {
+          "path": "PlugIns/Sso.appex/Sso"
+        }
+      ],
+      "name": "multiple_team_ids"
+    }
+  ],
+  "source": {
+    "python": "3.13.16",
+    "warpsign_commit": "d96e33b3ec2c1a5bb3665eff64f80d84cb880518"
+  }
+}

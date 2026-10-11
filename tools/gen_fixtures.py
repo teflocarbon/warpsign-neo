@@ -10,12 +10,16 @@ Usage:
     python tools/gen_fixtures.py /path/to/warpsign
 """
 
+import contextlib
+import io
 import json
 import platform
+import plistlib
 import random
 import string
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures"
@@ -27,6 +31,7 @@ WARPSIGN_DIR = Path(sys.argv[1]).resolve()
 sys.path.insert(0, str(WARPSIGN_DIR))
 
 from warpsign.src.core.bundle_mapper import BundleMapping  # noqa: E402
+from warpsign.src.ipa import ipa_inspector  # noqa: E402
 from warpsign.src.ipa.entitlements_processor import EntitlementsProcessor  # noqa: E402
 
 TEAM_A = "ABCDE12345"
@@ -396,6 +401,163 @@ def entitlements_processor_cases() -> list:
     return cases
 
 
+# --- App inspection -------------------------------------------------------
+
+
+def bundle_files(path, executable, bundle_id=None, **extra_info):
+    """Info.plist plus executable for a bundle at `path` (relative to the app)"""
+    info = {"CFBundleExecutable": executable, **extra_info}
+    if bundle_id:
+        info["CFBundleIdentifier"] = bundle_id
+    prefix = f"{path}/" if path else ""
+    return [
+        {"path": f"{prefix}Info.plist", "info_plist": info},
+        {"path": f"{prefix}{executable}"},
+    ]
+
+
+def info_only(path, info):
+    return {"path": f"{path}/Info.plist", "info_plist": info}
+
+
+def app_layouts() -> list:
+    """App layouts as lists of files, so Python and Rust build identical trees.
+
+    A file is either an Info.plist ({"path", "info_plist"}) or an opaque stub
+    ({"path"}). Inspection reads entitlements from binaries; here they are
+    stubbed, keyed by executable path.
+    """
+    typical = [
+        *bundle_files("", "App", "com.example.app", AppIdentifierPrefix=f"{TEAM_A}."),
+        *bundle_files("Frameworks/Alpha.framework", "Alpha"),
+        *bundle_files("Frameworks/Renamed.framework", "RenamedBinary"),
+        {"path": "Frameworks/Legacy.framework/Legacy"},
+        {"path": "Frameworks/libswiftCore.dylib"},
+        info_only("Frameworks/Missing.framework", {"CFBundleExecutable": "Missing"}),
+        *bundle_files("PlugIns/Widget.appex", "Widget", "com.example.app.widget"),
+        *bundle_files("PlugIns/Widget.appex/Frameworks/Inner.framework", "Inner"),
+        {"path": "PlugIns/Widget.appex/Frameworks/libInner.dylib"},
+        *bundle_files("PlugIns/Share Extension.appex", "Share Extension", "com.example.app.share"),
+        *bundle_files("PlugIns/Resources.bundle", "ResourcesBinary"),
+        {"path": "PlugIns/NoInfo.appex/NoInfo"},
+        info_only("PlugIns/NoExecutable.appex", {"CFBundleIdentifier": "com.example.app.noexe"}),
+        info_only(
+            "PlugIns/MissingBinary.appex",
+            {"CFBundleIdentifier": "com.example.app.gone", "CFBundleExecutable": "Gone"},
+        ),
+        *bundle_files("Extensions/Intents.appex", "Intents", "com.example.app.intents"),
+        {"path": "Settings.bundle/Root.plist"},
+        {"path": "Assets.car"},
+    ]
+    watch = [
+        *bundle_files("", "App", "com.example.app"),
+        *bundle_files("Watch/WatchApp.app", "WatchApp", "com.example.app.watchkitapp"),
+        *bundle_files(
+            "Watch/WatchApp.app/PlugIns/WatchExt.appex",
+            "WatchExt",
+            "com.example.app.watchkitapp.ext",
+        ),
+    ]
+    return [
+        {
+            "name": "typical_app",
+            "files": typical,
+            "entitlements": {
+                "App": {
+                    "application-identifier": f"{TEAM_A}.com.example.app",
+                    "com.apple.developer.team-identifier": TEAM_A,
+                    "keychain-access-groups": [f"{TEAM_A}.com.example.app", "com.apple.token"],
+                },
+                "PlugIns/Widget.appex/Widget": {
+                    "application-identifier": f"{TEAM_A}.com.example.app.widget",
+                },
+                "Frameworks/Alpha.framework/Alpha": {"com.example.framework-entitlement": True},
+            },
+        },
+        # Watch apps aren't discovered (only their extensions are): a known gap
+        {"name": "watch_app", "files": watch, "entitlements": {}},
+        {
+            "name": "multiple_team_ids",
+            "files": [
+                *bundle_files("", "App", "com.example.app", AppIdentifierPrefix="SHORT."),
+                *bundle_files("PlugIns/Sso.appex", "Sso", "com.example.app.sso"),
+            ],
+            "entitlements": {
+                "App": {
+                    "application-identifier": f"{TEAM_A}.com.example.app",
+                    "com.apple.developer.team-identifier": TEAM_A,
+                    "keychain-access-groups": [
+                        f"{TEAM_B}.com.example.shared",
+                        "com.apple.token",
+                        "noprefixgroup",
+                        "ab-de12345.not-alphanumeric",
+                    ],
+                },
+                "PlugIns/Sso.appex/Sso": {
+                    "application-identifier": "CCCCC33333.com.example.app.sso",
+                },
+            },
+        },
+    ]
+
+
+def build_layout(root: Path, layout: dict) -> Path:
+    app = root / "App.app"
+    for file in layout["files"]:
+        path = app / file["path"]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if "info_plist" in file:
+            with open(path, "wb") as f:
+                plistlib.dump(file["info_plist"], f)
+        else:
+            path.write_bytes(b"stub")
+    return app
+
+
+def inspection_cases() -> list:
+    cases = []
+    for layout in app_layouts():
+        with tempfile.TemporaryDirectory() as tmp:
+            app = build_layout(Path(tmp), layout)
+
+            def fake_dump(executable: str):
+                relative = str(Path(executable).relative_to(app))
+                return layout["entitlements"].get(relative, {})
+
+            original_dump = ipa_inspector.codesign_dump_entitlements
+            ipa_inspector.codesign_dump_entitlements = fake_dump
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    with ipa_inspector.IPAInspector(app) as inspector:
+                        components = inspector.get_components()
+                        team_ids = inspector.get_team_ids()
+            finally:
+                ipa_inspector.codesign_dump_entitlements = original_dump
+
+        # Python's order within a depth follows the filesystem; pin a stable one
+        main = [c for c in components if c.path == Path(".")]
+        rest = sorted(
+            (c for c in components if c.path != Path(".")),
+            key=lambda c: (-len(c.path.parts), str(c.path)),
+        )
+        layout["expected"] = {
+            "components": [
+                {
+                    "path": "" if c.path == Path(".") else str(c.path),
+                    "bundle_id": c.bundle_id,
+                    "executable": str(c.executable),
+                    "is_primary": c.is_primary,
+                    "entitlements_bundle_id": c.entitlements_bundle_id,
+                    "entitlements": c.entitlements,
+                }
+                for c in main + rest
+            ],
+            "team_ids": team_ids,
+        }
+        cases.append(layout)
+    return cases
+
+
 if __name__ == "__main__":
     write("python_random", python_random_cases())
     write("random_ids", random_id_cases())
@@ -404,3 +566,4 @@ if __name__ == "__main__":
         json.dump(CAPABILITIES_RESPONSE, f, indent=2)
         f.write("\n")
     write("entitlements_processor", entitlements_processor_cases())
+    write("app_inspection", inspection_cases())

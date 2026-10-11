@@ -228,3 +228,57 @@ fn entitlements_processor_matches() {
         );
     }
 }
+
+/// Mirrors `inspection_cases` in tools/gen_fixtures.py
+#[test]
+fn app_inspection_matches() {
+    use warpsign_core::inspect::{inspect_app_with, team_ids};
+
+    for case in cases(&load_fixture("app_inspection.json")) {
+        let name = str_of(&case["name"]);
+        let dir = tempfile::tempdir().unwrap();
+        let app = dir.path().join("App.app");
+        for file in case["files"].as_array().unwrap() {
+            let path = app.join(str_of(&file["path"]));
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            if file.get("info_plist").is_some() {
+                json_to_plist(&file["info_plist"])
+                    .to_file_xml(&path)
+                    .unwrap();
+            } else {
+                std::fs::write(&path, b"stub").unwrap();
+            }
+        }
+
+        let stubbed = &case["entitlements"];
+        let components = inspect_app_with(&app, |executable| {
+            let relative = executable.strip_prefix(&app).unwrap().to_str().unwrap();
+            stubbed.get(relative).map(dict).unwrap_or_default()
+        })
+        .unwrap_or_else(|e| panic!("{name}: {e}"));
+
+        let actual: Vec<Json> = components
+            .iter()
+            .map(|c| {
+                json!({
+                    "path": c.path.to_str().unwrap(),
+                    "bundle_id": c.bundle_id,
+                    "executable": c.executable.to_str().unwrap(),
+                    "is_primary": c.is_primary,
+                    "entitlements_bundle_id": c.entitlements_bundle_id,
+                    "entitlements": dict_to_json(&c.entitlements),
+                })
+            })
+            .collect();
+        assert_eq!(
+            Json::Array(actual),
+            case["expected"]["components"],
+            "{name}: components"
+        );
+        assert_eq!(
+            team_ids(&components),
+            strings(&case["expected"]["team_ids"]),
+            "{name}: team IDs"
+        );
+    }
+}

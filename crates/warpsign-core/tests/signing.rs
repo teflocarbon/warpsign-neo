@@ -211,3 +211,33 @@ fn resigning_replaces_the_previous_signature() {
 
     assert_eq!(read_entitlements(&app.join("Test")).unwrap(), release);
 }
+
+#[test]
+fn inspection_reads_back_what_was_signed() {
+    use warpsign_core::inspect::{inspect_app, team_ids};
+
+    let (_dir, app) = test_app();
+    sign(&app, main_entitlements(), widget_entitlements());
+
+    let components = inspect_app(&app).unwrap();
+    let summary: Vec<_> = components
+        .iter()
+        .map(|c| (c.path.to_str().unwrap(), c.bundle_id.as_str(), c.is_primary))
+        .collect();
+    assert_eq!(
+        summary,
+        [
+            ("", "com.example.test", true),
+            ("Frameworks/Foo.framework", "Foo", false),
+            ("PlugIns/Widget.appex", "com.example.test.widget", true),
+        ]
+    );
+    assert_eq!(components[0].entitlements, main_entitlements());
+    assert!(components[1].entitlements.is_empty());
+    assert_eq!(components[2].entitlements, widget_entitlements());
+    assert_eq!(
+        components[2].entitlements_bundle_id.as_deref(),
+        Some("com.example.test.widget")
+    );
+    assert_eq!(team_ids(&components), [TEAM_ID]);
+}

@@ -58,6 +58,6 @@
   ],
   "source": {
     "python": "3.13.16",
-    "warpsign_commit": "f6fd14c8d676695c19daf25e5f546c25c027cccd"
+    "warpsign_commit": "d96e33b3ec2c1a5bb3665eff64f80d84cb880518"
   }
 }
