@@ -459,9 +459,12 @@ pub fn sign_ipa(
                     "the signing certificate (serial {serial}) isn't on the portal: it may have been revoked"
                 ))
             })?;
+        // The portal's name lacks the person ID that's in the certificate's
+        // own name, so log that instead, with the portal's certificate ID
         log.log(format!(
-            "Certificate {} ({})",
-            certificate.name, certificate.id
+            "Certificate {} (portal ID {})",
+            identity.common_name().unwrap_or(certificate.name),
+            certificate.id
         ));
 
         // Reuse profiles by name rather than making a new one every time
