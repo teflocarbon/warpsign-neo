@@ -245,3 +245,22 @@ fn inspection_reads_back_what_was_signed() {
     );
     assert_eq!(team_ids(&components), [TEAM_ID]);
 }
+
+#[test]
+fn entitlements_for_an_unknown_bundle_are_an_error() {
+    let (_dir, app) = test_app();
+    let result = sign_app_bundle(
+        &app,
+        &identity(),
+        TEAM_ID,
+        &[BundleEntitlements {
+            bundle_path: "PlugIns/Widgte.appex".into(),
+            entitlements: widget_entitlements(),
+        }],
+    );
+    assert!(
+        matches!(result, Err(SigningError::EntitlementsMismatch { .. })),
+        "{:?}",
+        result.err()
+    );
+}

@@ -28,6 +28,8 @@ pub enum SigningError {
     Entitlements { bundle: String, message: String },
     #[error("signing {path}: {message}")]
     Sign { path: String, message: String },
+    #[error("{bundle} was not signed with the requested entitlements: {message}")]
+    EntitlementsMismatch { bundle: String, message: String },
 }
 
 /// A signing certificate and its private key
@@ -85,7 +87,13 @@ pub fn sign_app_bundle(
         let scope = if bundle.bundle_path.is_empty() {
             SettingsScope::Main
         } else {
-            SettingsScope::Path(bundle.bundle_path.clone())
+            // apple-codesign matches nested bundles by their native relative
+            // path, e.g. PlugIns\Widget.appex on Windows
+            SettingsScope::Path(
+                bundle
+                    .bundle_path
+                    .replace('/', std::path::MAIN_SEPARATOR_STR),
+            )
         };
         let mut xml = Vec::new();
         Value::Dictionary(bundle.entitlements.clone())
@@ -111,7 +119,50 @@ pub fn sign_app_bundle(
         .map_err(|e| SigningError::Sign {
             path: app_dir.display().to_string(),
             message: e.to_string(),
-        })
+        })?;
+
+    // A scope that doesn't match a bundle is silently ignored by the signer,
+    // which would ship that bundle without entitlements. Check every one.
+    for bundle in entitlements {
+        verify_entitlements(app_dir, bundle)?;
+    }
+    Ok(())
+}
+
+fn verify_entitlements(app_dir: &Path, bundle: &BundleEntitlements) -> Result<(), SigningError> {
+    let name = if bundle.bundle_path.is_empty() {
+        "the app".to_string()
+    } else {
+        bundle.bundle_path.clone()
+    };
+    let mismatch = |message: String| SigningError::EntitlementsMismatch {
+        bundle: name.clone(),
+        message,
+    };
+
+    let bundle_dir = app_dir.join(&bundle.bundle_path);
+    let executable = match Value::from_file(bundle_dir.join("Info.plist")) {
+        Ok(Value::Dictionary(info)) => info
+            .get("CFBundleExecutable")
+            .and_then(Value::as_string)
+            .map(|executable| bundle_dir.join(executable))
+            .ok_or_else(|| mismatch("its Info.plist has no CFBundleExecutable".into()))?,
+        _ => {
+            return Err(mismatch(
+                "no readable Info.plist (is the path right?)".into(),
+            ));
+        }
+    };
+    let signed =
+        crate::signature::read_entitlements(&executable).map_err(|e| mismatch(e.to_string()))?;
+    if signed != bundle.entitlements {
+        return Err(mismatch(format!(
+            "signed with {} entitlement(s), expected {}",
+            signed.len(),
+            bundle.entitlements.len()
+        )));
+    }
+    Ok(())
 }
 
 /// Set 755 on the main executable of `dir` and of every bundle inside it
