@@ -290,10 +290,19 @@ pub fn sign_ipa(
                         join(&plan.capabilities_to_enable)
                     ));
                 }
-                if !plan.entitlements_to_remove.is_empty() {
+                // get-task-allow is in Python's removal list too, but the
+                // debugging option decides it (see signing_entitlements),
+                // so it isn't reported here
+                let removed: BTreeSet<String> = plan
+                    .entitlements_to_remove
+                    .iter()
+                    .filter(|key| *key != "get-task-allow")
+                    .cloned()
+                    .collect();
+                if !removed.is_empty() {
                     log.log(format!(
-                        "  not supported by this account, so removed: {}",
-                        join(&plan.entitlements_to_remove)
+                        "  no matching portal capability, so removed: {}",
+                        join(&removed)
                     ));
                 }
                 plans.push(Plan {
@@ -649,6 +658,12 @@ fn signing_entitlements(
         entitlements.insert("get-task-allow".into(), Value::Boolean(true));
     } else {
         entitlements.remove("get-task-allow");
+        if component.entitlements.contains_key("get-task-allow") {
+            log.log(format!(
+                "{}: get-task-allow removed, as debugging is off in the signing options",
+                describe(component)
+            ));
+        }
     }
     entitlements
 }
