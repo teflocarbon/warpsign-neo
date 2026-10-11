@@ -39,8 +39,9 @@ python tools/gen_fixtures.py /path/to/warpsign
 
 ```
 crates/warpsign-core/   Shared logic (library)
+docs/spikes/            Findings from experiments (e.g. signing with rcodesign)
 fixtures/               Reference outputs from Python warpsign
-tools/                  Fixture generator
+tools/                  Fixture generator, macOS A/B test for rcodesign
 ```
 
 ## Development
