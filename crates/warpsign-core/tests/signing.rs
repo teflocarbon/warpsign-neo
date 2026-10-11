@@ -214,7 +214,7 @@ fn resigning_replaces_the_previous_signature() {
 
 #[test]
 fn inspection_reads_back_what_was_signed() {
-    use warpsign_core::inspect::{inspect_app, team_ids};
+    use warpsign_core::inspect::{inspect_app, slash_path, team_ids};
 
     let (_dir, app) = test_app();
     sign(&app, main_entitlements(), widget_entitlements());
@@ -222,14 +222,18 @@ fn inspection_reads_back_what_was_signed() {
     let components = inspect_app(&app).unwrap();
     let summary: Vec<_> = components
         .iter()
-        .map(|c| (c.path.to_str().unwrap(), c.bundle_id.as_str(), c.is_primary))
+        .map(|c| (slash_path(&c.path), c.bundle_id.as_str(), c.is_primary))
         .collect();
     assert_eq!(
         summary,
         [
-            ("", "com.example.test", true),
-            ("Frameworks/Foo.framework", "Foo", false),
-            ("PlugIns/Widget.appex", "com.example.test.widget", true),
+            ("".to_string(), "com.example.test", true),
+            ("Frameworks/Foo.framework".to_string(), "Foo", false),
+            (
+                "PlugIns/Widget.appex".to_string(),
+                "com.example.test.widget",
+                true
+            ),
         ]
     );
     assert_eq!(components[0].entitlements, main_entitlements());

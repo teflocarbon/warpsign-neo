@@ -3,6 +3,7 @@
 pub mod bundle_mapping;
 pub mod entitlements;
 pub mod inspect;
+pub mod ipa;
 mod pyrandom;
 pub mod signature;
 pub mod signing;

@@ -232,7 +232,7 @@ fn entitlements_processor_matches() {
 /// Mirrors `inspection_cases` in tools/gen_fixtures.py
 #[test]
 fn app_inspection_matches() {
-    use warpsign_core::inspect::{inspect_app_with, team_ids};
+    use warpsign_core::inspect::{inspect_app_with, slash_path, team_ids};
 
     for case in cases(&load_fixture("app_inspection.json")) {
         let name = str_of(&case["name"]);
@@ -252,8 +252,8 @@ fn app_inspection_matches() {
 
         let stubbed = &case["entitlements"];
         let components = inspect_app_with(&app, |executable| {
-            let relative = executable.strip_prefix(&app).unwrap().to_str().unwrap();
-            stubbed.get(relative).map(dict).unwrap_or_default()
+            let relative = slash_path(executable.strip_prefix(&app).unwrap());
+            stubbed.get(&relative).map(dict).unwrap_or_default()
         })
         .unwrap_or_else(|e| panic!("{name}: {e}"));
 
@@ -261,9 +261,9 @@ fn app_inspection_matches() {
             .iter()
             .map(|c| {
                 json!({
-                    "path": c.path.to_str().unwrap(),
+                    "path": slash_path(&c.path),
                     "bundle_id": c.bundle_id,
-                    "executable": c.executable.to_str().unwrap(),
+                    "executable": slash_path(&c.executable),
                     "is_primary": c.is_primary,
                     "entitlements_bundle_id": c.entitlements_bundle_id,
                     "entitlements": dict_to_json(&c.entitlements),

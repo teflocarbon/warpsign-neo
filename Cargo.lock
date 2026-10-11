@@ -181,7 +181,7 @@ dependencies = [
  "xml-rs",
  "yasna",
  "zeroize",
- "zip",
+ "zip 2.4.2",
  "zip_structs",
 ]
 
@@ -3218,6 +3218,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "typed-path"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e28f89b80c87b8fb0cf04ab448d5dd0dd0ade2f8891bae878de66a75a28600e"
+
+[[package]]
 name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3349,6 +3355,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "x509-certificate",
+ "zip 7.2.0",
 ]
 
 [[package]]
@@ -3884,6 +3891,20 @@ dependencies = [
  "indexmap",
  "memchr",
  "thiserror 2.0.21",
+ "zopfli",
+]
+
+[[package]]
+name = "zip"
+version = "7.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c42e33efc22a0650c311c2ef19115ce232583abbe80850bc8b66509ebef02de0"
+dependencies = [
+ "crc32fast",
+ "flate2",
+ "indexmap",
+ "memchr",
+ "typed-path",
  "zopfli",
 ]
 

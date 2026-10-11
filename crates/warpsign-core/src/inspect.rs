@@ -123,14 +123,23 @@ fn find_candidates(app_dir: &Path) -> Result<Vec<PathBuf>, InspectError> {
     let mut found = Vec::new();
     walk(app_dir, Path::new(""), &mut found)?;
     // Deepest first, so nested code is signed before what contains it. Ties
-    // are ordered by path string (as in the fixtures), not component-wise.
+    // are ordered by "/"-separated path string (as in the fixtures), so the
+    // order is the same on every platform.
     found.sort_by(|a, b| {
         let depth = |p: &Path| p.components().count();
         depth(b)
             .cmp(&depth(a))
-            .then_with(|| a.to_string_lossy().cmp(&b.to_string_lossy()))
+            .then_with(|| slash_path(a).cmp(&slash_path(b)))
     });
     Ok(found)
+}
+
+/// A relative path with "/" separators on every platform
+pub fn slash_path(path: &Path) -> String {
+    path.components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 fn entitlements_bundle_id(entitlements: &Dictionary) -> Option<String> {
