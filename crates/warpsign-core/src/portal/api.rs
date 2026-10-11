@@ -563,22 +563,34 @@ impl Portal {
             "limit=1000&offset=0&filter[status]=ENABLED",
             "listing devices",
         )?;
-        let devices = resources(&body, "listing devices", |item| {
-            let attributes = item.get("attributes")?;
-            Some(Device {
-                id: string(item, "id")?,
-                name: string(attributes, "name").unwrap_or_default(),
-                udid: string(attributes, "udid")?,
-                status: string(attributes, "status").unwrap_or_default(),
-                device_class: string(attributes, "deviceClass").unwrap_or_default(),
-                platform: string(attributes, "platform").unwrap_or_default(),
-                model: string(attributes, "model"),
-            })
-        })?;
+        let devices = resources(&body, "listing devices", device_from)?;
         Ok(devices
             .into_iter()
             .filter(|device| matches!(device.device_class.as_str(), "IPHONE" | "IPAD"))
             .collect())
+    }
+
+    /// Register an iPhone or iPad by UDID. Not in Python warpsign: the
+    /// request follows the App Store Connect API that the portal fronts.
+    pub fn register_device(&self, name: &str, udid: &str) -> Result<Device, PortalError> {
+        let operation = format!("registering device {udid}");
+        let request = self
+            .write_json(Request::post(format!("{V1}/devices")))
+            .json(&json!({
+                "data": {
+                    "type": "devices",
+                    "attributes": {
+                        "name": name,
+                        "udid": udid,
+                        "platform": "IOS",
+                        "teamId": self.team_id,
+                    },
+                }
+            }));
+        let body = self.expect_json(request, &operation)?;
+        body.get("data")
+            .and_then(device_from)
+            .ok_or_else(|| PortalError::new(&operation, None, "no device in the response"))
     }
 
     pub fn profiles(&self) -> Result<Vec<PortalProfile>, PortalError> {
@@ -853,6 +865,19 @@ fn certificate_from(item: &Value) -> Option<PortalCertificate> {
 fn content_from(item: &Value) -> Option<Vec<u8>> {
     let content = item.pointer("/attributes/certificateContent")?.as_str()?;
     BASE64.decode(content.trim()).ok()
+}
+
+fn device_from(item: &Value) -> Option<Device> {
+    let attributes = item.get("attributes")?;
+    Some(Device {
+        id: string(item, "id")?,
+        name: string(attributes, "name").unwrap_or_default(),
+        udid: string(attributes, "udid")?,
+        status: string(attributes, "status").unwrap_or_default(),
+        device_class: string(attributes, "deviceClass").unwrap_or_default(),
+        platform: string(attributes, "platform").unwrap_or_default(),
+        model: string(attributes, "model"),
+    })
 }
 
 fn bundle_id_from(item: &Value) -> Option<BundleId> {

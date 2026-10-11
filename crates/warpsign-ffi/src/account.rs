@@ -208,6 +208,17 @@ impl From<PortalCertificate> for PortalCertificateInfo {
     }
 }
 
+/// A device registered on the portal
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct DeviceInfo {
+    pub id: String,
+    pub name: String,
+    pub udid: String,
+    /// "IPHONE" or "IPAD"
+    pub device_class: String,
+    pub model: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum StatusBar {
     /// Leave as the app has it
@@ -542,6 +553,23 @@ impl AppleAccount {
             .map_err(portal_error)?
             .into_iter()
             .map(Into::into)
+            .collect())
+    }
+
+    /// The team's enabled iPhones and iPads: the devices signed apps install on
+    pub fn devices(&self, team_id: String) -> Result<Vec<DeviceInfo>, WarpsignError> {
+        Ok(self
+            .portal(&team_id)
+            .devices()
+            .map_err(portal_error)?
+            .into_iter()
+            .map(|device| DeviceInfo {
+                id: device.id,
+                name: device.name,
+                udid: device.udid,
+                device_class: device.device_class,
+                model: device.model,
+            })
             .collect())
     }
 

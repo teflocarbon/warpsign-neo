@@ -32,6 +32,10 @@ struct Cli {
     /// Where to keep the session and signing identities
     #[arg(long, global = true, env = "WARPSIGN_CONFIG_DIR")]
     config_dir: Option<PathBuf>,
+    /// Append every request to Apple and its response to this file, with
+    /// cookies, tokens and sign-in values redacted. For bug reports.
+    #[arg(long, global = true, env = "WARPSIGN_HTTP_LOG")]
+    http_log: Option<PathBuf>,
     #[command(subcommand)]
     command: Command,
 }
@@ -53,6 +57,9 @@ enum Command {
     /// Manage the signing certificates
     #[command(subcommand)]
     Identity(IdentityCommand),
+    /// The team's devices, which signed apps install on
+    #[command(subcommand)]
+    Device(DeviceCommand),
     /// Show what's inside an IPA
     Inspect { ipa: PathBuf },
     /// Check provisioning profiles, e.g. for PPQ
@@ -74,6 +81,14 @@ enum IdentityCommand {
     Import { file: PathBuf },
     /// Forget an identity here. Never revokes the certificate.
     Remove { kind: Kind },
+}
+
+#[derive(Subcommand)]
+enum DeviceCommand {
+    /// List the enabled iPhones and iPads
+    List,
+    /// Register a device by UDID (find it in Finder or Apple Configurator)
+    Add { name: String, udid: String },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -164,7 +179,23 @@ fn main() {
     }
 }
 
+/// Set once from `--http-log`
+static HTTP_LOG: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+fn transport() -> Result<Arc<UreqTransport>> {
+    let transport = UreqTransport::new();
+    Ok(Arc::new(match HTTP_LOG.get() {
+        Some(path) => transport
+            .with_log(path)
+            .with_context(|| format!("opening {}", path.display()))?,
+        None => transport,
+    }))
+}
+
 fn run(cli: Cli) -> Result<()> {
+    if let Some(path) = cli.http_log {
+        let _ = HTTP_LOG.set(path);
+    }
     let store = Store::open(cli.config_dir)?;
     match cli.command {
         Command::Login { apple_id, team } => login(&store, apple_id, team),
@@ -178,6 +209,7 @@ fn run(cli: Cli) -> Result<()> {
         }
         Command::Status => status(&store),
         Command::Identity(command) => identity_command(&store, command),
+        Command::Device(command) => device_command(&store, command),
         Command::Inspect { ipa } => inspect(&ipa),
         Command::Profile { files } => profiles(&files),
         Command::Sign(args) => sign(&store, args),
@@ -202,7 +234,7 @@ fn login(store: &Store, apple_id: Option<String>, team: Option<String>) -> Resul
     };
     let password = rpassword::prompt_password(format!("Password for {apple_id}: "))?;
 
-    let auth = Authenticator::new(Arc::new(UreqTransport::new()));
+    let auth = Authenticator::new(transport()?);
     let outcome = auth.sign_in(&apple_id, &password);
     if let Err(AuthError::Refused(_)) = &outcome {
         eprintln!("Don't retry straight away: repeated attempts can lock your Apple ID.");
@@ -307,7 +339,7 @@ fn portal(store: &Store) -> Result<(Authenticator, Portal)> {
         .account()
         .team_id
         .context("no team chosen: run `warpsign login`")?;
-    let auth = Authenticator::with_session(Arc::new(UreqTransport::new()), session);
+    let auth = Authenticator::with_session(transport()?, session);
     let portal = Portal::new(auth.http(), &team);
     Ok((auth, portal))
 }
@@ -452,6 +484,35 @@ fn identity_command(store: &Store, command: IdentityCommand) -> Result<()> {
             Ok(())
         }
     }
+}
+
+fn device_command(store: &Store, command: DeviceCommand) -> Result<()> {
+    let (auth, portal) = portal(store)?;
+    let result = match command {
+        DeviceCommand::List => portal.devices().map(|devices| {
+            for device in &devices {
+                println!(
+                    "{:<28} {:<7} {}{}",
+                    device.name,
+                    device.device_class,
+                    device.udid,
+                    device
+                        .model
+                        .as_deref()
+                        .map(|m| format!("  ({m})"))
+                        .unwrap_or_default()
+                );
+            }
+            if devices.is_empty() {
+                println!("No iPhones or iPads registered: add one with `warpsign device add`.");
+            }
+        }),
+        DeviceCommand::Add { name, udid } => portal
+            .register_device(&name, &udid)
+            .map(|device| println!("Registered {} ({})", device.name, device.udid)),
+    };
+    store.save_session(&auth.session())?;
+    Ok(result?)
 }
 
 // Apps

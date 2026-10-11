@@ -719,3 +719,28 @@ fn sends_csrf_tokens_only_when_known() {
         .register_bundle_id("com.example", "x")
         .unwrap();
 }
+
+#[test]
+fn registers_devices() {
+    let mock = MockApple::new();
+    mock.expect("https://developer.apple.com/services-account/v1/devices", |request| {
+        assert_eq!(request.method, Method::Post);
+        assert!(request.header_value("X-HTTP-Method-Override").is_none());
+        assert_eq!(header(request, "csrf"), "csrf-token");
+        assert_eq!(
+            request.json_body().unwrap(),
+            json!({"data": {"type": "devices", "attributes": {
+                "name": "My iPhone", "udid": "00008110-000A", "platform": "IOS", "teamId": "ZZZZZ99999",
+            }}})
+        );
+        json_response(201, json!({"data": {"id": "DEV9", "attributes": {
+            "name": "My iPhone", "udid": "00008110-000A", "status": "ENABLED", "deviceClass": "IPHONE", "platform": "IOS",
+        }}}))
+    });
+    let device = portal(&mock, true)
+        .register_device("My iPhone", "00008110-000A")
+        .unwrap();
+    assert_eq!(device.id, "DEV9");
+    assert_eq!(device.device_class, "IPHONE");
+    mock.assert_done();
+}

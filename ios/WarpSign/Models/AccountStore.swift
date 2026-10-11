@@ -271,6 +271,21 @@ final class AccountStore {
         identities[kind] = identity
     }
 
+    // MARK: Devices
+
+    /// The team's iPhones and iPads, which signed apps install on
+    func devices() async throws -> [DeviceInfo] {
+        guard let account, let team = selectedTeam else { return [] }
+        let teamId = team.teamId
+        do {
+            let devices = try await background { try account.devices(teamId: teamId) }
+            saveSession()
+            return devices
+        } catch {
+            throw handle(error)
+        }
+    }
+
     // MARK: Signing
 
     /// Why signing can't start yet, if it can't

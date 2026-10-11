@@ -68,10 +68,22 @@ struct SettingsView: View {
                 }
 
                 Section("Diagnostics") {
+                    if account.isSignedIn {
+                        NavigationLink {
+                            DevicesView()
+                        } label: {
+                            Label("Registered Devices", systemImage: "iphone")
+                        }
+                    }
                     NavigationLink {
                         ProfilesView()
                     } label: {
                         Label("Check Provisioning Profiles", systemImage: "doc.badge.gearshape")
+                    }
+                    NavigationLink {
+                        NetworkLogView()
+                    } label: {
+                        Label("Network Log", systemImage: "network")
                     }
                 }
 

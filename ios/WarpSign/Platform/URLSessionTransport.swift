@@ -53,6 +53,17 @@ final class URLSessionTransport: NSObject, HttpTransport, URLSessionTaskDelegate
         }
         task.resume()
         done.wait()
+
+        switch outcome.result {
+        case .success(let response):
+            var detail: String?
+            if !(200..<400).contains(Int(response.status)) {
+                detail = String(decoding: response.body.prefix(400), as: UTF8.self)
+            }
+            NetworkLog.shared.record(method: request.method, url: request.url, status: Int(response.status), detail: detail)
+        case .failure(.Failed(let message)):
+            NetworkLog.shared.record(method: request.method, url: request.url, status: nil, detail: message)
+        }
         return try outcome.result.get()
     }
 

@@ -4,7 +4,7 @@ Sign iOS apps with your paid Apple Developer account, on the device itself or fr
 
 This is the successor to [warpsign](https://github.com/teflocarbon/warpsign). Python warpsign does the provisioning work well (dedicated App IDs per app and extension, only the capabilities an app actually uses, app groups and iCloud containers registered and linked, deterministic ID encoding), but it needs macOS for signing, and its "no Mac" path is a GitHub Actions workflow. warpsign-neo keeps that behaviour and drops the Mac.
 
-> Status: everything except talking to the real Apple is built and tested. Inspection, ID mapping, entitlement processing, Info.plist and binary patching are ported and checked against Python warpsign's outputs. The Developer Portal client is checked request-for-request against Python's. Signing, profiles and the sign pipeline run end to end against a fake portal. Not yet tried: signing in to a real Apple ID, and installing a neo-signed app on a device (see `docs/spikes/rcodesign.md`).
+> Status: everything except talking to the real Apple is built and tested. Inspection, ID mapping, entitlement processing, Info.plist and binary patching are ported and checked against Python warpsign's outputs. The Developer Portal client is checked request-for-request against Python's. Signing, profiles and the sign pipeline run end to end against a fake portal. Not yet tried: signing in to a real Apple ID, and installing a neo-signed app on a device. `docs/first-run.md` is the order to try those in.
 
 ## Plan
 
@@ -86,6 +86,7 @@ warpsign sign App.ipa --distribution --force-original-id
 warpsign inspect App.ipa
 warpsign profile *.mobileprovision # PPQ check
 warpsign status
+warpsign device list               # the devices signed apps install on
 ```
 
 The session and identities live in the config directory (`~/.config/warpsign`, `~/Library/Application Support/warpsign` or `%APPDATA%\warpsign`; override with `--config-dir` or `WARPSIGN_CONFIG_DIR`), readable only by you. `identity import` takes a phone's backup, so the CLI and the app can share certificates. For automation, `WARPSIGN_P12_PASSPHRASE` supplies the import passphrase.
