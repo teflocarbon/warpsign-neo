@@ -1,0 +1,249 @@
+{
+  "data": [
+    {
+      "id": "PUSH_NOTIFICATIONS",
+      "attributes": {
+        "name": "Push Notifications",
+        "description": "Push Notifications capability",
+        "supportedSDKs": [
+          {
+            "displayValue": "iOS"
+          }
+        ],
+        "distributionTypes": [
+          {
+            "displayValue": "Development"
+          },
+          {
+            "displayValue": "Ad hoc"
+          }
+        ],
+        "entitlements": [
+          {
+            "profileKey": "aps-environment"
+          }
+        ],
+        "settings": []
+      }
+    },
+    {
+      "id": "APP_GROUPS",
+      "attributes": {
+        "name": "App Groups",
+        "description": "App Groups capability",
+        "supportedSDKs": [
+          {
+            "displayValue": "iOS"
+          }
+        ],
+        "distributionTypes": [
+          {
+            "displayValue": "Development"
+          },
+          {
+            "displayValue": "Ad hoc"
+          }
+        ],
+        "entitlements": [
+          {
+            "profileKey": "com.apple.security.application-groups"
+          }
+        ],
+        "settings": []
+      }
+    },
+    {
+      "id": "ICLOUD",
+      "attributes": {
+        "name": "iCloud",
+        "description": "iCloud capability",
+        "supportedSDKs": [
+          {
+            "displayValue": "iOS"
+          }
+        ],
+        "distributionTypes": [
+          {
+            "displayValue": "Development"
+          },
+          {
+            "displayValue": "Ad hoc"
+          }
+        ],
+        "entitlements": [
+          {
+            "profileKey": "com.apple.developer.icloud-container-identifiers"
+          },
+          {
+            "profileKey": "com.apple.developer.ubiquity-container-identifiers"
+          }
+        ],
+        "settings": [
+          {
+            "options": [
+              {
+                "entitlements": [
+                  {
+                    "profileKey": "com.apple.developer.icloud-services"
+                  },
+                  {
+                    "profileKey": "com.apple.developer.ubiquity-kvstore-identifier"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ASSOCIATED_DOMAINS",
+      "attributes": {
+        "name": "Associated Domains",
+        "description": "Associated Domains capability",
+        "supportedSDKs": [
+          {
+            "displayValue": "iOS"
+          }
+        ],
+        "distributionTypes": [
+          {
+            "displayValue": "Development"
+          },
+          {
+            "displayValue": "Ad hoc"
+          }
+        ],
+        "entitlements": [
+          {
+            "profileKey": "com.apple.developer.associated-domains"
+          }
+        ],
+        "settings": []
+      }
+    },
+    {
+      "id": "IN_APP_PAYMENTS",
+      "attributes": {
+        "name": "Apple Pay",
+        "description": "Apple Pay capability",
+        "supportedSDKs": [
+          {
+            "displayValue": "iOS"
+          }
+        ],
+        "distributionTypes": [
+          {
+            "displayValue": "Development"
+          },
+          {
+            "displayValue": "Ad hoc"
+          }
+        ],
+        "entitlements": [
+          {
+            "profileKey": "com.apple.developer.in-app-payments"
+          }
+        ],
+        "settings": []
+      }
+    },
+    {
+      "id": "DEV_ONLY",
+      "attributes": {
+        "name": "Development Only",
+        "description": "Development Only capability",
+        "supportedSDKs": [
+          {
+            "displayValue": "iOS"
+          }
+        ],
+        "distributionTypes": [
+          {
+            "displayValue": "Development"
+          }
+        ],
+        "entitlements": [
+          {
+            "profileKey": "com.example.dev-only"
+          }
+        ],
+        "settings": []
+      }
+    },
+    {
+      "id": "MAC_ONLY",
+      "attributes": {
+        "name": "Mac Only",
+        "description": "Mac Only capability",
+        "supportedSDKs": [
+          {
+            "displayValue": "macOS"
+          }
+        ],
+        "distributionTypes": [
+          {
+            "displayValue": "Development"
+          },
+          {
+            "displayValue": "Ad hoc"
+          }
+        ],
+        "entitlements": [
+          {
+            "profileKey": "com.example.mac-only"
+          }
+        ],
+        "settings": []
+      }
+    },
+    {
+      "id": "ASSOCIATED_DOMAINS_V2",
+      "attributes": {
+        "name": "Associated Domains v2",
+        "description": "Associated Domains v2 capability",
+        "supportedSDKs": [
+          {
+            "displayValue": "iOS"
+          }
+        ],
+        "distributionTypes": [
+          {
+            "displayValue": "Development"
+          },
+          {
+            "displayValue": "Ad hoc"
+          }
+        ],
+        "entitlements": [
+          {
+            "profileKey": "com.apple.developer.associated-domains"
+          }
+        ],
+        "settings": []
+      }
+    },
+    {
+      "id": "NO_KEYS",
+      "attributes": {
+        "name": "No Keys",
+        "description": "No Keys capability",
+        "supportedSDKs": [
+          {
+            "displayValue": "iOS"
+          }
+        ],
+        "distributionTypes": [
+          {
+            "displayValue": "Development"
+          },
+          {
+            "displayValue": "Ad hoc"
+          }
+        ],
+        "entitlements": [],
+        "settings": []
+      }
+    }
+  ]
+}

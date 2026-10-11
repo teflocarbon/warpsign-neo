@@ -1,0 +1,1065 @@
+{
+  "cases": [
+    {
+      "components": [
+        {
+          "bundle_id": "com.example.app",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app",
+            "aps-environment": "production",
+            "com.apple.developer.associated-domains": [
+              "applinks:example.com"
+            ],
+            "com.apple.developer.icloud-container-identifiers": [
+              "iCloud.com.example.app",
+              "ABCDE12345.com.example.legacy"
+            ],
+            "com.apple.developer.icloud-services": [
+              "CloudKit",
+              "CloudDocuments"
+            ],
+            "com.apple.developer.team-identifier": "ABCDE12345",
+            "com.apple.developer.ubiquity-container-identifiers": [
+              "ABCDE12345.com.example.legacy"
+            ],
+            "com.apple.developer.ubiquity-kvstore-identifier": "ABCDE12345.com.example.app",
+            "com.apple.security.application-groups": [
+              "group.com.example.app",
+              "group.ABCDE12345.shared"
+            ],
+            "get-task-allow": false,
+            "keychain-access-groups": [
+              "ABCDE12345.com.example.app",
+              "ABCDE12345.shared",
+              "com.apple.token"
+            ]
+          }
+        },
+        {
+          "bundle_id": "com.example.app.widget",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app.widget",
+            "com.apple.developer.team-identifier": "ABCDE12345",
+            "com.apple.security.application-groups": [
+              "group.com.example.app"
+            ],
+            "keychain-access-groups": [
+              "ABCDE12345.com.example.app.widget"
+            ]
+          }
+        },
+        {
+          "bundle_id": "com.example.app.share",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app.share",
+            "com.apple.security.application-groups": [
+              "group.com.example.app"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "app_groups": [
+          "group.4no.qv4clrx.xja",
+          "group.ZZZZZ99999.shared"
+        ],
+        "binary_patches": {
+          "ABCDE12345": "ZZZZZ99999",
+          "com.example.app": "4no.qv4clrx.xja",
+          "com.example.app.share": "4no.qv4clrx.xja.share",
+          "com.example.app.widget": "4no.qv4clrx.xja.widget",
+          "group.ABCDE12345.shared": "group.ZZZZZ99999.shared",
+          "group.com.example.app": "group.4no.qv4clrx.xja",
+          "iCloud.com.example.app": "iCloud.4no.qv4clrx.xja"
+        },
+        "icloud_containers": [
+          "iCloud.4no.qv4clrx.9f5qsq",
+          "iCloud.4no.qv4clrx.xja"
+        ],
+        "mapped_bundle_ids": [
+          "4no.qv4clrx.xja",
+          "4no.qv4clrx.xja.widget",
+          "4no.qv4clrx.xja.share"
+        ],
+        "mapped_entitlements": [
+          {
+            "application-identifier": "ZZZZZ99999.4no.qv4clrx.xja",
+            "aps-environment": "development",
+            "com.apple.developer.associated-domains": [
+              "applinks:example.com"
+            ],
+            "com.apple.developer.icloud-container-identifiers": [
+              "iCloud.4no.qv4clrx.xja",
+              "iCloud.4no.qv4clrx.9f5qsq"
+            ],
+            "com.apple.developer.icloud-services": [
+              "CloudKit",
+              "CloudDocuments"
+            ],
+            "com.apple.developer.team-identifier": "ZZZZZ99999",
+            "com.apple.developer.ubiquity-container-identifiers": [
+              "iCloud.4no.qv4clrx.9f5qsq"
+            ],
+            "com.apple.developer.ubiquity-kvstore-identifier": "ZZZZZ99999.4no.qv4clrx.xja",
+            "com.apple.security.application-groups": [
+              "group.4no.qv4clrx.xja",
+              "group.ZZZZZ99999.shared"
+            ],
+            "get-task-allow": false,
+            "keychain-access-groups": [
+              "ZZZZZ99999.com.example.app",
+              "ZZZZZ99999.shared",
+              "com.apple.token"
+            ]
+          },
+          {
+            "application-identifier": "ZZZZZ99999.4no.qv4clrx.xja.widget",
+            "com.apple.developer.team-identifier": "ZZZZZ99999",
+            "com.apple.security.application-groups": [
+              "group.4no.qv4clrx.xja"
+            ],
+            "keychain-access-groups": [
+              "ZZZZZ99999.com.example.app.widget"
+            ]
+          },
+          {
+            "application-identifier": "ZZZZZ99999.4no.qv4clrx.xja.share",
+            "com.apple.developer.team-identifier": "ZZZZZ99999",
+            "com.apple.security.application-groups": [
+              "group.4no.qv4clrx.xja"
+            ]
+          }
+        ],
+        "mappings": {
+          "ABCDE12345.com.example.app": {
+            "id_type": "KEYCHAIN",
+            "new_id": "ZZZZZ99999.com.example.app"
+          },
+          "ABCDE12345.com.example.app.widget": {
+            "id_type": "KEYCHAIN",
+            "new_id": "ZZZZZ99999.com.example.app.widget"
+          },
+          "ABCDE12345.com.example.legacy": {
+            "id_type": "ICLOUD",
+            "new_id": "iCloud.4no.qv4clrx.9f5qsq"
+          },
+          "ABCDE12345.shared": {
+            "id_type": "KEYCHAIN",
+            "new_id": "ZZZZZ99999.shared"
+          },
+          "com.example.app": {
+            "id_type": "BUNDLE",
+            "new_id": "4no.qv4clrx.xja"
+          },
+          "com.example.app.share": {
+            "id_type": "BUNDLE",
+            "new_id": "4no.qv4clrx.xja.share"
+          },
+          "com.example.app.widget": {
+            "id_type": "BUNDLE",
+            "new_id": "4no.qv4clrx.xja.widget"
+          },
+          "group.ABCDE12345.shared": {
+            "id_type": "APP_GROUP",
+            "new_id": "group.ZZZZZ99999.shared"
+          },
+          "group.com.example.app": {
+            "id_type": "APP_GROUP",
+            "new_id": "group.4no.qv4clrx.xja"
+          },
+          "iCloud.com.example.app": {
+            "id_type": "ICLOUD",
+            "new_id": "iCloud.4no.qv4clrx.xja"
+          }
+        },
+        "registered_identifiers": [
+          "4no.qv4clrx.xja",
+          "4no.qv4clrx.xja.share",
+          "4no.qv4clrx.xja.widget",
+          "ABCDE12345.com.example.legacy",
+          "com.example.app",
+          "com.example.app.share",
+          "com.example.app.widget",
+          "group.4no.qv4clrx.xja",
+          "group.ABCDE12345.shared",
+          "group.ZZZZZ99999.shared",
+          "group.com.example.app",
+          "iCloud.4no.qv4clrx.9f5qsq",
+          "iCloud.4no.qv4clrx.xja",
+          "iCloud.com.example.app"
+        ]
+      },
+      "force_original_id": false,
+      "main_bundle_id": "com.example.app",
+      "name": "full_app_development",
+      "new_team_id": "ZZZZZ99999",
+      "original_team_ids": [
+        "ABCDE12345"
+      ],
+      "profile_type": "development",
+      "randomize": true
+    },
+    {
+      "components": [
+        {
+          "bundle_id": "com.example.app",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app",
+            "aps-environment": "production",
+            "com.apple.developer.associated-domains": [
+              "applinks:example.com"
+            ],
+            "com.apple.developer.icloud-container-identifiers": [
+              "iCloud.com.example.app",
+              "ABCDE12345.com.example.legacy"
+            ],
+            "com.apple.developer.icloud-services": [
+              "CloudKit",
+              "CloudDocuments"
+            ],
+            "com.apple.developer.team-identifier": "ABCDE12345",
+            "com.apple.developer.ubiquity-container-identifiers": [
+              "ABCDE12345.com.example.legacy"
+            ],
+            "com.apple.developer.ubiquity-kvstore-identifier": "ABCDE12345.com.example.app",
+            "com.apple.security.application-groups": [
+              "group.com.example.app",
+              "group.ABCDE12345.shared"
+            ],
+            "get-task-allow": false,
+            "keychain-access-groups": [
+              "ABCDE12345.com.example.app",
+              "ABCDE12345.shared",
+              "com.apple.token"
+            ]
+          }
+        },
+        {
+          "bundle_id": "com.example.app.widget",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app.widget",
+            "com.apple.developer.team-identifier": "ABCDE12345",
+            "com.apple.security.application-groups": [
+              "group.com.example.app"
+            ],
+            "keychain-access-groups": [
+              "ABCDE12345.com.example.app.widget"
+            ]
+          }
+        },
+        {
+          "bundle_id": "com.example.app.share",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app.share",
+            "com.apple.security.application-groups": [
+              "group.com.example.app"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "app_groups": [
+          "group.4no.qv4clrx.xja",
+          "group.ZZZZZ99999.shared"
+        ],
+        "binary_patches": {
+          "ABCDE12345": "ZZZZZ99999",
+          "com.example.app": "4no.qv4clrx.xja",
+          "com.example.app.share": "4no.qv4clrx.xja.share",
+          "com.example.app.widget": "4no.qv4clrx.xja.widget",
+          "group.ABCDE12345.shared": "group.ZZZZZ99999.shared",
+          "group.com.example.app": "group.4no.qv4clrx.xja",
+          "iCloud.com.example.app": "iCloud.4no.qv4clrx.xja"
+        },
+        "icloud_containers": [
+          "iCloud.4no.qv4clrx.9f5qsq",
+          "iCloud.4no.qv4clrx.xja"
+        ],
+        "mapped_bundle_ids": [
+          "4no.qv4clrx.xja",
+          "4no.qv4clrx.xja.widget",
+          "4no.qv4clrx.xja.share"
+        ],
+        "mapped_entitlements": [
+          {
+            "application-identifier": "ZZZZZ99999.4no.qv4clrx.xja",
+            "aps-environment": "production",
+            "com.apple.developer.associated-domains": [
+              "applinks:example.com"
+            ],
+            "com.apple.developer.icloud-container-identifiers": [
+              "iCloud.4no.qv4clrx.xja",
+              "iCloud.4no.qv4clrx.9f5qsq"
+            ],
+            "com.apple.developer.icloud-services": [
+              "CloudKit",
+              "CloudDocuments"
+            ],
+            "com.apple.developer.team-identifier": "ZZZZZ99999",
+            "com.apple.developer.ubiquity-container-identifiers": [
+              "iCloud.4no.qv4clrx.9f5qsq"
+            ],
+            "com.apple.developer.ubiquity-kvstore-identifier": "ZZZZZ99999.4no.qv4clrx.xja",
+            "com.apple.security.application-groups": [
+              "group.4no.qv4clrx.xja",
+              "group.ZZZZZ99999.shared"
+            ],
+            "get-task-allow": false,
+            "keychain-access-groups": [
+              "ZZZZZ99999.com.example.app",
+              "ZZZZZ99999.shared",
+              "com.apple.token"
+            ]
+          },
+          {
+            "application-identifier": "ZZZZZ99999.4no.qv4clrx.xja.widget",
+            "com.apple.developer.team-identifier": "ZZZZZ99999",
+            "com.apple.security.application-groups": [
+              "group.4no.qv4clrx.xja"
+            ],
+            "keychain-access-groups": [
+              "ZZZZZ99999.com.example.app.widget"
+            ]
+          },
+          {
+            "application-identifier": "ZZZZZ99999.4no.qv4clrx.xja.share",
+            "com.apple.developer.team-identifier": "ZZZZZ99999",
+            "com.apple.security.application-groups": [
+              "group.4no.qv4clrx.xja"
+            ]
+          }
+        ],
+        "mappings": {
+          "ABCDE12345.com.example.app": {
+            "id_type": "KEYCHAIN",
+            "new_id": "ZZZZZ99999.com.example.app"
+          },
+          "ABCDE12345.com.example.app.widget": {
+            "id_type": "KEYCHAIN",
+            "new_id": "ZZZZZ99999.com.example.app.widget"
+          },
+          "ABCDE12345.com.example.legacy": {
+            "id_type": "ICLOUD",
+            "new_id": "iCloud.4no.qv4clrx.9f5qsq"
+          },
+          "ABCDE12345.shared": {
+            "id_type": "KEYCHAIN",
+            "new_id": "ZZZZZ99999.shared"
+          },
+          "com.example.app": {
+            "id_type": "BUNDLE",
+            "new_id": "4no.qv4clrx.xja"
+          },
+          "com.example.app.share": {
+            "id_type": "BUNDLE",
+            "new_id": "4no.qv4clrx.xja.share"
+          },
+          "com.example.app.widget": {
+            "id_type": "BUNDLE",
+            "new_id": "4no.qv4clrx.xja.widget"
+          },
+          "group.ABCDE12345.shared": {
+            "id_type": "APP_GROUP",
+            "new_id": "group.ZZZZZ99999.shared"
+          },
+          "group.com.example.app": {
+            "id_type": "APP_GROUP",
+            "new_id": "group.4no.qv4clrx.xja"
+          },
+          "iCloud.com.example.app": {
+            "id_type": "ICLOUD",
+            "new_id": "iCloud.4no.qv4clrx.xja"
+          }
+        },
+        "registered_identifiers": [
+          "4no.qv4clrx.xja",
+          "4no.qv4clrx.xja.share",
+          "4no.qv4clrx.xja.widget",
+          "ABCDE12345.com.example.legacy",
+          "com.example.app",
+          "com.example.app.share",
+          "com.example.app.widget",
+          "group.4no.qv4clrx.xja",
+          "group.ABCDE12345.shared",
+          "group.ZZZZZ99999.shared",
+          "group.com.example.app",
+          "iCloud.4no.qv4clrx.9f5qsq",
+          "iCloud.4no.qv4clrx.xja",
+          "iCloud.com.example.app"
+        ]
+      },
+      "force_original_id": false,
+      "main_bundle_id": "com.example.app",
+      "name": "full_app_adhoc",
+      "new_team_id": "ZZZZZ99999",
+      "original_team_ids": [
+        "ABCDE12345"
+      ],
+      "profile_type": "adhoc",
+      "randomize": true
+    },
+    {
+      "components": [
+        {
+          "bundle_id": "com.example.app",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app",
+            "aps-environment": "production",
+            "com.apple.developer.associated-domains": [
+              "applinks:example.com"
+            ],
+            "com.apple.developer.icloud-container-identifiers": [
+              "iCloud.com.example.app",
+              "ABCDE12345.com.example.legacy"
+            ],
+            "com.apple.developer.icloud-services": [
+              "CloudKit",
+              "CloudDocuments"
+            ],
+            "com.apple.developer.team-identifier": "ABCDE12345",
+            "com.apple.developer.ubiquity-container-identifiers": [
+              "ABCDE12345.com.example.legacy"
+            ],
+            "com.apple.developer.ubiquity-kvstore-identifier": "ABCDE12345.com.example.app",
+            "com.apple.security.application-groups": [
+              "group.com.example.app",
+              "group.ABCDE12345.shared"
+            ],
+            "get-task-allow": false,
+            "keychain-access-groups": [
+              "ABCDE12345.com.example.app",
+              "ABCDE12345.shared",
+              "com.apple.token"
+            ]
+          }
+        },
+        {
+          "bundle_id": "com.example.app.widget",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app.widget",
+            "com.apple.developer.team-identifier": "ABCDE12345",
+            "com.apple.security.application-groups": [
+              "group.com.example.app"
+            ],
+            "keychain-access-groups": [
+              "ABCDE12345.com.example.app.widget"
+            ]
+          }
+        },
+        {
+          "bundle_id": "com.example.app.share",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app.share",
+            "com.apple.security.application-groups": [
+              "group.com.example.app"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "app_groups": [
+          "group.ABCDE12345.shared",
+          "group.com.example.app"
+        ],
+        "binary_patches": {
+          "ABCDE12345": "ZZZZZ99999",
+          "com.example.app": "com.example.app"
+        },
+        "icloud_containers": [
+          "ABCDE12345.com.example.legacy",
+          "iCloud.com.example.app"
+        ],
+        "mapped_bundle_ids": [
+          "com.example.app",
+          "com.example.app.widget",
+          "com.example.app.share"
+        ],
+        "mapped_entitlements": [
+          {
+            "application-identifier": "ZZZZZ99999.com.example.app",
+            "aps-environment": "development",
+            "com.apple.developer.associated-domains": [
+              "applinks:example.com"
+            ],
+            "com.apple.developer.icloud-container-identifiers": [
+              "iCloud.com.example.app",
+              "ABCDE12345.com.example.legacy"
+            ],
+            "com.apple.developer.icloud-services": [
+              "CloudKit",
+              "CloudDocuments"
+            ],
+            "com.apple.developer.team-identifier": "ZZZZZ99999",
+            "com.apple.developer.ubiquity-container-identifiers": [
+              "ABCDE12345.com.example.legacy"
+            ],
+            "com.apple.developer.ubiquity-kvstore-identifier": "ZZZZZ99999.com.example.app",
+            "com.apple.security.application-groups": [
+              "group.com.example.app",
+              "group.ABCDE12345.shared"
+            ],
+            "get-task-allow": false,
+            "keychain-access-groups": [
+              "ABCDE12345.com.example.app",
+              "ABCDE12345.shared",
+              "com.apple.token"
+            ]
+          },
+          {
+            "application-identifier": "ZZZZZ99999.com.example.app.widget",
+            "com.apple.developer.team-identifier": "ZZZZZ99999",
+            "com.apple.security.application-groups": [
+              "group.com.example.app"
+            ],
+            "keychain-access-groups": [
+              "ABCDE12345.com.example.app.widget"
+            ]
+          },
+          {
+            "application-identifier": "ZZZZZ99999.com.example.app.share",
+            "com.apple.developer.team-identifier": "ZZZZZ99999",
+            "com.apple.security.application-groups": [
+              "group.com.example.app"
+            ]
+          }
+        ],
+        "mappings": {
+          "com.example.app": {
+            "id_type": "BUNDLE",
+            "new_id": "com.example.app"
+          }
+        },
+        "registered_identifiers": [
+          "ABCDE12345.com.example.legacy",
+          "com.example.app",
+          "com.example.app.share",
+          "com.example.app.widget",
+          "group.ABCDE12345.shared",
+          "group.com.example.app",
+          "iCloud.com.example.app"
+        ]
+      },
+      "force_original_id": false,
+      "main_bundle_id": "com.example.app",
+      "name": "full_app_no_encode_ids",
+      "new_team_id": "ZZZZZ99999",
+      "original_team_ids": [
+        "ABCDE12345"
+      ],
+      "profile_type": "development",
+      "randomize": false
+    },
+    {
+      "components": [
+        {
+          "bundle_id": "com.example.app",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app",
+            "aps-environment": "production",
+            "com.apple.developer.associated-domains": [
+              "applinks:example.com"
+            ],
+            "com.apple.developer.icloud-container-identifiers": [
+              "iCloud.com.example.app",
+              "ABCDE12345.com.example.legacy"
+            ],
+            "com.apple.developer.icloud-services": [
+              "CloudKit",
+              "CloudDocuments"
+            ],
+            "com.apple.developer.team-identifier": "ABCDE12345",
+            "com.apple.developer.ubiquity-container-identifiers": [
+              "ABCDE12345.com.example.legacy"
+            ],
+            "com.apple.developer.ubiquity-kvstore-identifier": "ABCDE12345.com.example.app",
+            "com.apple.security.application-groups": [
+              "group.com.example.app",
+              "group.ABCDE12345.shared"
+            ],
+            "get-task-allow": false,
+            "keychain-access-groups": [
+              "ABCDE12345.com.example.app",
+              "ABCDE12345.shared",
+              "com.apple.token"
+            ]
+          }
+        },
+        {
+          "bundle_id": "com.example.app.widget",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app.widget",
+            "com.apple.developer.team-identifier": "ABCDE12345",
+            "com.apple.security.application-groups": [
+              "group.com.example.app"
+            ],
+            "keychain-access-groups": [
+              "ABCDE12345.com.example.app.widget"
+            ]
+          }
+        },
+        {
+          "bundle_id": "com.example.app.share",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app.share",
+            "com.apple.security.application-groups": [
+              "group.com.example.app"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "app_groups": [
+          "group.4no.qv4clrx.xja",
+          "group.ZZZZZ99999.shared"
+        ],
+        "binary_patches": {
+          "ABCDE12345": "ZZZZZ99999",
+          "com.example.app.share": "4no.qv4clrx.xja.share",
+          "com.example.app.widget": "4no.qv4clrx.xja.widget",
+          "group.ABCDE12345.shared": "group.ZZZZZ99999.shared",
+          "group.com.example.app": "group.4no.qv4clrx.xja",
+          "iCloud.com.example.app": "iCloud.4no.qv4clrx.xja"
+        },
+        "icloud_containers": [
+          "iCloud.4no.qv4clrx.9f5qsq",
+          "iCloud.4no.qv4clrx.xja"
+        ],
+        "mapped_bundle_ids": [
+          "4no.qv4clrx.xja",
+          "4no.qv4clrx.xja.widget",
+          "4no.qv4clrx.xja.share"
+        ],
+        "mapped_entitlements": [
+          {
+            "application-identifier": "ZZZZZ99999.4no.qv4clrx.xja",
+            "aps-environment": "development",
+            "com.apple.developer.associated-domains": [
+              "applinks:example.com"
+            ],
+            "com.apple.developer.icloud-container-identifiers": [
+              "iCloud.4no.qv4clrx.xja",
+              "iCloud.4no.qv4clrx.9f5qsq"
+            ],
+            "com.apple.developer.icloud-services": [
+              "CloudKit",
+              "CloudDocuments"
+            ],
+            "com.apple.developer.team-identifier": "ZZZZZ99999",
+            "com.apple.developer.ubiquity-container-identifiers": [
+              "iCloud.4no.qv4clrx.9f5qsq"
+            ],
+            "com.apple.developer.ubiquity-kvstore-identifier": "ZZZZZ99999.4no.qv4clrx.xja",
+            "com.apple.security.application-groups": [
+              "group.4no.qv4clrx.xja",
+              "group.ZZZZZ99999.shared"
+            ],
+            "get-task-allow": false,
+            "keychain-access-groups": [
+              "ZZZZZ99999.com.example.app",
+              "ZZZZZ99999.shared",
+              "com.apple.token"
+            ]
+          },
+          {
+            "application-identifier": "ZZZZZ99999.4no.qv4clrx.xja.widget",
+            "com.apple.developer.team-identifier": "ZZZZZ99999",
+            "com.apple.security.application-groups": [
+              "group.4no.qv4clrx.xja"
+            ],
+            "keychain-access-groups": [
+              "ZZZZZ99999.com.example.app.widget"
+            ]
+          },
+          {
+            "application-identifier": "ZZZZZ99999.4no.qv4clrx.xja.share",
+            "com.apple.developer.team-identifier": "ZZZZZ99999",
+            "com.apple.security.application-groups": [
+              "group.4no.qv4clrx.xja"
+            ]
+          }
+        ],
+        "mappings": {
+          "ABCDE12345.com.example.app": {
+            "id_type": "KEYCHAIN",
+            "new_id": "ZZZZZ99999.com.example.app"
+          },
+          "ABCDE12345.com.example.app.widget": {
+            "id_type": "KEYCHAIN",
+            "new_id": "ZZZZZ99999.com.example.app.widget"
+          },
+          "ABCDE12345.com.example.legacy": {
+            "id_type": "ICLOUD",
+            "new_id": "iCloud.4no.qv4clrx.9f5qsq"
+          },
+          "ABCDE12345.shared": {
+            "id_type": "KEYCHAIN",
+            "new_id": "ZZZZZ99999.shared"
+          },
+          "com.example.app": {
+            "id_type": "BUNDLE",
+            "new_id": "4no.qv4clrx.xja"
+          },
+          "com.example.app.share": {
+            "id_type": "BUNDLE",
+            "new_id": "4no.qv4clrx.xja.share"
+          },
+          "com.example.app.widget": {
+            "id_type": "BUNDLE",
+            "new_id": "4no.qv4clrx.xja.widget"
+          },
+          "group.ABCDE12345.shared": {
+            "id_type": "APP_GROUP",
+            "new_id": "group.ZZZZZ99999.shared"
+          },
+          "group.com.example.app": {
+            "id_type": "APP_GROUP",
+            "new_id": "group.4no.qv4clrx.xja"
+          },
+          "iCloud.com.example.app": {
+            "id_type": "ICLOUD",
+            "new_id": "iCloud.4no.qv4clrx.xja"
+          }
+        },
+        "registered_identifiers": [
+          "4no.qv4clrx.xja",
+          "4no.qv4clrx.xja.share",
+          "4no.qv4clrx.xja.widget",
+          "ABCDE12345.com.example.legacy",
+          "com.example.app",
+          "com.example.app.share",
+          "com.example.app.widget",
+          "group.4no.qv4clrx.xja",
+          "group.ABCDE12345.shared",
+          "group.ZZZZZ99999.shared",
+          "group.com.example.app",
+          "iCloud.4no.qv4clrx.9f5qsq",
+          "iCloud.4no.qv4clrx.xja",
+          "iCloud.com.example.app"
+        ]
+      },
+      "force_original_id": true,
+      "main_bundle_id": "com.example.app",
+      "name": "full_app_force_original_id",
+      "new_team_id": "ZZZZZ99999",
+      "original_team_ids": [
+        "ABCDE12345"
+      ],
+      "profile_type": "development",
+      "randomize": true
+    },
+    {
+      "components": [
+        {
+          "bundle_id": "com.example.app",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app",
+            "keychain-access-groups": [
+              "ABCDE12345.com.example.app",
+              "QWERT67890.com.example.sso"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "app_groups": [],
+        "binary_patches": {
+          "ABCDE12345": "ZZZZZ99999",
+          "QWERT67890": "ZZZZZ99999",
+          "com.example.app": "4no.qv4clrx.xja"
+        },
+        "icloud_containers": [],
+        "mapped_bundle_ids": [
+          "4no.qv4clrx.xja"
+        ],
+        "mapped_entitlements": [
+          {
+            "application-identifier": "ZZZZZ99999.4no.qv4clrx.xja",
+            "com.apple.developer.team-identifier": "ZZZZZ99999",
+            "keychain-access-groups": [
+              "ZZZZZ99999.com.example.app",
+              "ZZZZZ99999.com.example.sso"
+            ]
+          }
+        ],
+        "mappings": {
+          "ABCDE12345.com.example.app": {
+            "id_type": "KEYCHAIN",
+            "new_id": "ZZZZZ99999.com.example.app"
+          },
+          "QWERT67890.com.example.sso": {
+            "id_type": "KEYCHAIN",
+            "new_id": "ZZZZZ99999.com.example.sso"
+          },
+          "com.example.app": {
+            "id_type": "BUNDLE",
+            "new_id": "4no.qv4clrx.xja"
+          }
+        },
+        "registered_identifiers": [
+          "4no.qv4clrx.xja",
+          "com.example.app"
+        ]
+      },
+      "force_original_id": false,
+      "main_bundle_id": "com.example.app",
+      "name": "multiple_team_ids",
+      "new_team_id": "ZZZZZ99999",
+      "original_team_ids": [
+        "ABCDE12345",
+        "QWERT67890"
+      ],
+      "profile_type": "development",
+      "randomize": true
+    },
+    {
+      "components": [
+        {
+          "bundle_id": "com.example.app",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app",
+            "com.apple.developer.ubiquity-kvstore-identifier": "ABCDE12345.x"
+          }
+        }
+      ],
+      "expected": {
+        "app_groups": [],
+        "binary_patches": {
+          "ABCDE12345": "ZZZZZ99999",
+          "com.example.app": "4no.qv4clrx.xja"
+        },
+        "icloud_containers": [],
+        "mapped_bundle_ids": [
+          "4no.qv4clrx.xja"
+        ],
+        "mapped_entitlements": [
+          {
+            "application-identifier": "ZZZZZ99999.4no.qv4clrx.xja",
+            "com.apple.developer.team-identifier": "ZZZZZ99999",
+            "com.apple.developer.ubiquity-kvstore-identifier": "ZZZZZ99999.x"
+          }
+        ],
+        "mappings": {
+          "com.example.app": {
+            "id_type": "BUNDLE",
+            "new_id": "4no.qv4clrx.xja"
+          }
+        },
+        "registered_identifiers": [
+          "4no.qv4clrx.xja",
+          "com.example.app"
+        ]
+      },
+      "force_original_id": false,
+      "main_bundle_id": "com.example.app",
+      "name": "kvstore_short_form",
+      "new_team_id": "ZZZZZ99999",
+      "original_team_ids": [
+        "ABCDE12345"
+      ],
+      "profile_type": "development",
+      "randomize": true
+    },
+    {
+      "components": [
+        {
+          "bundle_id": "com.example.app",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app",
+            "com.apple.security.application-groups": [
+              "group.com.example.iCloudShare"
+            ]
+          }
+        },
+        {
+          "bundle_id": "com.example.app.iCloudSync",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.example.app.iCloudSync",
+            "com.apple.security.application-groups": [
+              "group.com.example.iCloudShare"
+            ]
+          }
+        }
+      ],
+      "expected": {
+        "app_groups": [
+          "group.4no.qv4clrx.u65o4geoqt4"
+        ],
+        "binary_patches": {
+          "ABCDE12345": "ZZZZZ99999",
+          "com.example.app": "4no.qv4clrx.xja",
+          "com.example.app.iCloudSync": "4no.qv4clrx.xja.iCloudSync",
+          "group.com.example.iCloudShare": "group.4no.qv4clrx.u65o4geoqt4"
+        },
+        "icloud_containers": [],
+        "mapped_bundle_ids": [
+          "4no.qv4clrx.xja",
+          "4no.qv4clrx.xja.iCloudSync"
+        ],
+        "mapped_entitlements": [
+          {
+            "application-identifier": "ZZZZZ99999.4no.qv4clrx.xja",
+            "com.apple.developer.team-identifier": "ZZZZZ99999",
+            "com.apple.security.application-groups": [
+              "group.4no.qv4clrx.u65o4geoqt4"
+            ]
+          },
+          {
+            "application-identifier": "ZZZZZ99999.4no.qv4clrx.xja.iCloudSync",
+            "com.apple.developer.team-identifier": "ZZZZZ99999",
+            "com.apple.security.application-groups": [
+              "group.4no.qv4clrx.u65o4geoqt4"
+            ]
+          }
+        ],
+        "mappings": {
+          "com.example.app": {
+            "id_type": "BUNDLE",
+            "new_id": "4no.qv4clrx.xja"
+          },
+          "com.example.app.iCloudSync": {
+            "id_type": "BUNDLE",
+            "new_id": "4no.qv4clrx.xja.iCloudSync"
+          },
+          "group.com.example.iCloudShare": {
+            "id_type": "APP_GROUP",
+            "new_id": "group.4no.qv4clrx.u65o4geoqt4"
+          }
+        },
+        "registered_identifiers": [
+          "4no.qv4clrx.xja",
+          "4no.qv4clrx.xja.iCloudSync",
+          "com.example.app",
+          "com.example.app.iCloudSync",
+          "group.4no.qv4clrx.u65o4geoqt4",
+          "group.com.example.iCloudShare"
+        ]
+      },
+      "force_original_id": false,
+      "main_bundle_id": "com.example.app",
+      "name": "icloud_in_bundle_and_group_ids",
+      "new_team_id": "ZZZZZ99999",
+      "original_team_ids": [
+        "ABCDE12345"
+      ],
+      "profile_type": "development",
+      "randomize": true
+    },
+    {
+      "components": [
+        {
+          "bundle_id": "com.example.app",
+          "entitlements": {}
+        },
+        {
+          "bundle_id": "com.othervendor.helper",
+          "entitlements": {
+            "application-identifier": "ABCDE12345.com.othervendor.helper"
+          }
+        }
+      ],
+      "expected": {
+        "app_groups": [],
+        "binary_patches": {
+          "ABCDE12345": "ZZZZZ99999",
+          "com.example.app": "4no.qv4clrx.xja",
+          "com.othervendor.helper": "4no.jl7kkm52s49.xxuzup"
+        },
+        "icloud_containers": [],
+        "mapped_bundle_ids": [
+          "4no.qv4clrx.xja",
+          "4no.jl7kkm52s49.xxuzup"
+        ],
+        "mapped_entitlements": [
+          {},
+          {
+            "application-identifier": "ZZZZZ99999.4no.jl7kkm52s49.xxuzup",
+            "com.apple.developer.team-identifier": "ZZZZZ99999"
+          }
+        ],
+        "mappings": {
+          "com.example.app": {
+            "id_type": "BUNDLE",
+            "new_id": "4no.qv4clrx.xja"
+          },
+          "com.othervendor.helper": {
+            "id_type": "BUNDLE",
+            "new_id": "4no.jl7kkm52s49.xxuzup"
+          }
+        },
+        "registered_identifiers": [
+          "4no.jl7kkm52s49.xxuzup",
+          "4no.qv4clrx.xja",
+          "com.example.app",
+          "com.othervendor.helper"
+        ]
+      },
+      "force_original_id": false,
+      "main_bundle_id": "com.example.app",
+      "name": "extension_outside_main_prefix",
+      "new_team_id": "ZZZZZ99999",
+      "original_team_ids": [
+        "ABCDE12345"
+      ],
+      "profile_type": "development",
+      "randomize": true
+    },
+    {
+      "components": [
+        {
+          "bundle_id": "com.example.app",
+          "entitlements": {}
+        },
+        {
+          "bundle_id": "com.example.app.widget",
+          "entitlements": {}
+        }
+      ],
+      "expected": {
+        "app_groups": [],
+        "binary_patches": {
+          "ABCDE12345": "ZZZZZ99999",
+          "com.example.app": "4no.qv4clrx.xja",
+          "com.example.app.widget": "4no.qv4clrx.xja.widget"
+        },
+        "icloud_containers": [],
+        "mapped_bundle_ids": [
+          "4no.qv4clrx.xja",
+          "4no.qv4clrx.xja.widget"
+        ],
+        "mapped_entitlements": [
+          {},
+          {}
+        ],
+        "mappings": {
+          "com.example.app": {
+            "id_type": "BUNDLE",
+            "new_id": "4no.qv4clrx.xja"
+          },
+          "com.example.app.widget": {
+            "id_type": "BUNDLE",
+            "new_id": "4no.qv4clrx.xja.widget"
+          }
+        },
+        "registered_identifiers": [
+          "4no.qv4clrx.xja",
+          "4no.qv4clrx.xja.widget",
+          "com.example.app",
+          "com.example.app.widget"
+        ]
+      },
+      "force_original_id": false,
+      "main_bundle_id": "com.example.app",
+      "name": "no_entitlements",
+      "new_team_id": "ZZZZZ99999",
+      "original_team_ids": [
+        "ABCDE12345"
+      ],
+      "profile_type": "development",
+      "randomize": true
+    }
+  ],
+  "source": {
+    "python": "3.13.16",
+    "warpsign_commit": "f6fd14c8d676695c19daf25e5f546c25c027cccd"
+  }
+}

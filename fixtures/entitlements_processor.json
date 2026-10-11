@@ -1,0 +1,163 @@
+{
+  "cases": [
+    {
+      "entitlements": {
+        "application-identifier": "ABCDE12345.com.example.app",
+        "aps-environment": "production",
+        "com.apple.developer.associated-domains": [
+          "applinks:example.com"
+        ],
+        "com.apple.developer.icloud-container-identifiers": [
+          "iCloud.com.example.app",
+          "ABCDE12345.com.example.legacy"
+        ],
+        "com.apple.developer.icloud-services": [
+          "CloudKit",
+          "CloudDocuments"
+        ],
+        "com.apple.developer.in-app-payments": [
+          "merchant.x"
+        ],
+        "com.apple.developer.team-identifier": "ABCDE12345",
+        "com.apple.developer.ubiquity-container-identifiers": [
+          "ABCDE12345.com.example.legacy"
+        ],
+        "com.apple.developer.ubiquity-kvstore-identifier": "ABCDE12345.com.example.app",
+        "com.apple.security.application-groups": [
+          "group.com.example.app",
+          "group.ABCDE12345.shared"
+        ],
+        "get-task-allow": false,
+        "keychain-access-groups": [
+          "ABCDE12345.com.example.app",
+          "ABCDE12345.shared",
+          "com.apple.token"
+        ]
+      },
+      "expected": {
+        "capabilities_to_enable": [
+          "APP_GROUPS",
+          "ASSOCIATED_DOMAINS_V2",
+          "ICLOUD",
+          "IN_APP_PAYMENTS",
+          "PUSH_NOTIFICATIONS"
+        ],
+        "entitlements_to_remove": [
+          "com.apple.developer.in-app-payments",
+          "get-task-allow"
+        ]
+      },
+      "name": "full_app_development",
+      "profile_type": "development"
+    },
+    {
+      "entitlements": {
+        "application-identifier": "ABCDE12345.com.example.app",
+        "com.example.dev-only": true,
+        "com.example.mac-only": true,
+        "com.example.unknown": true
+      },
+      "expected": {
+        "capabilities_to_enable": [
+          "DEV_ONLY"
+        ],
+        "entitlements_to_remove": [
+          "com.example.mac-only",
+          "com.example.unknown"
+        ]
+      },
+      "name": "platform_specific_development",
+      "profile_type": "development"
+    },
+    {
+      "entitlements": {},
+      "expected": {
+        "capabilities_to_enable": [],
+        "entitlements_to_remove": []
+      },
+      "name": "empty_development",
+      "profile_type": "development"
+    },
+    {
+      "entitlements": {
+        "application-identifier": "ABCDE12345.com.example.app",
+        "aps-environment": "production",
+        "com.apple.developer.associated-domains": [
+          "applinks:example.com"
+        ],
+        "com.apple.developer.icloud-container-identifiers": [
+          "iCloud.com.example.app",
+          "ABCDE12345.com.example.legacy"
+        ],
+        "com.apple.developer.icloud-services": [
+          "CloudKit",
+          "CloudDocuments"
+        ],
+        "com.apple.developer.in-app-payments": [
+          "merchant.x"
+        ],
+        "com.apple.developer.team-identifier": "ABCDE12345",
+        "com.apple.developer.ubiquity-container-identifiers": [
+          "ABCDE12345.com.example.legacy"
+        ],
+        "com.apple.developer.ubiquity-kvstore-identifier": "ABCDE12345.com.example.app",
+        "com.apple.security.application-groups": [
+          "group.com.example.app",
+          "group.ABCDE12345.shared"
+        ],
+        "get-task-allow": false,
+        "keychain-access-groups": [
+          "ABCDE12345.com.example.app",
+          "ABCDE12345.shared",
+          "com.apple.token"
+        ]
+      },
+      "expected": {
+        "capabilities_to_enable": [
+          "APP_GROUPS",
+          "ASSOCIATED_DOMAINS_V2",
+          "ICLOUD",
+          "IN_APP_PAYMENTS",
+          "PUSH_NOTIFICATIONS"
+        ],
+        "entitlements_to_remove": [
+          "com.apple.developer.in-app-payments",
+          "get-task-allow"
+        ]
+      },
+      "name": "full_app_adhoc",
+      "profile_type": "adhoc"
+    },
+    {
+      "entitlements": {
+        "application-identifier": "ABCDE12345.com.example.app",
+        "com.example.dev-only": true,
+        "com.example.mac-only": true,
+        "com.example.unknown": true
+      },
+      "expected": {
+        "capabilities_to_enable": [],
+        "entitlements_to_remove": [
+          "com.example.dev-only",
+          "com.example.mac-only",
+          "com.example.unknown"
+        ]
+      },
+      "name": "platform_specific_adhoc",
+      "profile_type": "adhoc"
+    },
+    {
+      "entitlements": {},
+      "expected": {
+        "capabilities_to_enable": [],
+        "entitlements_to_remove": []
+      },
+      "name": "empty_adhoc",
+      "profile_type": "adhoc"
+    }
+  ],
+  "source": {
+    "python": "3.13.16",
+    "warpsign_commit": "f6fd14c8d676695c19daf25e5f546c25c027cccd"
+  }
+}

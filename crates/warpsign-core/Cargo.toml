@@ -1,0 +1,13 @@
+[package]
+name = "warpsign-core"
+description = "Provisioning, ID mapping and signing logic shared by the warpsign-neo CLI and iOS app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+indexmap = "2"
+plist = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }
+sha2 = "0.10"

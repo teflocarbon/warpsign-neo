@@ -1,0 +1,98 @@
+{
+  "cases": [
+    {
+      "original_id": "com.example.app",
+      "random_id": "4no.qv4clrx.xja",
+      "team_id": "ZZZZZ99999"
+    },
+    {
+      "original_id": "com.example.app.widget",
+      "random_id": "4no.qv4clrx.xja.nakhdc",
+      "team_id": "ZZZZZ99999"
+    },
+    {
+      "original_id": "a",
+      "random_id": "l",
+      "team_id": "ZZZZZ99999"
+    },
+    {
+      "original_id": "x.y",
+      "random_id": "9.g",
+      "team_id": "ZZZZZ99999"
+    },
+    {
+      "original_id": "com.some-company.My_App2",
+      "random_id": "4no.xfbowas79aq6.6vd02if",
+      "team_id": "ZZZZZ99999"
+    },
+    {
+      "original_id": "io.github.verylongbundleidentifiercomponentthatkeepsgoingandgoing",
+      "random_id": "ss.s45kgl.cne793ytmrd0v46bb52lr0lwirqw8j2v2s271lfbzastnepbhlfonci",
+      "team_id": "ZZZZZ99999"
+    },
+    {
+      "original_id": "123.456.789",
+      "random_id": "7vd.yzy.b22",
+      "team_id": "ZZZZZ99999"
+    },
+    {
+      "original_id": "com..double",
+      "random_id": "4no..9zijjp",
+      "team_id": "ZZZZZ99999"
+    },
+    {
+      "original_id": "group.com.example.shared",
+      "random_id": "jjpwb.4no.qv4clrx.afi62z",
+      "team_id": "ZZZZZ99999"
+    },
+    {
+      "original_id": "com.example.app",
+      "random_id": "t53.omah6qb.yqp",
+      "team_id": "ABCDE12345"
+    },
+    {
+      "original_id": "com.example.app.widget",
+      "random_id": "t53.omah6qb.yqp.0ldy0l",
+      "team_id": "ABCDE12345"
+    },
+    {
+      "original_id": "a",
+      "random_id": "h",
+      "team_id": "ABCDE12345"
+    },
+    {
+      "original_id": "x.y",
+      "random_id": "o.3",
+      "team_id": "ABCDE12345"
+    },
+    {
+      "original_id": "com.some-company.My_App2",
+      "random_id": "t53.ikx9p28q1pii.r9e7gyf",
+      "team_id": "ABCDE12345"
+    },
+    {
+      "original_id": "io.github.verylongbundleidentifiercomponentthatkeepsgoingandgoing",
+      "random_id": "30.jk8gcp.y8i0y7mut70q9apjfy31760dmzn8ct3q1f1fyerp9dzi7fykyvu8fw9",
+      "team_id": "ABCDE12345"
+    },
+    {
+      "original_id": "123.456.789",
+      "random_id": "wev.zc4.1p7",
+      "team_id": "ABCDE12345"
+    },
+    {
+      "original_id": "com..double",
+      "random_id": "t53..678eri",
+      "team_id": "ABCDE12345"
+    },
+    {
+      "original_id": "group.com.example.shared",
+      "random_id": "a9sy8.t53.omah6qb.dri4y2",
+      "team_id": "ABCDE12345"
+    }
+  ],
+  "source": {
+    "python": "3.13.16",
+    "warpsign_commit": "f6fd14c8d676695c19daf25e5f546c25c027cccd"
+  }
+}
