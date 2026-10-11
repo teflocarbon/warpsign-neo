@@ -318,6 +318,14 @@ final class AccountStore {
         }
     }
 
+    /// Provisioning profiles kept between signs (see profile_reuse.rs), so
+    /// signing an unchanged app again makes no changes on the portal
+    static var profileCacheDir: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Caches", isDirectory: true)
+            .appendingPathComponent("Profiles", isDirectory: true)
+    }
+
     // MARK: Entitlement names
 
     /// Names for entitlement keys, from the team's capabilities on the
@@ -385,6 +393,7 @@ final class AccountStore {
                     outputPath: output.path,
                     workDir: workDir.path,
                     settings: settings,
+                    profileCacheDir: Self.profileCacheDir.path,
                     observer: observer
                 )
             }
