@@ -92,6 +92,9 @@ pub fn inspect_ipa(
             "Found {}",
             app_dir.file_name().unwrap_or_default().to_string_lossy()
         ));
+        for removed in remove_unsupported_apps(&app_dir)? {
+            log.log(format!("Removed {removed}"));
+        }
         Ok::<_, PipelineError>(app_dir)
     })?;
 
@@ -867,6 +870,16 @@ pub fn sign_ipa(
             "Signed with {}",
             identity.common_name().unwrap_or_default()
         ));
+        // Anything iOS would refuse, named now rather than as installd's
+        // "invalid provisioning profile" later
+        let profiled: Vec<String> = plans
+            .iter()
+            .map(|plan| slash_path(&app.components[plan.component].path))
+            .collect();
+        for problem in unsigned_code(&app.app_dir, &team_id, &profiled) {
+            log.log(format!("Warning: {problem}"));
+            warnings.push(problem);
+        }
         // In the order of `plans`
         Ok::<_, PipelineError>(
             bundle_entitlements
@@ -947,6 +960,128 @@ pub fn sign_ipa(
 
 /// The entitlements to sign a primary component with, as in Python
 /// warpsign's `_sign_components` and `patch_app_binary`
+/// Folders of apps that can't come along with a re-signed app, and why
+const UNSUPPORTED_APPS: [(&str, &str); 3] = [
+    (
+        "AppClips",
+        "App Clips need an App ID and profile of their own, and iOS won't install them with a re-signed app",
+    ),
+    (
+        "Watch",
+        "watch apps can only be installed through a paired Apple Watch",
+    ),
+    (
+        "com.apple.WatchPlaceholder",
+        "a placeholder for a watch app",
+    ),
+];
+
+/// Take App Clips and watch apps out of an extracted app, before anything
+/// looks at it: left in, they keep their original signature and make iOS
+/// refuse the whole app. Not in Python warpsign, which installs fail with.
+/// Returns what was removed, and why.
+fn remove_unsupported_apps(app_dir: &Path) -> Result<Vec<String>, PipelineError> {
+    let mut removed = Vec::new();
+    for (folder, why) in UNSUPPORTED_APPS {
+        let path = app_dir.join(folder);
+        if !path.is_dir() {
+            continue;
+        }
+        let mut apps: Vec<String> = std::fs::read_dir(&path)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        apps.sort();
+        std::fs::remove_dir_all(&path).map_err(|source| PipelineError::Io {
+            path: path.display().to_string(),
+            source,
+        })?;
+        let what = if apps.is_empty() {
+            format!("{folder}/")
+        } else {
+            apps.iter()
+                .map(|app| format!("{folder}/{app}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        removed.push(format!("{what}: {why}"));
+    }
+    Ok(removed)
+}
+
+/// Code iOS won't accept in a signed app: app and extension bundles at
+/// any depth that didn't get a provisioning profile of their own (e.g. an
+/// App Clip in AppClips/ or a watch app in Watch/), and Mach-O files not
+/// signed by `team_id`. Not in Python warpsign, where these only show up
+/// as an install failure.
+fn unsigned_code(app_dir: &Path, team_id: &str, profiled: &[String]) -> Vec<String> {
+    fn walk(
+        app_dir: &Path,
+        relative: &Path,
+        team_id: &str,
+        profiled: &[String],
+        found: &mut Vec<String>,
+    ) {
+        let Ok(entries) = std::fs::read_dir(app_dir.join(relative)) else {
+            return;
+        };
+        let mut entries: Vec<_> = entries.flatten().collect();
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            let path = relative.join(entry.file_name());
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_dir() {
+                let is_bundle = matches!(
+                    path.extension().and_then(|e| e.to_str()),
+                    Some("app" | "appex")
+                );
+                let shown = slash_path(&path);
+                if is_bundle && !profiled.contains(&shown) {
+                    found.push(format!(
+                        "{shown} has no provisioning profile of its own, so iOS will refuse to install the app. App Clips and watch apps can't be installed this way: remove it from the IPA."
+                    ));
+                }
+                walk(app_dir, &path, team_id, profiled, found);
+            } else if file_type.is_file() && is_macho(&entry.path()) {
+                let shown = slash_path(&path);
+                match signature::read_signature(&entry.path()) {
+                    Ok(Some(info)) if info.team_id.as_deref() == Some(team_id) => {}
+                    Ok(Some(info)) => found.push(format!(
+                        "{shown} is still signed by team {}: iOS may refuse to install the app or load it",
+                        info.team_id.as_deref().unwrap_or("(none)")
+                    )),
+                    Ok(None) => found.push(format!(
+                        "{shown} isn't signed: iOS may refuse to install the app or load it"
+                    )),
+                    // Not something this can read: leave it to iOS
+                    Err(_) => {}
+                }
+            }
+        }
+    }
+    let mut found = Vec::new();
+    walk(app_dir, Path::new(""), team_id, profiled, &mut found);
+    found
+}
+
+/// Whether a file starts like a Mach-O binary (thin or universal)
+fn is_macho(path: &Path) -> bool {
+    use std::io::Read;
+    let mut magic = [0u8; 4];
+    let read = std::fs::File::open(path).and_then(|mut file| file.read_exact(&mut magic));
+    if read.is_err() {
+        return false;
+    }
+    matches!(u32::from_le_bytes(magic), 0xfeed_face | 0xfeed_facf)
+        || matches!(u32::from_be_bytes(magic), 0xcafe_babe | 0xcafe_babf)
+}
+
 /// Python warpsign's profile names, which reusing profiles goes by
 fn profile_name(bundle_id: &str, profile_type: ProfileType) -> String {
     let type_name = match profile_type {

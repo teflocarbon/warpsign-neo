@@ -58,9 +58,11 @@ fn strings(items: &[&str]) -> Value {
 
 /// The test app as if from another team: signed for ABCDE12345, with app
 /// groups, push and keychain entitlements
-fn store_ipa(dir: &Path) -> PathBuf {
+/// The test app as the App Store would ship it, after `change`
+fn store_ipa_with(dir: &Path, change: impl FnOnce(&Path)) -> PathBuf {
     let app = dir.join("store/Payload/Test.app");
     copy_dir(&data_dir().join("Test.app"), &app);
+    change(&app);
     let main = dict(vec![
         (
             "application-identifier",
@@ -384,8 +386,18 @@ impl ProgressObserver for Steps {
 }
 
 fn sign(fake: &Arc<FakePortal>, options: &SignOptions, team: &str) -> Outcome {
+    sign_with(fake, options, team, |_| {})
+}
+
+/// As [`sign`], changing the app first
+fn sign_with(
+    fake: &Arc<FakePortal>,
+    options: &SignOptions,
+    team: &str,
+    change: impl FnOnce(&Path),
+) -> Outcome {
     let dir = tempfile::tempdir().unwrap();
-    let ipa = store_ipa(dir.path());
+    let ipa = store_ipa_with(dir.path(), change);
     let session = SessionState {
         csrf: Some("t".into()),
         csrf_ts: Some("1".into()),
@@ -914,4 +926,63 @@ fn a_profile_missing_an_entitlement_updates_only_its_app_id() {
         regenerated[0].contains(&main.name.replace(' ', "+")),
         "{regenerated:?}"
     );
+}
+
+#[test]
+fn names_bundles_that_got_no_profile() {
+    // An app somewhere unusual: not a component Python warpsign finds, so
+    // it gets no profile of its own
+    let fake = FakePortal::new("no-ppq.mobileprovision");
+    let (_dir, result, _) = sign_with(&fake, &SignOptions::default(), TEAM, |app| {
+        copy_dir(
+            &app.join("PlugIns/Widget.appex"),
+            &app.join("Helpers/Helper.app"),
+        );
+    });
+    let signed = result.unwrap();
+    assert!(
+        signed
+            .warnings
+            .iter()
+            .any(|warning| warning.starts_with("Helpers/Helper.app has no provisioning profile")),
+        "{:?}",
+        signed.warnings
+    );
+
+    // A normal app has nothing to warn about
+    let (_dir, result, _) = sign(
+        &FakePortal::new("no-ppq.mobileprovision"),
+        &SignOptions::default(),
+        TEAM,
+    );
+    let warnings = result.unwrap().warnings;
+    assert!(!warnings.iter().any(|w| w.contains("iOS")), "{warnings:?}");
+}
+
+#[test]
+fn removes_app_clips_and_watch_apps() {
+    let fake = FakePortal::new("no-ppq.mobileprovision");
+    let (dir, result, _) = sign_with(&fake, &SignOptions::default(), TEAM, |app| {
+        copy_dir(
+            &app.join("PlugIns/Widget.appex"),
+            &app.join("AppClips/Clip.app"),
+        );
+        copy_dir(
+            &app.join("PlugIns/Widget.appex"),
+            &app.join("Watch/Watch.app"),
+        );
+    });
+    let signed = result.unwrap();
+    // Nothing left to warn about, and no App IDs for them
+    assert!(
+        !signed.warnings.iter().any(|w| w.contains("iOS")),
+        "{:?}",
+        signed.warnings
+    );
+    assert_eq!(signed.profiles.len(), 2);
+
+    let out = dir.path().join("out");
+    let app = extract_ipa(&signed.output, &out).unwrap();
+    assert!(!app.join("AppClips").exists());
+    assert!(!app.join("Watch").exists());
 }
