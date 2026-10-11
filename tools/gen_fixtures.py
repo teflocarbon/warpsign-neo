@@ -422,6 +422,81 @@ def entitlements_processor_cases() -> list:
     return cases
 
 
+# --- Apple SRP login ------------------------------------------------------
+
+
+def srp_cases() -> list:
+    """Client values for Apple's SRP sign-in, as computed by the srp library
+    Python warpsign uses, with fixed randomness. A server-side Verifier checks
+    each case really authenticates."""
+    import hashlib
+
+    import srp
+    import srp._pysrp as pysrp
+
+    # Settings are per backend: srp.User may be the OpenSSL one (_ctsrp)
+    for module in (srp, pysrp):
+        module.rfc5054_enable()
+        module.no_username_in_x()
+
+    def derive(password: str, salt: bytes, iterations: int, protocol: str) -> bytes:
+        password_hash = hashlib.sha256(password.encode()).digest()
+        if protocol == "s2k_fo":
+            password_hash = password_hash.hex().encode()
+        return hashlib.pbkdf2_hmac("sha256", password_hash, salt, iterations, 32)
+
+    cases = []
+    for i, (email, password, protocol, iterations) in enumerate(
+        [
+            ("someone@example.com", "correct horse battery staple", "s2k", 20309),
+            ("Someone.Else@Example.com", "pässwörd with ünïcode", "s2k_fo", 1000),
+            ("short@x.io", "p", "s2k", 1),
+        ]
+    ):
+        rng = random.Random(f"srp-{i}")
+        salt = bytes(rng.getrandbits(8) for _ in range(16))
+        a = bytes(rng.getrandbits(8) for _ in range(32))  # _ctsrp (used by warpsign) wants 32
+        b = bytes(rng.getrandbits(8) for _ in range(256))
+        derived = derive(password, salt, iterations, protocol)
+
+        # Server side: verifier for the derived password, with this salt
+        x = pysrp.gen_x(hashlib.sha256, salt, email, derived)
+        n, g = pysrp.get_ng(pysrp.NG_2048, None, None)
+        verification_key = pysrp.long_to_bytes(pow(g, x, n))
+
+        user = srp.User(email, derived, hash_alg=srp.SHA256, ng_type=srp.NG_2048, bytes_a=a)
+        _, big_a = user.start_authentication()
+        verifier = pysrp.Verifier(
+            email, salt, verification_key, big_a,
+            hash_alg=pysrp.SHA256, ng_type=pysrp.NG_2048, bytes_b=b,
+        )
+        salt_out, big_b = verifier.get_challenge()
+        m1 = user.process_challenge(salt_out, big_b)
+        h_amk = verifier.verify_session(m1)
+        assert verifier.authenticated() and h_amk is not None
+        user.verify_session(h_amk)
+        assert user.authenticated()
+
+        cases.append(
+            {
+                "email": email,
+                "password": password,
+                "protocol": protocol,
+                "iterations": iterations,
+                "salt": salt.hex(),
+                "a": a.hex(),
+                "B": big_b.hex(),
+                "expected": {
+                    "derived_password": derived.hex(),
+                    "A": big_a.hex(),
+                    "M1": m1.hex(),
+                    "M2": user.H_AMK.hex(),
+                },
+            }
+        )
+    return cases
+
+
 # --- Info.plist patching --------------------------------------------------
 
 # Info.plists for full_app_components(), main app first (the order warpsign
@@ -702,3 +777,4 @@ if __name__ == "__main__":
     write("entitlements_processor", entitlements_processor_cases())
     write("app_inspection", inspection_cases())
     write("info_plist_patching", info_plist_cases())
+    write("srp", srp_cases())

@@ -10,10 +10,15 @@ publish.workspace = true
 # Notarization (on by default) pulls in an AWS SDK we don't need
 apple-codesign = { version = "0.29", default-features = false }
 cryptographic-message-syntax = "0.27"
+getrandom = "0.4.3"
+hmac = "0.13.0"
 indexmap = "2"
+num-bigint = "0.5.1"
+pbkdf2 = "0.13.0"
 plist = "1"
 serde_json = { version = "1", features = ["float_roundtrip"] }
-sha2 = "0.10"
+sha1 = "0.11.0"
+sha2 = "0.11"
 thiserror = "2"
 x509-certificate = "0.24.0"
 zip = { version = "7.2.0", default-features = false, features = ["deflate"] }
