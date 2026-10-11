@@ -50,6 +50,7 @@ crates/warpsign-core/   Shared logic (library)
 crates/warpsign-ffi/    Swift bindings for the iOS app (uniffi)
 crates/uniffi-bindgen/  Generates those bindings
 ios/                    SwiftUI app (XcodeGen spec + sources)
+docs/design/            Agreed designs (certificates, portal login and API)
 docs/spikes/            Findings from experiments (e.g. signing with rcodesign)
 fixtures/               Reference outputs from Python warpsign
 tools/                  Fixture generator, test data builders, iOS build, macOS A/B test for rcodesign
