@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 /// Diagnostic view of provisioning profiles from your own account: whether
 /// PPQ checking is on, and whether a profile is usable at all
 struct ProfilesView: View {
-    @Environment(AppModel.self) private var model
+    @Environment(InspectionModel.self) private var model
     @State private var showingImporter = false
 
     private static let profileType = UTType("com.apple.mobileprovision")
@@ -12,46 +12,44 @@ struct ProfilesView: View {
         ?? .data
 
     var body: some View {
-        NavigationStack {
-            List {
-                if let error = model.profileError {
-                    Section {
-                        Label(error, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
-                    }
-                }
-                if model.profiles.isEmpty {
-                    ContentUnavailableView {
-                        Label("No Profiles", systemImage: "doc.badge.gearshape")
-                    } description: {
-                        Text("Add a provisioning profile from your developer account to check it for PPQ.")
-                    }
-                } else {
-                    Section {
-                        ForEach(model.profiles, id: \.self) { profile in
-                            ProfileRow(profile: profile)
-                        }
-                        .onDelete { model.removeProfiles(at: $0) }
-                    } footer: {
-                        Text("Teams created after 6 June 2021 get PPQ checking: apps check in with Apple on first launch, so WarpSign won't keep original bundle IDs with them.")
-                    }
+        List {
+            if let error = model.profileError {
+                Section {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
                 }
             }
-            .navigationTitle("Profiles")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Add Profile", systemImage: "plus") {
-                        showingImporter = true
+            if model.profiles.isEmpty {
+                ContentUnavailableView {
+                    Label("No Profiles", systemImage: "doc.badge.gearshape")
+                } description: {
+                    Text("Add a provisioning profile from your developer account to check it for PPQ.")
+                }
+            } else {
+                Section {
+                    ForEach(model.profiles, id: \.self) { profile in
+                        ProfileRow(profile: profile)
                     }
+                    .onDelete { model.removeProfiles(at: $0) }
+                } footer: {
+                    Text("Teams created after 6 June 2021 get PPQ checking: apps check in with Apple on first launch, so WarpSign won't keep original bundle IDs with them.")
                 }
             }
-            .fileImporter(
-                isPresented: $showingImporter,
-                allowedContentTypes: [Self.profileType]
-            ) { result in
-                if case .success(let url) = result {
-                    Task { await model.addProfile(url) }
+        }
+        .navigationTitle("Profiles")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Add Profile", systemImage: "plus") {
+                    showingImporter = true
                 }
+            }
+        }
+        .fileImporter(
+            isPresented: $showingImporter,
+            allowedContentTypes: [Self.profileType]
+        ) { result in
+            if case .success(let url) = result {
+                Task { await model.addProfile(url) }
             }
         }
     }

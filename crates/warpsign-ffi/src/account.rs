@@ -210,7 +210,8 @@ impl From<PortalCertificate> for PortalCertificateInfo {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum StatusBar {
-    Default,
+    /// Leave as the app has it
+    Unchanged,
     Hidden,
     Light,
     Dark,
@@ -264,7 +265,7 @@ pub fn default_sign_settings() -> SignSettings {
         patch_fullscreen: false,
         patch_orientation: false,
         patch_game_mode: false,
-        status_bar: StatusBar::Default,
+        status_bar: StatusBar::Unchanged,
         interface_style: InterfaceStyle::Automatic,
         remove_url_schemes: false,
     }
@@ -284,7 +285,7 @@ impl From<SignSettings> for SignOptions {
                 patch_orientation: settings.patch_orientation,
                 patch_game_mode: settings.patch_game_mode,
                 patch_status_bar: match settings.status_bar {
-                    StatusBar::Default => StatusBarStyle::Default,
+                    StatusBar::Unchanged => StatusBarStyle::Default,
                     StatusBar::Hidden => StatusBarStyle::Hidden,
                     StatusBar::Light => StatusBarStyle::Light,
                     StatusBar::Dark => StatusBarStyle::Dark,
