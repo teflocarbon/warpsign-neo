@@ -577,6 +577,26 @@ impl AppleAccount {
             .collect())
     }
 
+    /// Register an iPhone or iPad by UDID, e.g. this one, from its pairing file
+    pub fn register_device(
+        &self,
+        team_id: String,
+        name: String,
+        udid: String,
+    ) -> Result<DeviceInfo, WarpsignError> {
+        let device = self
+            .portal(&team_id)
+            .register_device(&name, &udid)
+            .map_err(portal_error)?;
+        Ok(DeviceInfo {
+            id: device.id,
+            name: device.name,
+            udid: device.udid,
+            device_class: device.device_class,
+            model: device.model,
+        })
+    }
+
     /// Make a new signing identity: a key generated here, and a certificate
     /// for it from the portal. Uses one of the team's certificate slots.
     pub fn create_identity(

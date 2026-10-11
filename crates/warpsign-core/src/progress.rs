@@ -28,6 +28,12 @@ pub enum Step {
     Sign,
     /// Zip the signed app into an IPA
     Package,
+    /// Reach the device and start a trusted session with it
+    ConnectDevice,
+    /// Copy the IPA to the device
+    UploadApp,
+    /// Have the device install it
+    InstallApp,
 }
 
 impl Step {
@@ -43,6 +49,9 @@ impl Step {
             Step::PatchBinaries => "Patch binaries",
             Step::Sign => "Sign",
             Step::Package => "Package IPA",
+            Step::ConnectDevice => "Connect to device",
+            Step::UploadApp => "Copy to device",
+            Step::InstallApp => "Install",
         }
     }
 }
@@ -54,6 +63,8 @@ pub trait ProgressObserver: Send + Sync {
     fn step_log(&self, step: Step, message: &str);
     /// `error` is set if the step failed; no further steps start after that
     fn step_finished(&self, step: Step, elapsed: Duration, error: Option<&str>);
+    /// How far through a long step is, from 0 to 1, for steps that know
+    fn step_progress(&self, _step: Step, _fraction: f64) {}
 }
 
 /// Ignores all progress
@@ -74,6 +85,11 @@ pub struct StepLog<'a> {
 impl StepLog<'_> {
     pub fn log(&self, message: impl AsRef<str>) {
         self.observer.step_log(self.step, message.as_ref());
+    }
+
+    pub fn progress(&self, fraction: f64) {
+        self.observer
+            .step_progress(self.step, fraction.clamp(0.0, 1.0));
     }
 }
 

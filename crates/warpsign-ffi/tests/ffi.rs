@@ -36,6 +36,7 @@ impl StepObserver for Recorder {
             .unwrap()
             .push(format!("finish {step:?} {outcome}"));
     }
+    fn step_progress(&self, _step: Step, _fraction: f64) {}
 }
 
 impl Recorder {
@@ -336,5 +337,33 @@ mod account {
         let settings = default_sign_settings();
         assert!(settings.encode_ids && settings.patch_ids);
         assert!(!settings.force_original_id && !settings.patch_debug);
+    }
+}
+
+mod install {
+    use warpsign_ffi::{Step, WarpsignError, connected_device, install_steps, pairing_file_info};
+
+    use super::core_data;
+
+    #[test]
+    fn checks_pairing_files() {
+        let data = std::fs::read(core_data().join("test.mobiledevicepairing")).unwrap();
+        let info = pairing_file_info(data).unwrap();
+        assert_eq!(info.udid.as_deref(), Some("00008110-000A0B0C0D0E0F10"));
+        assert!(matches!(
+            pairing_file_info(b"nope".to_vec()),
+            Err(WarpsignError::Device { .. })
+        ));
+        // Not on the device, so the loopback address goes nowhere
+        assert!(connected_device(b"nope".to_vec()).is_err());
+    }
+
+    #[test]
+    fn lists_install_steps() {
+        let steps: Vec<Step> = install_steps().into_iter().map(|s| s.step).collect();
+        assert_eq!(
+            steps,
+            [Step::ConnectDevice, Step::UploadApp, Step::InstallApp]
+        );
     }
 }

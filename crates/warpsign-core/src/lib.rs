@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod bundle_mapping;
+pub mod device;
 pub mod entitlements;
 pub mod identity;
 pub mod info_plist;

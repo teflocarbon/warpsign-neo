@@ -19,7 +19,9 @@ use warpsign_core::source;
 uniffi::setup_scaffolding!();
 
 mod account;
+mod install;
 pub use account::*;
+pub use install::*;
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum WarpsignError {
@@ -46,6 +48,11 @@ pub enum WarpsignError {
     Identity { message: String },
     #[error("{message}")]
     Signing { message: String },
+    /// The device can't be reached: usually the VPN isn't connected
+    #[error("{message}")]
+    DeviceUnreachable { message: String },
+    #[error("{message}")]
+    Device { message: String },
 }
 
 /// A signable part of an app
@@ -97,6 +104,9 @@ pub enum Step {
     PatchBinaries,
     Sign,
     Package,
+    ConnectDevice,
+    UploadApp,
+    InstallApp,
 }
 
 impl From<progress::Step> for Step {
@@ -112,6 +122,9 @@ impl From<progress::Step> for Step {
             progress::Step::PatchBinaries => Step::PatchBinaries,
             progress::Step::Sign => Step::Sign,
             progress::Step::Package => Step::Package,
+            progress::Step::ConnectDevice => Step::ConnectDevice,
+            progress::Step::UploadApp => Step::UploadApp,
+            progress::Step::InstallApp => Step::InstallApp,
         }
     }
 }
@@ -130,6 +143,8 @@ pub trait StepObserver: Send + Sync {
     fn step_log(&self, step: Step, message: String);
     /// `error` is set if the step failed; nothing runs after a failed step
     fn step_finished(&self, step: Step, elapsed_ms: u64, error: Option<String>);
+    /// How far through a long step is (0 to 1), for steps that know
+    fn step_progress(&self, step: Step, fraction: f64);
 }
 
 pub(crate) struct ObserverBridge(pub(crate) Arc<dyn StepObserver>);
@@ -140,6 +155,9 @@ impl ProgressObserver for ObserverBridge {
     }
     fn step_log(&self, step: progress::Step, message: &str) {
         self.0.step_log(step.into(), message.to_string());
+    }
+    fn step_progress(&self, step: progress::Step, fraction: f64) {
+        self.0.step_progress(step.into(), fraction);
     }
     fn step_finished(&self, step: progress::Step, elapsed: Duration, error: Option<&str>) {
         self.0.step_finished(
