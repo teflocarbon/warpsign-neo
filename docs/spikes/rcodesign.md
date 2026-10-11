@@ -46,7 +46,8 @@ rcodesign sign \
 2. **Team ID is only taken from Apple-chained certificates.** rcodesign copies the team ID from the certificate's OU only when the certificate chains to Apple's root CA. Without a team ID, dyld refuses to load frameworks on iOS ("mapped file has no Team ID"). Real Apple certificates are fine, but neo should always pass the team ID explicitly.
 3. **Timestamping is on by default.** It contacts `timestamp.apple.com`, which `codesign` doesn't do for development or ad hoc signing. Use `--timestamp-url none`.
 4. **Modern `.p12` files fail.** OpenSSL 3's default AES/PBKDF2 encryption fails with a misleading "incorrect password given when decrypting PFX data". Legacy 3DES `.p12` files (what Keychain Access exports) work. Only matters if neo imports existing `.p12` files rather than generating its own key.
-5. **`rcodesign verify` only takes individual Mach-O files**, not bundles, and says it doesn't check everything Apple does. It isn't a substitute for `codesign --verify`.
+5. **Scoped paths use the OS's separator.** apple-codesign matches scoped settings against nested bundles' *native* relative paths, so on Windows `PlugIns/Widget.appex` never matches `PlugIns\\Widget.appex`. Unmatched scopes are ignored silently, and the extension gets signed with no entitlements. Neo converts scope paths to the native separator and reads every bundle's entitlements back after signing, failing if they don't match (found by Windows CI).
+6. **`rcodesign verify` only takes individual Mach-O files**, not bundles, and says it doesn't check everything Apple does. It isn't a substitute for `codesign --verify`.
 
 **Maintenance**
 
