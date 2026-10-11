@@ -14,8 +14,11 @@ getrandom = "0.4.3"
 hmac = "0.13.0"
 indexmap = "2"
 num-bigint = "0.5.1"
+p12-keystore = "0.4"
 pbkdf2 = "0.13.0"
 plist = "1"
+rand_core = { version = "0.6", features = ["getrandom"] }
+rsa = "0.9"
 serde_json = { version = "1", features = ["float_roundtrip"] }
 sha1 = "0.11.0"
 sha2 = "0.11"
@@ -24,4 +27,6 @@ x509-certificate = "0.24.0"
 zip = { version = "7.2.0", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
+bcder = "0.7"
+pem = "3"
 tempfile = "3"

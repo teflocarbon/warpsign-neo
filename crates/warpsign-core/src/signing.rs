@@ -10,7 +10,7 @@
 
 use std::path::Path;
 
-use apple_codesign::cryptography::{InMemoryPrivateKey, parse_pfx_data};
+use apple_codesign::cryptography::InMemoryPrivateKey;
 use apple_codesign::{AppleCertificate, SettingsScope, SigningSettings, UnifiedSigner};
 use plist::{Dictionary, Value};
 use x509_certificate::CapturedX509Certificate;
@@ -39,14 +39,21 @@ pub struct SigningIdentity {
 }
 
 impl SigningIdentity {
-    /// Load from a .p12 file's contents.
-    ///
-    /// apple-codesign 0.29 only reads legacy (3DES) encrypted .p12 files, as
-    /// exported by Keychain Access. OpenSSL 3's default AES encryption fails
-    /// with an "incorrect password" error even when the password is right.
+    /// Load from a .p12 file's contents, using its first identity. Reads
+    /// both legacy (3DES) and modern (AES) encryption.
     pub fn from_p12(data: &[u8], password: &str) -> Result<Self, SigningError> {
-        let (certificate, key) =
-            parse_pfx_data(data, password).map_err(|e| SigningError::Certificate(e.to_string()))?;
+        let identities = crate::identity::import_p12(data, password)
+            .map_err(|e| SigningError::Certificate(e.to_string()))?;
+        let identity = &identities[0];
+        Self::from_der(identity.certificate_der(), identity.private_key_der())
+    }
+
+    /// Load from a DER certificate and its PKCS#8 DER private key
+    pub fn from_der(certificate: &[u8], private_key: &[u8]) -> Result<Self, SigningError> {
+        let certificate = CapturedX509Certificate::from_der(certificate.to_vec())
+            .map_err(|e| SigningError::Certificate(e.to_string()))?;
+        let key = InMemoryPrivateKey::from_pkcs8_der(private_key)
+            .map_err(|e| SigningError::Certificate(e.to_string()))?;
         Ok(Self { certificate, key })
     }
 
