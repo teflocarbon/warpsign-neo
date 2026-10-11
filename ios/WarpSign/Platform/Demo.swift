@@ -74,7 +74,7 @@ enum Demo {
         UUID(uuidString: String(format: "00000000-0000-4000-8000-%012d", index + 1))!
     }
 
-    static func library() -> LibraryStore {
+    @MainActor static func library() -> LibraryStore {
         var apps: [LibraryApp] = []
         var icons: [UUID: UIImage] = [:]
         for (index, (sample, id)) in zip(samples, appIds).enumerated() {
@@ -118,7 +118,7 @@ enum Demo {
 
     static let team = TeamInfo(teamId: "ZZZZZ99999", name: "Teflo Labs", kind: "INDIVIDUAL", roles: ["TEAM_ADMIN"])
 
-    static func account() -> AccountStore {
+    @MainActor static func account() -> AccountStore {
         let expires = Int64(Date(timeIntervalSinceNow: 86_400 * 300).timeIntervalSince1970)
         return AccountStore(
             demoAppleId: "teflo@example.com",
@@ -142,7 +142,7 @@ enum Demo {
 
     static let sourceURL = "https://repo.example.com/apps.json"
 
-    static func sources() -> SourcesStore {
+    @MainActor static func sources() -> SourcesStore {
         func iconURL(_ symbol: String, _ colors: [UIColor]) -> String {
             let data = icon(symbol, colors, size: 120).pngData() ?? Data()
             return "data:image/png;base64,\(data.base64EncodedString())"
