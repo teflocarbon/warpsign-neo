@@ -159,6 +159,26 @@ fn package_round_trips_modes_and_symlinks() {
 }
 
 #[test]
+fn package_writes_payload_entries_with_forward_slashes() {
+    let dir = tempfile::tempdir().unwrap();
+    let ipa = dir.path().join("out.ipa");
+    package_ipa(&data_dir().join("Test.app"), &ipa).unwrap();
+
+    let names = zip_entry_names(&ipa);
+    assert!(names.iter().all(|n| n.starts_with("Payload/")), "{names:?}");
+    assert!(names.iter().all(|n| !n.contains('\\')), "{names:?}");
+    for expected in [
+        "Payload/",
+        "Payload/Test.app/",
+        "Payload/Test.app/Test",
+        "Payload/Test.app/PlugIns/Widget.appex/Widget",
+        "Payload/Test.app/Frameworks/Foo.framework/Foo",
+    ] {
+        assert!(names.contains(&expected.to_string()), "missing {expected}");
+    }
+}
+
+#[test]
 fn package_rejects_non_app_directories() {
     let dir = tempfile::tempdir().unwrap();
     assert!(matches!(
