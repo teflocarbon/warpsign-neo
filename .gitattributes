@@ -1,0 +1,2 @@
+# Compared byte for byte by serve.rs and worker/: never convert line endings
+worker/test/manifest.plist -text
