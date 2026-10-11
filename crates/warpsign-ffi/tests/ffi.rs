@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use warpsign_ffi::{
-    Component, Step, StepObserver, WarpsignError, core_version, inspect_ipa, inspect_steps,
-    read_profile,
+    Component, Encryption, Step, StepObserver, WarpsignError, core_version, inspect_ipa,
+    inspect_steps, parse_source, read_ipa_metadata, read_profile,
 };
 
 fn core_data() -> PathBuf {
@@ -162,4 +162,29 @@ fn reads_profiles() {
 
     let missing = read_profile("/nonexistent.mobileprovision".into());
     assert!(matches!(missing, Err(WarpsignError::Profile { .. })));
+}
+
+#[test]
+fn reads_ipa_metadata() {
+    let dir = tempfile::tempdir().unwrap();
+    let ipa = dir.path().join("Test.ipa");
+    warpsign_core::ipa::package_ipa(&core_data().join("Test.app"), &ipa).unwrap();
+    let metadata = read_ipa_metadata(ipa.display().to_string()).unwrap();
+    assert_eq!(metadata.bundle_id, "com.example.test");
+    assert_eq!(metadata.encryption, Encryption::Decrypted);
+
+    let error = read_ipa_metadata(dir.path().join("missing.ipa").display().to_string());
+    assert!(matches!(error, Err(WarpsignError::Ipa { .. })));
+}
+
+#[test]
+fn parses_sources() {
+    let data = std::fs::read(core_data().join("sources/altstore.json")).unwrap();
+    let source = parse_source(data).unwrap();
+    assert_eq!(source.apps.len(), 2);
+    assert_eq!(source.apps[0].versions[0].version, "2.0");
+    assert!(matches!(
+        parse_source(b"nope".to_vec()),
+        Err(WarpsignError::Source { .. })
+    ));
 }

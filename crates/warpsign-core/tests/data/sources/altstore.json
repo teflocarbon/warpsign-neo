@@ -1,0 +1,76 @@
+{
+  "name": "Example Source",
+  "identifier": "com.example.source",
+  "subtitle": "Apps for testing",
+  "iconURL": "https://example.com/icon.png",
+  "website": "https://example.com",
+  "tintColor": "5c7aea",
+  "featuredApps": ["com.example.modern"],
+  "apps": [
+    {
+      "name": "Modern",
+      "bundleIdentifier": "com.example.modern",
+      "developerName": "Example Dev",
+      "subtitle": "Uses the versions list",
+      "localizedDescription": "A modern-format app.",
+      "iconURL": "https://example.com/modern.png",
+      "tintColor": "#FF0000",
+      "category": "utilities",
+      "screenshots": {
+        "iphone": ["https://example.com/1.png", {"imageURL": "https://example.com/2.png", "width": 1170, "height": 2532}],
+        "ipad": ["https://example.com/ipad.png"]
+      },
+      "versions": [
+        {
+          "version": "2.0",
+          "buildVersion": "20",
+          "date": "2026-09-01T12:00:00-07:00",
+          "localizedDescription": "New things.",
+          "downloadURL": "https://example.com/Modern-2.0.ipa",
+          "size": 12345678,
+          "minOSVersion": "16.0"
+        },
+        {
+          "version": "1.0",
+          "date": "2026-01-01",
+          "downloadURL": "https://example.com/Modern-1.0.ipa",
+          "size": 1.2e7
+        }
+      ]
+    },
+    {
+      "name": "Legacy",
+      "bundleIdentifier": "com.example.legacy",
+      "developerName": "Old Dev",
+      "version": 1.5,
+      "versionDate": "2021-05-01",
+      "versionDescription": "Bug fixes.",
+      "downloadURL": "https://example.com/Legacy.ipa",
+      "localizedDescription": "A legacy-format app.",
+      "iconURL": "https://example.com/legacy.png",
+      "size": "4567890",
+      "screenshotURLs": ["https://example.com/legacy1.png"]
+    },
+    {
+      "name": "Broken",
+      "bundleIdentifier": "com.example.broken",
+      "versions": [{"version": "1.0"}]
+    },
+    {
+      "bundleIdentifier": "com.example.nameless",
+      "downloadURL": "https://example.com/x.ipa",
+      "version": "1"
+    }
+  ],
+  "news": [
+    {
+      "title": "Modern 2.0 is out",
+      "identifier": "modern-2",
+      "caption": "Go get it",
+      "date": "2026-09-01",
+      "tintColor": "#000000",
+      "appID": "com.example.modern"
+    },
+    {"caption": "no title, skipped"}
+  ]
+}

@@ -7,12 +7,14 @@ pub mod identity;
 pub mod info_plist;
 pub mod inspect;
 pub mod ipa;
+pub mod metadata;
 pub mod pipeline;
 pub mod profile;
 pub mod progress;
 mod pyrandom;
 pub mod signature;
 pub mod signing;
+pub mod source;
 
 #[doc(hidden)]
 pub use pyrandom::PyRandom;

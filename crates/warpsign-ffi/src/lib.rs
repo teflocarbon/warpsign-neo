@@ -10,9 +10,11 @@ use std::time::Duration;
 
 use plist::Value;
 use warpsign_core::inspect::slash_path;
+use warpsign_core::metadata::{self, MetadataError};
 use warpsign_core::pipeline::{self, INSPECT_STEPS, PipelineError};
 use warpsign_core::profile::ProvisioningProfile;
 use warpsign_core::progress::{self, ProgressObserver};
+use warpsign_core::source;
 
 uniffi::setup_scaffolding!();
 
@@ -24,6 +26,8 @@ pub enum WarpsignError {
     Inspect { message: String },
     #[error("{message}")]
     Profile { message: String },
+    #[error("{message}")]
+    Source { message: String },
 }
 
 /// A signable part of an app
@@ -201,5 +205,177 @@ pub fn read_profile(path: String) -> Result<ProfileInfo, WarpsignError> {
         team_ids: profile.team_ids,
         device_count: profile.provisioned_devices.len() as u32,
         ppq_check: profile.ppq_check,
+    })
+}
+
+/// Whether an app's main executable is still FairPlay-encrypted
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum Encryption {
+    Decrypted,
+    /// Installs once re-signed, but crashes on launch
+    Encrypted,
+    Unknown,
+}
+
+/// An IPA's app, read without extracting it
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct IpaMetadata {
+    pub display_name: String,
+    pub bundle_id: String,
+    pub version: Option<String>,
+    pub build: Option<String>,
+    pub minimum_os: Option<String>,
+    pub file_size: u64,
+    pub installed_size: u64,
+    pub extension_count: u32,
+    pub encryption: Encryption,
+    /// PNG, usually Apple's CgBI variant (UIImage decodes it)
+    pub icon: Option<Vec<u8>>,
+}
+
+/// Read an IPA's name, version and icon, without extracting it
+#[uniffi::export]
+pub fn read_ipa_metadata(ipa_path: String) -> Result<IpaMetadata, WarpsignError> {
+    let metadata = metadata::read_ipa_metadata(Path::new(&ipa_path)).map_err(|e| match e {
+        MetadataError::Ipa(_) | MetadataError::Zip { .. } => WarpsignError::Ipa {
+            message: e.to_string(),
+        },
+        _ => WarpsignError::Inspect {
+            message: e.to_string(),
+        },
+    })?;
+    Ok(IpaMetadata {
+        display_name: metadata.display_name,
+        bundle_id: metadata.bundle_id,
+        version: metadata.version,
+        build: metadata.build,
+        minimum_os: metadata.minimum_os,
+        file_size: metadata.file_size,
+        installed_size: metadata.installed_size,
+        extension_count: metadata.extension_count,
+        encryption: match metadata.encryption {
+            metadata::Encryption::Decrypted => Encryption::Decrypted,
+            metadata::Encryption::Encrypted => Encryption::Encrypted,
+            metadata::Encryption::Unknown => Encryption::Unknown,
+        },
+        icon: metadata.icon,
+    })
+}
+
+/// An AltStore-format app source
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct Source {
+    pub name: String,
+    pub identifier: Option<String>,
+    pub subtitle: Option<String>,
+    pub description: Option<String>,
+    pub icon_url: Option<String>,
+    pub header_url: Option<String>,
+    pub website: Option<String>,
+    pub tint_color: Option<String>,
+    pub featured_apps: Vec<String>,
+    pub apps: Vec<SourceApp>,
+    pub news: Vec<NewsItem>,
+    /// Apps that were skipped, and why
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct SourceApp {
+    pub name: String,
+    pub bundle_id: String,
+    pub developer_name: Option<String>,
+    pub subtitle: Option<String>,
+    pub description: Option<String>,
+    pub icon_url: Option<String>,
+    pub tint_color: Option<String>,
+    pub category: Option<String>,
+    pub screenshot_urls: Vec<String>,
+    /// Newest first, never empty
+    pub versions: Vec<AppVersion>,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct AppVersion {
+    pub version: String,
+    pub build: Option<String>,
+    pub date: Option<String>,
+    pub notes: Option<String>,
+    pub download_url: String,
+    pub size: Option<u64>,
+    pub min_os: Option<String>,
+    pub max_os: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct NewsItem {
+    pub identifier: Option<String>,
+    pub title: String,
+    pub caption: Option<String>,
+    pub date: Option<String>,
+    pub image_url: Option<String>,
+    pub url: Option<String>,
+    pub app_id: Option<String>,
+}
+
+/// Parse a downloaded AltStore-format source
+#[uniffi::export]
+pub fn parse_source(data: Vec<u8>) -> Result<Source, WarpsignError> {
+    let parsed = source::parse_source(&data).map_err(|e| WarpsignError::Source {
+        message: e.to_string(),
+    })?;
+    Ok(Source {
+        name: parsed.name,
+        identifier: parsed.identifier,
+        subtitle: parsed.subtitle,
+        description: parsed.description,
+        icon_url: parsed.icon_url,
+        header_url: parsed.header_url,
+        website: parsed.website,
+        tint_color: parsed.tint_color,
+        featured_apps: parsed.featured_apps,
+        apps: parsed
+            .apps
+            .into_iter()
+            .map(|app| SourceApp {
+                name: app.name,
+                bundle_id: app.bundle_id,
+                developer_name: app.developer_name,
+                subtitle: app.subtitle,
+                description: app.description,
+                icon_url: app.icon_url,
+                tint_color: app.tint_color,
+                category: app.category,
+                screenshot_urls: app.screenshot_urls,
+                versions: app
+                    .versions
+                    .into_iter()
+                    .map(|v| AppVersion {
+                        version: v.version,
+                        build: v.build,
+                        date: v.date,
+                        notes: v.notes,
+                        download_url: v.download_url,
+                        size: v.size,
+                        min_os: v.min_os,
+                        max_os: v.max_os,
+                    })
+                    .collect(),
+            })
+            .collect(),
+        news: parsed
+            .news
+            .into_iter()
+            .map(|n| NewsItem {
+                identifier: n.identifier,
+                title: n.title,
+                caption: n.caption,
+                date: n.date,
+                image_url: n.image_url,
+                url: n.url,
+                app_id: n.app_id,
+            })
+            .collect(),
+        warnings: parsed.warnings,
     })
 }
