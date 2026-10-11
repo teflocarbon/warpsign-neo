@@ -3,9 +3,10 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use plist::{Dictionary, Value};
 use warpsign_ffi::{
-    Component, Encryption, Step, StepObserver, WarpsignError, core_version, inspect_ipa,
-    inspect_steps, parse_source, read_ipa_metadata, read_profile,
+    Encryption, EntitlementChangeKind, SignedComponentInfo, Step, StepObserver, WarpsignError,
+    core_version, inspect_ipa, inspect_steps, parse_source, read_ipa_metadata, read_profile,
 };
 
 fn core_data() -> PathBuf {
@@ -84,26 +85,24 @@ fn inspects_an_ipa_step_by_step() {
     assert_eq!(info.display_name.as_deref(), Some("Test"));
     assert_eq!(info.version.as_deref(), Some("1.0"));
     assert!(info.app_path.ends_with("Test.app"));
+    let outline: Vec<_> = info
+        .components
+        .iter()
+        .map(|c| (c.path.as_str(), c.bundle_id.as_str(), c.is_primary))
+        .collect();
     assert_eq!(
-        info.components,
+        outline,
         [
-            Component {
-                path: "".into(),
-                bundle_id: "com.example.test".into(),
-                is_primary: true
-            },
-            Component {
-                path: "Frameworks/Foo.framework".into(),
-                bundle_id: "Foo".into(),
-                is_primary: false
-            },
-            Component {
-                path: "PlugIns/Widget.appex".into(),
-                bundle_id: "com.example.test.widget".into(),
-                is_primary: true
-            },
+            ("", "com.example.test", true),
+            ("Frameworks/Foo.framework", "Foo", false),
+            ("PlugIns/Widget.appex", "com.example.test.widget", true),
         ]
     );
+    // Unsigned: no entitlements, but still a readable plist
+    for component in &info.components {
+        assert_eq!(entitlements(&component.entitlements_xml), Dictionary::new());
+        assert!(component.entitlement_names.is_empty());
+    }
     // The test app is unsigned
     assert!(info.team_ids.is_empty());
 
@@ -121,6 +120,134 @@ fn inspects_an_ipa_step_by_step() {
         ]
     );
     assert!(events.contains(&"log Extract: Found Test.app".to_string()));
+}
+
+/// An XML plist from the FFI, decoded
+fn entitlements(xml: &str) -> Dictionary {
+    Value::from_reader_xml(xml.as_bytes())
+        .unwrap()
+        .into_dictionary()
+        .unwrap()
+}
+
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), &target).unwrap();
+        }
+    }
+}
+
+#[test]
+fn inspection_shows_each_components_entitlements() {
+    use warpsign_core::signing::{BundleEntitlements, sign_app_bundle};
+
+    let dir = tempfile::tempdir().unwrap();
+    let app = dir.path().join("Payload/Test.app");
+    copy_dir(&core_data().join("Test.app"), &app);
+    let main: Dictionary = [
+        (
+            "application-identifier",
+            Value::from("ABCDE12345.com.example.test"),
+        ),
+        ("aps-environment", "production".into()),
+        (
+            "keychain-access-groups",
+            Value::Array(vec!["ABCDE12345.com.example.test".into()]),
+        ),
+        ("com.example.custom", true.into()),
+    ]
+    .into_iter()
+    .map(|(key, value)| (key.to_string(), value))
+    .collect();
+    let identity = warpsign_core::identity::import_p12(
+        &std::fs::read(core_data().join("test-cert.p12")).unwrap(),
+        "secret",
+    )
+    .unwrap()
+    .remove(0);
+    sign_app_bundle(
+        &app,
+        &identity.signing_identity().unwrap(),
+        "ABCDE12345",
+        &[BundleEntitlements {
+            bundle_path: String::new(),
+            entitlements: main.clone(),
+        }],
+    )
+    .unwrap();
+    let ipa = dir.path().join("Test.ipa");
+    warpsign_core::ipa::package_ipa(&app, &ipa).unwrap();
+
+    let info = inspect_ipa(
+        ipa.to_str().unwrap().into(),
+        dir.path().join("work").to_str().unwrap().into(),
+        Arc::new(Recorder::default()),
+    )
+    .unwrap();
+    let app = &info.components[0];
+    assert_eq!(entitlements(&app.entitlements_xml), main);
+    let names: Vec<_> = app
+        .entitlement_names
+        .iter()
+        .map(|name| (name.key.as_str(), name.name.as_str()))
+        .collect();
+    // Built-in names (no portal when inspecting); unknown keys have none
+    assert_eq!(
+        names,
+        [
+            ("application-identifier", "App ID"),
+            ("aps-environment", "Push Notifications"),
+            ("keychain-access-groups", "Keychain Sharing"),
+        ]
+    );
+}
+
+#[test]
+fn signed_components_carry_plists_and_reasons() {
+    use warpsign_core::capability_names::builtin_name;
+    use warpsign_core::pipeline::{ChangeKind, ChangeReason, EntitlementChange, SignedComponent};
+
+    let original: Dictionary = [("get-task-allow".to_string(), Value::from(true))]
+        .into_iter()
+        .collect();
+    let signed: Dictionary = [("application-identifier".to_string(), Value::from("T.x"))]
+        .into_iter()
+        .collect();
+    let info = SignedComponentInfo::from(SignedComponent {
+        path: String::new(),
+        is_primary: true,
+        original_bundle_id: "com.example.test".into(),
+        bundle_id: "x".into(),
+        original_entitlements: original.clone(),
+        entitlements: signed.clone(),
+        capabilities: vec!["APP_GROUPS".into()],
+        changes: vec![EntitlementChange {
+            key: "get-task-allow".into(),
+            kind: ChangeKind::Removed,
+            reason: Some(ChangeReason::DebuggingOff),
+        }],
+        names: [(
+            "get-task-allow".to_string(),
+            builtin_name("get-task-allow").unwrap(),
+        )]
+        .into_iter()
+        .collect(),
+    });
+    assert_eq!(entitlements(&info.original_entitlements_xml), original);
+    assert_eq!(entitlements(&info.entitlements_xml), signed);
+    assert_eq!(info.changes[0].kind, EntitlementChangeKind::Removed);
+    assert_eq!(
+        info.changes[0].reason.as_deref(),
+        Some("Debugging is off in the signing options")
+    );
+    assert_eq!(info.entitlement_names[0].key, "get-task-allow");
+    assert_eq!(info.entitlement_names[0].name, "Debugging");
 }
 
 #[test]

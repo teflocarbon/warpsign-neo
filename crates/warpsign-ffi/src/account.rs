@@ -10,7 +10,10 @@ use warpsign_core::portal::api::{PortalCertificate, Team};
 use warpsign_core::portal::http;
 use warpsign_core::portal::{AuthError, Authenticator, Portal, PortalError, SessionState};
 
-use crate::{ObserverBridge, StepInfo, StepObserver, WarpsignError};
+use crate::{
+    EntitlementNameInfo, ObserverBridge, StepInfo, StepObserver, WarpsignError, name_info,
+    plist_xml,
+};
 
 // HTTP, done by URLSession in the app
 
@@ -333,6 +336,80 @@ pub struct SignResult {
     pub bundle_id: String,
     pub profiles: Vec<SignedProfileInfo>,
     pub warnings: Vec<String>,
+    /// Every component (the app first), with what it was signed with
+    pub components: Vec<SignedComponentInfo>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum EntitlementChangeKind {
+    Added,
+    Removed,
+    /// In both, with a different value
+    Changed,
+}
+
+/// An entitlement that differs between the original and signed component
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct EntitlementChangeInfo {
+    pub key: String,
+    pub kind: EntitlementChangeKind,
+    /// Why, for people, when WarpSign knows
+    pub reason: Option<String>,
+}
+
+/// What one component of a signed app was signed with
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct SignedComponentInfo {
+    /// Path inside the app ("" for the app itself), "/"-separated
+    pub path: String,
+    /// Apps and extensions; frameworks and libraries are signed without
+    /// entitlements
+    pub is_primary: bool,
+    pub original_bundle_id: String,
+    /// CFBundleIdentifier after signing
+    pub bundle_id: String,
+    /// XML plist of the entitlements it had before
+    pub original_entitlements_xml: String,
+    /// XML plist of the entitlements it was signed with
+    pub entitlements_xml: String,
+    /// Portal capabilities enabled on its App ID
+    pub capabilities: Vec<String>,
+    /// Sorted by key
+    pub changes: Vec<EntitlementChangeInfo>,
+    /// Friendly names for keys in either dictionary that have one
+    pub entitlement_names: Vec<EntitlementNameInfo>,
+}
+
+impl From<pipeline::SignedComponent> for SignedComponentInfo {
+    fn from(component: pipeline::SignedComponent) -> Self {
+        SignedComponentInfo {
+            original_entitlements_xml: plist_xml(&component.original_entitlements),
+            entitlements_xml: plist_xml(&component.entitlements),
+            path: component.path,
+            is_primary: component.is_primary,
+            original_bundle_id: component.original_bundle_id,
+            bundle_id: component.bundle_id,
+            capabilities: component.capabilities,
+            changes: component
+                .changes
+                .into_iter()
+                .map(|change| EntitlementChangeInfo {
+                    key: change.key,
+                    kind: match change.kind {
+                        pipeline::ChangeKind::Added => EntitlementChangeKind::Added,
+                        pipeline::ChangeKind::Removed => EntitlementChangeKind::Removed,
+                        pipeline::ChangeKind::Changed => EntitlementChangeKind::Changed,
+                    },
+                    reason: change.reason.map(|reason| reason.description().to_string()),
+                })
+                .collect(),
+            entitlement_names: component
+                .names
+                .into_iter()
+                .map(|(key, name)| name_info(&key, name))
+                .collect(),
+        }
+    }
 }
 
 // Errors
@@ -688,6 +765,7 @@ impl AppleAccount {
                 })
                 .collect(),
             warnings: signed.warnings,
+            components: signed.components.into_iter().map(Into::into).collect(),
         })
     }
 }

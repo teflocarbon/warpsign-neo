@@ -8,7 +8,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use plist::Value;
+use plist::{Dictionary, Value};
+use warpsign_core::capability_names::{EntitlementName, EntitlementNames};
 use warpsign_core::inspect::slash_path;
 use warpsign_core::metadata::{self, MetadataError};
 use warpsign_core::pipeline::{self, INSPECT_STEPS, PipelineError};
@@ -63,6 +64,41 @@ pub struct Component {
     pub bundle_id: String,
     /// Apps and extensions get their own App ID and profile
     pub is_primary: bool,
+    /// The entitlements its executable is signed with, as an XML plist
+    /// (an empty dictionary if unsigned). Decode with
+    /// PropertyListSerialization.
+    pub entitlements_xml: String,
+    /// Friendly names for its entitlement keys that have one
+    pub entitlement_names: Vec<EntitlementNameInfo>,
+}
+
+/// What an entitlement key is called, e.g. "Push Notifications" for
+/// aps-environment
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct EntitlementNameInfo {
+    pub key: String,
+    pub name: String,
+    pub description: Option<String>,
+    /// The portal capability that grants it, when known from the portal
+    pub capability: Option<String>,
+}
+
+/// An entitlements dictionary as an XML plist
+pub(crate) fn plist_xml(entitlements: &Dictionary) -> String {
+    let mut xml = Vec::new();
+    match Value::Dictionary(entitlements.clone()).to_writer_xml(&mut xml) {
+        Ok(()) => String::from_utf8(xml).unwrap_or_default(),
+        Err(_) => String::new(),
+    }
+}
+
+pub(crate) fn name_info(key: &str, name: EntitlementName) -> EntitlementNameInfo {
+    EntitlementNameInfo {
+        key: key.to_string(),
+        name: name.name,
+        description: name.description,
+        capability: name.capability,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -227,10 +263,20 @@ pub fn inspect_ipa(
         components: app
             .components
             .iter()
-            .map(|c| Component {
-                path: slash_path(&c.path),
-                bundle_id: c.bundle_id.clone(),
-                is_primary: c.is_primary,
+            .map(|c| {
+                // No portal call when inspecting: built-in names only
+                let names = EntitlementNames::builtin();
+                Component {
+                    path: slash_path(&c.path),
+                    bundle_id: c.bundle_id.clone(),
+                    is_primary: c.is_primary,
+                    entitlements_xml: plist_xml(&c.entitlements),
+                    entitlement_names: c
+                        .entitlements
+                        .keys()
+                        .filter_map(|key| Some(name_info(key, names.get(key)?)))
+                        .collect(),
+                }
             })
             .collect(),
         team_ids: app.team_ids.clone(),
