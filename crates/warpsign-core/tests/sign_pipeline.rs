@@ -469,6 +469,8 @@ fn signs_for_the_signed_in_team() {
     assert_eq!(push.capability.as_deref(), Some("PUSH_NOTIFICATIONS"));
     assert_eq!(main.names["get-task-allow"].name, "Debugging");
     assert_eq!(main.names["keychain-access-groups"].capability, None);
+    // The response that named them, for front-ends to cache
+    assert!(signed.capabilities_response["data"].is_array());
 
     let framework = &signed.components[1];
     assert!(!framework.is_primary);

@@ -338,6 +338,9 @@ pub struct SignResult {
     pub warnings: Vec<String>,
     /// Every component (the app first), with what it was signed with
     pub components: Vec<SignedComponentInfo>,
+    /// The capabilities response fetched while signing: cache it for
+    /// `entitlement_names`
+    pub capabilities_json: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -717,6 +720,13 @@ impl AppleAccount {
         Ok(found)
     }
 
+    /// The team's capabilities response from the portal, as JSON: it names
+    /// entitlement keys (see `entitlement_names`). Fetched every time.
+    pub fn capabilities(&self, team_id: String) -> Result<String, WarpsignError> {
+        let capabilities = self.portal(&team_id).capabilities().map_err(portal_error)?;
+        Ok(capabilities.to_string())
+    }
+
     /// Re-sign an IPA for `team_id` with `identity`, registering whatever it
     /// needs on the portal, reporting each step to `observer`
     #[allow(clippy::too_many_arguments)]
@@ -766,6 +776,7 @@ impl AppleAccount {
                 .collect(),
             warnings: signed.warnings,
             components: signed.components.into_iter().map(Into::into).collect(),
+            capabilities_json: signed.capabilities_response.to_string(),
         })
     }
 }

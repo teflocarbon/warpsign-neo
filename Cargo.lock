@@ -4675,6 +4675,7 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "dirs",
+ "plist",
  "rpassword",
  "serde",
  "serde_json",

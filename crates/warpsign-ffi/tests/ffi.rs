@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex};
 use plist::{Dictionary, Value};
 use warpsign_ffi::{
     Encryption, EntitlementChangeKind, SignedComponentInfo, Step, StepObserver, WarpsignError,
-    core_version, inspect_ipa, inspect_steps, parse_source, read_ipa_metadata, read_profile,
+    core_version, entitlement_names, inspect_ipa, inspect_steps, parse_source, read_ipa_metadata,
+    read_profile,
 };
 
 fn core_data() -> PathBuf {
@@ -101,7 +102,6 @@ fn inspects_an_ipa_step_by_step() {
     // Unsigned: no entitlements, but still a readable plist
     for component in &info.components {
         assert_eq!(entitlements(&component.entitlements_xml), Dictionary::new());
-        assert!(component.entitlement_names.is_empty());
     }
     // The test app is unsigned
     assert!(info.team_ids.is_empty());
@@ -192,25 +192,47 @@ fn inspection_shows_each_components_entitlements() {
     .unwrap();
     let app = &info.components[0];
     assert_eq!(entitlements(&app.entitlements_xml), main);
-    let names: Vec<_> = app
-        .entitlement_names
-        .iter()
-        .map(|name| (name.key.as_str(), name.name.as_str()))
-        .collect();
-    // Built-in names (no portal when inspecting); unknown keys have none
+}
+
+#[test]
+fn names_entitlements_from_a_capabilities_response() {
+    let fixture = std::fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/capabilities_response.json"),
+    )
+    .unwrap();
+    let names = entitlement_names(Some(fixture));
+    let name = |key: &str| {
+        names
+            .iter()
+            .find(|name| name.key == key)
+            .map(|name| (name.name.as_str(), name.capability.as_deref()))
+    };
     assert_eq!(
-        names,
-        [
-            ("application-identifier", "App ID"),
-            ("aps-environment", "Push Notifications"),
-            ("keychain-access-groups", "Keychain Sharing"),
-        ]
+        name("aps-environment"),
+        Some(("Push Notifications", Some("PUSH_NOTIFICATIONS")))
     );
+    // Only under iCloud's settings options
+    assert_eq!(
+        name("com.apple.developer.ubiquity-kvstore-identifier"),
+        Some(("iCloud", Some("ICLOUD")))
+    );
+    assert_eq!(name("get-task-allow"), Some(("Debugging", None)));
+
+    // Without a response (or with a broken one), only keys that are never
+    // capabilities have names
+    for offline in [entitlement_names(None), entitlement_names(Some("{".into()))] {
+        assert!(
+            offline
+                .iter()
+                .any(|name| name.key == "application-identifier")
+        );
+        assert!(!offline.iter().any(|name| name.key == "aps-environment"));
+    }
 }
 
 #[test]
 fn signed_components_carry_plists_and_reasons() {
-    use warpsign_core::capability_names::builtin_name;
+    use warpsign_core::capability_names::EntitlementNames;
     use warpsign_core::pipeline::{ChangeKind, ChangeReason, EntitlementChange, SignedComponent};
 
     let original: Dictionary = [("get-task-allow".to_string(), Value::from(true))]
@@ -234,7 +256,9 @@ fn signed_components_carry_plists_and_reasons() {
         }],
         names: [(
             "get-task-allow".to_string(),
-            builtin_name("get-task-allow").unwrap(),
+            EntitlementNames::without_portal()
+                .get("get-task-allow")
+                .unwrap(),
         )]
         .into_iter()
         .collect(),

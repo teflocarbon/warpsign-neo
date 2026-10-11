@@ -66,10 +66,8 @@ pub struct Component {
     pub is_primary: bool,
     /// The entitlements its executable is signed with, as an XML plist
     /// (an empty dictionary if unsigned). Decode with
-    /// PropertyListSerialization.
+    /// PropertyListSerialization. Name the keys with `entitlement_names`.
     pub entitlements_xml: String,
-    /// Friendly names for its entitlement keys that have one
-    pub entitlement_names: Vec<EntitlementNameInfo>,
 }
 
 /// What an entitlement key is called, e.g. "Push Notifications" for
@@ -79,8 +77,28 @@ pub struct EntitlementNameInfo {
     pub key: String,
     pub name: String,
     pub description: Option<String>,
-    /// The portal capability that grants it, when known from the portal
+    /// The portal capability that grants it, e.g. "PUSH_NOTIFICATIONS";
+    /// None for keys that are never capabilities
     pub capability: Option<String>,
+}
+
+/// Every entitlement key with a name, sorted by key. Names come from
+/// `capabilities_json`, a capabilities response from
+/// `AppleAccount.capabilities` or `SignResult.capabilities_json` (cache it:
+/// it's per team and rarely changes). Without one, or if it can't be read,
+/// only keys that are never capabilities (application-identifier,
+/// get-task-allow, ...) are named.
+#[uniffi::export]
+pub fn entitlement_names(capabilities_json: Option<String>) -> Vec<EntitlementNameInfo> {
+    let names = capabilities_json
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .map(|response| EntitlementNames::from_capabilities(&response))
+        .unwrap_or_else(EntitlementNames::without_portal);
+    names
+        .all()
+        .into_iter()
+        .map(|(key, name)| name_info(&key, name))
+        .collect()
 }
 
 /// An entitlements dictionary as an XML plist
@@ -263,20 +281,11 @@ pub fn inspect_ipa(
         components: app
             .components
             .iter()
-            .map(|c| {
-                // No portal call when inspecting: built-in names only
-                let names = EntitlementNames::builtin();
-                Component {
-                    path: slash_path(&c.path),
-                    bundle_id: c.bundle_id.clone(),
-                    is_primary: c.is_primary,
-                    entitlements_xml: plist_xml(&c.entitlements),
-                    entitlement_names: c
-                        .entitlements
-                        .keys()
-                        .filter_map(|key| Some(name_info(key, names.get(key)?)))
-                        .collect(),
-                }
+            .map(|c| Component {
+                path: slash_path(&c.path),
+                bundle_id: c.bundle_id.clone(),
+                is_primary: c.is_primary,
+                entitlements_xml: plist_xml(&c.entitlements),
             })
             .collect(),
         team_ids: app.team_ids.clone(),

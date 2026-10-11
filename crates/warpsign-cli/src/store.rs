@@ -65,6 +65,16 @@ impl Store {
         remove(&self.dir.join("session.json"))
     }
 
+    /// The team's last capabilities response from the portal (it names
+    /// entitlements)
+    pub fn capabilities(&self, team_id: &str) -> Option<serde_json::Value> {
+        self.read_json(&capabilities_file(team_id))
+    }
+
+    pub fn save_capabilities(&self, team_id: &str, response: &serde_json::Value) -> Result<()> {
+        self.write_json(&capabilities_file(team_id), response)
+    }
+
     pub fn identity(&self, kind: CertificateKind) -> Result<Option<Identity>> {
         let Some(stored) = self.read_json::<StoredIdentity>(identity_file(kind)) else {
             return Ok(None);
@@ -106,6 +116,14 @@ impl Store {
         write_private(&path, &serde_json::to_vec_pretty(value)?)
             .with_context(|| format!("writing {}", path.display()))
     }
+}
+
+fn capabilities_file(team_id: &str) -> String {
+    let team: String = team_id
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .collect();
+    format!("capabilities-{team}.json")
 }
 
 fn identity_file(kind: CertificateKind) -> &'static str {
@@ -185,6 +203,12 @@ mod tests {
         assert_eq!(store.session(), Some(session));
         store.forget_session().unwrap();
         store.forget_session().unwrap();
+
+        assert!(store.capabilities("ZZZZZ99999").is_none());
+        let response = serde_json::json!({"data": [{"id": "PUSH_NOTIFICATIONS"}]});
+        store.save_capabilities("ZZZZZ99999", &response).unwrap();
+        assert_eq!(store.capabilities("ZZZZZ99999"), Some(response));
+        assert!(store.capabilities("OTHER12345").is_none());
         assert!(store.session().is_none());
 
         #[cfg(unix)]

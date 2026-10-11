@@ -204,6 +204,9 @@ pub struct SignedApp {
     /// Every component, in the order of [`InspectedApp::components`], with
     /// what it was signed with
     pub components: Vec<SignedComponent>,
+    /// The portal's capabilities response fetched while signing, for
+    /// front-ends to cache (it names entitlements: see `capability_names`)
+    pub capabilities_response: serde_json::Value,
 }
 
 /// What one component of a signed app was signed with, and how that
@@ -408,7 +411,7 @@ pub fn sign_ipa(
     let main = app.main();
 
     // _analyze_components
-    let (mut mapping, plans, app_groups, icloud_containers, names) =
+    let (mut mapping, plans, app_groups, icloud_containers, capabilities_response) =
         run_step(observer, Step::PlanIdentifiers, |log| {
             if app.team_ids.is_empty() {
                 log.log("Warning: no team IDs found in the app. Check the IPA.");
@@ -424,7 +427,6 @@ pub fn sign_ipa(
 
             let capabilities = portal.capabilities()?;
             let processor = EntitlementsProcessor::new(&capabilities, profile_type);
-            let names = EntitlementNames::from_capabilities(&capabilities);
             let mut plans = Vec::new();
             let mut app_groups = BTreeSet::new();
             let mut icloud_containers = BTreeSet::new();
@@ -477,7 +479,7 @@ pub fn sign_ipa(
             for container in &icloud_containers {
                 log.log(format!("iCloud container: {container}"));
             }
-            Ok::<_, PipelineError>((mapping, plans, app_groups, icloud_containers, names))
+            Ok::<_, PipelineError>((mapping, plans, app_groups, icloud_containers, capabilities))
         })?;
 
     // _register_app_resources
@@ -758,6 +760,7 @@ pub fn sign_ipa(
     })?;
 
     // What each component was signed with, for front-ends to show
+    let names = EntitlementNames::from_capabilities(&capabilities_response);
     let components = app
         .components
         .iter()
@@ -821,6 +824,7 @@ pub fn sign_ipa(
         profiles,
         warnings,
         components,
+        capabilities_response,
     })
 }
 

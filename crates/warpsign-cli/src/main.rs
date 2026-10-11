@@ -11,10 +11,12 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use plist::{Dictionary, Value as PlistValue};
+use warpsign_core::capability_names::{self, EntitlementNames};
 use warpsign_core::device::{self, Target};
 use warpsign_core::identity::{self, CertificateKind, Identity};
 use warpsign_core::info_plist::{PatchingOptions, StatusBarStyle, UiStyle};
-use warpsign_core::pipeline::{self, SignOptions};
+use warpsign_core::pipeline::{self, ChangeKind, SignOptions, SignedComponent};
 use warpsign_core::portal::api::Team;
 use warpsign_core::portal::{AuthError, Authenticator, Portal, SignInOutcome, TwoFactorChallenge};
 use warpsign_core::profile::ProvisioningProfile;
@@ -62,7 +64,19 @@ enum Command {
     #[command(subcommand)]
     Device(DeviceCommand),
     /// Show what's inside an IPA
-    Inspect { ipa: PathBuf },
+    Inspect {
+        ipa: PathBuf,
+        /// Also list each component's entitlements
+        #[arg(short, long)]
+        entitlements: bool,
+    },
+    /// List the Developer Portal's capabilities for the team, with the
+    /// entitlement keys each one grants (and names)
+    Capabilities {
+        /// Print Apple's response as it came, instead
+        #[arg(long)]
+        json: bool,
+    },
     /// Check provisioning profiles, e.g. for PPQ
     Profile {
         #[arg(required = true)]
@@ -195,6 +209,9 @@ struct SignArgs {
     /// Remove URL scheme registrations
     #[arg(long)]
     remove_url_schemes: bool,
+    /// List what each component was signed with, and what changed
+    #[arg(short, long)]
+    entitlements: bool,
     /// Then install it on a device connected by USB
     #[arg(long)]
     install: bool,
@@ -242,7 +259,8 @@ fn run(cli: Cli) -> Result<()> {
         Command::Status => status(&store),
         Command::Identity(command) => identity_command(&store, command),
         Command::Device(command) => device_command(&store, command),
-        Command::Inspect { ipa } => inspect(&ipa),
+        Command::Inspect { ipa, entitlements } => inspect(&store, &ipa, entitlements),
+        Command::Capabilities { json } => capabilities(&store, json),
         Command::Profile { files } => profiles(&files),
         Command::Sign(args) => sign(&store, args),
         Command::Install { ipa, udid } => install(&ipa, udid),
@@ -585,9 +603,81 @@ impl ProgressObserver for Printer {
     }
 }
 
-fn inspect(ipa: &Path) -> Result<()> {
+/// Fetch the team's capabilities response, keeping it for when the portal
+/// can't be reached
+fn fetch_capabilities(store: &Store) -> Result<serde_json::Value> {
+    let (auth, portal) = portal(store)?;
+    let result = portal.capabilities();
+    store.save_session(&auth.session())?;
+    let response = result?;
+    store.save_capabilities(portal.team_id(), &response)?;
+    Ok(response)
+}
+
+/// Names for entitlement keys: from the portal when signed in, otherwise
+/// from the last capabilities response fetched for the team
+fn entitlement_names(store: &Store) -> EntitlementNames {
+    let response = match fetch_capabilities(store) {
+        Ok(response) => Some(response),
+        Err(error) => {
+            let cached = store
+                .account()
+                .team_id
+                .and_then(|team| store.capabilities(&team));
+            if store.session().is_some() {
+                eprintln!(
+                    "note: couldn't fetch capabilities ({error:#}){}",
+                    if cached.is_some() {
+                        "; using the saved ones"
+                    } else {
+                        ""
+                    }
+                );
+            }
+            cached
+        }
+    };
+    response
+        .map(|response| EntitlementNames::from_capabilities(&response))
+        .unwrap_or_else(EntitlementNames::without_portal)
+}
+
+fn capabilities(store: &Store, json: bool) -> Result<()> {
+    let response = fetch_capabilities(store)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&response)?);
+        return Ok(());
+    }
+    // The same reading of the response that names entitlements
+    let listed = capability_names::capabilities(&response);
+    let mut keys = std::collections::BTreeSet::new();
+    for capability in &listed {
+        println!(
+            "{:<40} {}",
+            capability.id.as_deref().unwrap_or("(no ID)"),
+            capability.name.as_deref().unwrap_or("(no name)")
+        );
+        for key in &capability.entitlement_keys {
+            println!("    {key}");
+            keys.insert(key.as_str());
+        }
+    }
+    println!(
+        "{} capabilities, {} entitlement keys",
+        listed.len(),
+        keys.len()
+    );
+    Ok(())
+}
+
+fn inspect(store: &Store, ipa: &Path, show_entitlements: bool) -> Result<()> {
     let work = tempfile::tempdir()?;
     let app = pipeline::inspect_ipa(ipa, work.path(), &Printer::default())?;
+    let names = if show_entitlements {
+        entitlement_names(store)
+    } else {
+        EntitlementNames::without_portal()
+    };
     for component in &app.components {
         let path = warpsign_core::inspect::slash_path(&component.path);
         println!(
@@ -600,8 +690,109 @@ fn inspect(ipa: &Path) -> Result<()> {
                 ""
             }
         );
+        if show_entitlements {
+            if component.entitlements.is_empty() {
+                println!("    (no entitlements)");
+            }
+            for (key, value) in &component.entitlements {
+                let name = names
+                    .get(key)
+                    .map(|name| format!(" ({})", name.name))
+                    .unwrap_or_default();
+                println!("    {key}{name} = {}", plist_text(value));
+            }
+        }
     }
     Ok(())
+}
+
+/// A plist value on one line
+fn plist_text(value: &PlistValue) -> String {
+    match value {
+        PlistValue::Boolean(value) => value.to_string(),
+        PlistValue::String(value) => value.clone(),
+        PlistValue::Integer(value) => value.to_string(),
+        PlistValue::Real(value) => value.to_string(),
+        PlistValue::Array(items) => format!(
+            "[{}]",
+            items.iter().map(plist_text).collect::<Vec<_>>().join(", ")
+        ),
+        PlistValue::Dictionary(dict) => format!(
+            "{{{}}}",
+            dict.iter()
+                .map(|(key, value)| format!("{key}: {}", plist_text(value)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        PlistValue::Data(data) => format!("<{} bytes>", data.len()),
+        PlistValue::Date(date) => date.to_xml_format(),
+        PlistValue::Uid(uid) => format!("UID {}", uid.get()),
+        _ => "?".into(),
+    }
+}
+
+/// What each component was signed with, and how that differs from before
+fn print_signed_components(components: &[SignedComponent]) {
+    for component in components {
+        if component.original_entitlements.is_empty() && component.entitlements.is_empty() {
+            continue;
+        }
+        let path = if component.path.is_empty() {
+            "App"
+        } else {
+            &component.path
+        };
+        if component.bundle_id == component.original_bundle_id {
+            println!("{path} ({})", component.bundle_id);
+        } else {
+            println!(
+                "{path} ({} → {})",
+                component.original_bundle_id, component.bundle_id
+            );
+        }
+        let name = |key: &str| {
+            component
+                .names
+                .get(key)
+                .map(|name| format!(" ({})", name.name))
+                .unwrap_or_default()
+        };
+        let value =
+            |dict: &Dictionary, key: &str| dict.get(key).map(plist_text).unwrap_or_default();
+        if component.is_primary {
+            println!("  Signed with:");
+            for (key, signed) in &component.entitlements {
+                println!("    {key}{} = {}", name(key), plist_text(signed));
+            }
+        }
+        if !component.capabilities.is_empty() {
+            println!("  Capabilities: {}", component.capabilities.join(", "));
+        }
+        if !component.changes.is_empty() {
+            println!("  Changes:");
+        }
+        for change in &component.changes {
+            let key = &change.key;
+            let text = match change.kind {
+                ChangeKind::Added => format!(
+                    "+ {key}{} = {}",
+                    name(key),
+                    value(&component.entitlements, key)
+                ),
+                ChangeKind::Removed => format!("- {key}{}", name(key)),
+                ChangeKind::Changed => format!(
+                    "~ {key}{}: {} → {}",
+                    name(key),
+                    value(&component.original_entitlements, key),
+                    value(&component.entitlements, key)
+                ),
+            };
+            match change.reason {
+                Some(reason) => println!("    {text}: {reason}"),
+                None => println!("    {text}"),
+            }
+        }
+    }
 }
 
 fn profiles(files: &[PathBuf]) -> Result<()> {
@@ -689,6 +880,10 @@ fn sign(store: &Store, args: SignArgs) -> Result<()> {
     // Keep refreshed cookies and tokens, even if signing failed
     store.save_session(&auth.session())?;
     let signed = result?;
+    store.save_capabilities(portal.team_id(), &signed.capabilities_response)?;
+    if args.entitlements {
+        print_signed_components(&signed.components);
+    }
     for warning in &signed.warnings {
         eprintln!("warning: {warning}");
     }
