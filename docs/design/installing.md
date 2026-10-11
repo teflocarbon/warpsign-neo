@@ -15,7 +15,7 @@ No setup. Found by static analysis of ESign 5.0.2, which you described as the mo
 - No TLS key ships in the app. Feather uses backloop.dev's published key, and ESign used to ship a real certificate for `i.yyyue.xyz` that expired in 2024: both break when the certificate is revoked or expires.
 - Costs: the manifest server must be reachable when an install starts, and sees each installed app's ID, name and version (never the app); port 14310 must be free (close other signing apps); failures are iOS's own alert with little detail.
 
-`serve::manifest` and the Worker produce the same bytes, both checked against `worker/test/manifest.plist` (`cargo test`, and `npm test` in `worker/`). The manifest server is set in Settings > Installing, defaulting to `serve::DEFAULT_MANIFEST_SERVER`.
+`serve::manifest` and the Worker produce the same bytes, both checked against `worker/test/manifest.plist` (`cargo test`, and `npm test` in `worker/`). The manifest server is set in Settings > Installing, defaulting to `serve::DEFAULT_MANIFEST_SERVER` (`https://warpsign-manifests.teflo.dev`, the Worker on teflo.dev).
 
 ### Deploying the Worker
 

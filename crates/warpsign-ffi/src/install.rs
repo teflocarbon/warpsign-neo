@@ -157,7 +157,6 @@ impl WebInstall {
 }
 
 /// The manifest server WarpSign uses unless Settings says otherwise
-/// (empty until one is deployed)
 #[uniffi::export]
 pub fn default_manifest_server() -> String {
     serve::DEFAULT_MANIFEST_SERVER.to_string()

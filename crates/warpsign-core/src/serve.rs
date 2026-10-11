@@ -27,7 +27,7 @@ use crate::progress::{ProgressObserver, Step};
 /// answers each install with a manifest naming the app. iOS 27 refuses an
 /// app whose bundle ID doesn't match its manifest, so the static
 /// placeholder manifests ESign pioneered no longer work.
-pub const DEFAULT_MANIFEST_SERVER: &str = "";
+pub const DEFAULT_MANIFEST_SERVER: &str = "https://warpsign-manifests.teflo.dev";
 
 /// The port the server listens on, and the manifests point at
 pub const SERVER_PORT: u16 = 14310;
