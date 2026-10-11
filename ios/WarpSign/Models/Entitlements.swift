@@ -124,16 +124,31 @@ struct EntitlementName: Codable, Hashable, Sendable {
     var description: String?
     /// The portal capability that grants it, e.g. "PUSH_NOTIFICATIONS"
     var capability: String?
+    /// The SF Symbol the portal shows for that capability
+    var symbol: String?
 
-    init(key: String, name: String, description: String? = nil, capability: String? = nil) {
+    init(
+        key: String,
+        name: String,
+        description: String? = nil,
+        capability: String? = nil,
+        symbol: String? = nil
+    ) {
         self.key = key
         self.name = name
         self.description = description
         self.capability = capability
+        self.symbol = symbol
     }
 
     init(_ info: EntitlementNameInfo) {
-        self.init(key: info.key, name: info.name, description: info.description, capability: info.capability)
+        self.init(
+            key: info.key,
+            name: info.name,
+            description: info.description,
+            capability: info.capability,
+            symbol: info.symbol
+        )
     }
 }
 

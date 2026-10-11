@@ -11,9 +11,11 @@ struct InspectionView: View {
         content
             .navigationTitle("Components")
             .navigationBarTitleDisplayMode(.inline)
+            // Both skip work already done, as these run again whenever the
+            // screen reappears (e.g. coming back from a component)
             .task(id: ipa) { await model.inspect(ipa) }
             // Names come from the portal, so fetch them alongside
-            .task { model.entitlementNames = await account.entitlementNames() }
+            .task(id: account.selectedTeamId) { await model.loadEntitlementNames(from: account) }
     }
 
     @ViewBuilder
@@ -58,7 +60,7 @@ struct AppInfoView: View {
                 }
             }
             Section {
-                ForEach(info.components, id: \.path) { component in
+                ForEach(mostEntitlementsFirst(info.components) { $0.entitlementsXml }, id: \.path) { component in
                     NavigationLink {
                         ComponentEntitlementsView(component: component, names: names)
                     } label: {

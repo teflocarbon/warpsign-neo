@@ -1,10 +1,12 @@
 import SwiftUI
 import UIKit
 
-/// SF Symbols for entitlements, picked by hand: the portal names
-/// capabilities but gives no symbols
+/// SF Symbols for entitlements: the portal's own (`sfSymbolIcon`) when it
+/// gives one this iOS has, else picked by hand
 enum EntitlementSymbol {
-    static func name(key: String, capability: String?) -> String {
+    static func name(key: String, capability: String?, portal: String? = nil) -> String {
+        // Newer symbols may not exist on older iOS
+        if let portal, UIImage(systemName: portal) != nil { return portal }
         if let capability, let symbol = byCapability[capability] { return symbol }
         return byKey[key] ?? "checkmark.seal"
     }
@@ -101,7 +103,7 @@ struct EntitlementIcon: View {
     let name: EntitlementName?
 
     var body: some View {
-        Image(systemName: EntitlementSymbol.name(key: key, capability: name?.capability))
+        Image(systemName: EntitlementSymbol.name(key: key, capability: name?.capability, portal: name?.symbol))
             .foregroundStyle(.tint)
             .frame(width: 24)
     }
@@ -491,7 +493,18 @@ struct SignedComponentRow: View {
 /// The components worth listing: apps and extensions, and frameworks that
 /// lost entitlements
 func listedComponents(_ components: [SavedComponent]) -> [SavedComponent] {
-    components.filter { $0.isPrimary || !$0.changes.isEmpty }
+    mostEntitlementsFirst(components.filter { $0.isPrimary || !$0.changes.isEmpty }) {
+        $0.entitlementsXml
+    }
+}
+
+/// Components with the most entitlements first, as those usually matter
+/// most; ties keep their order
+func mostEntitlementsFirst<T>(_ components: [T], entitlementsXml: (T) -> String) -> [T] {
+    components.enumerated()
+        .map { (index: $0.offset, count: Entitlements.parse(entitlementsXml($0.element))?.count ?? 0, item: $0.element) }
+        .sorted { $0.count != $1.count ? $0.count > $1.count : $0.index < $1.index }
+        .map(\.item)
 }
 
 /// A one-line summary of a component's changes, e.g. "2 added, 1 removed"
