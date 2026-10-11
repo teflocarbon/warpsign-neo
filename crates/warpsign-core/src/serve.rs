@@ -211,9 +211,7 @@ fn accept_loop(listener: TcpListener, shared: Arc<Shared>, stop: Arc<AtomicBool>
                 // iOS may open several connections (e.g. icon and package)
                 let _ = std::thread::Builder::new()
                     .name("warpsign-install-request".into())
-                    .spawn(move || {
-                        let _ = handle(stream, &shared, &stop);
-                    });
+                    .spawn(move || handle_logged(stream, &shared, &stop));
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 std::thread::sleep(Duration::from_millis(50));
@@ -227,6 +225,8 @@ struct HttpRequest {
     method: String,
     path: String,
     range: Option<(u64, Option<u64>)>,
+    /// Which part of iOS is asking, e.g. `com.apple.appstored/1.0 iOS/27.0`
+    agent: Option<String>,
 }
 
 fn read_request(stream: &TcpStream) -> std::io::Result<Option<HttpRequest>> {
@@ -241,21 +241,26 @@ fn read_request(stream: &TcpStream) -> std::io::Result<Option<HttpRequest>> {
     };
     let path = target.split('?').next().unwrap_or(target).to_string();
     let mut range = None;
+    let mut agent = None;
     loop {
         let mut header = String::new();
         if reader.read_line(&mut header)? == 0 || header.trim().is_empty() {
             break;
         }
-        if let Some((name, value)) = header.split_once(':')
-            && name.trim().eq_ignore_ascii_case("range")
-        {
-            range = parse_range(value.trim());
+        if let Some((name, value)) = header.split_once(':') {
+            let name = name.trim();
+            if name.eq_ignore_ascii_case("range") {
+                range = parse_range(value.trim());
+            } else if name.eq_ignore_ascii_case("user-agent") {
+                agent = Some(value.trim().to_string());
+            }
         }
     }
     Ok(Some(HttpRequest {
         method: method.to_ascii_uppercase(),
         path,
         range,
+        agent,
     }))
 }
 
@@ -274,12 +279,48 @@ fn parse_range(value: &str) -> Option<(u64, Option<u64>)> {
     Some((start, end))
 }
 
+impl Shared {
+    /// Log to whichever step is current, so a failed install shows what
+    /// iOS asked for
+    fn log(&self, message: String) {
+        let waiting = self
+            .state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .waiting_since
+            .is_some();
+        let step = if waiting {
+            Step::WaitForInstall
+        } else {
+            Step::SendToIos
+        };
+        self.observer.step_log(step, &message);
+    }
+}
+
+fn handle_logged(stream: TcpStream, shared: &Shared, stop: &AtomicBool) {
+    if let Err(error) = handle(stream, shared, stop) {
+        shared.log(format!("Connection ended early: {error}"));
+    }
+}
+
 fn handle(mut stream: TcpStream, shared: &Shared, stop: &AtomicBool) -> std::io::Result<()> {
     stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(Duration::from_secs(30)))?;
     let Some(request) = read_request(&stream)? else {
         return Ok(());
     };
+    let range = match request.range {
+        Some((start, Some(end))) => format!(" bytes {start}-{end}"),
+        Some((start, None)) => format!(" bytes {start}-"),
+        None => String::new(),
+    };
+    shared.log(format!(
+        "iOS asked for {} {}{range} ({})",
+        request.method,
+        request.path,
+        request.agent.as_deref().unwrap_or("no user agent")
+    ));
     let head = request.method == "HEAD";
     if request.method != "GET" && !head {
         return respond(
