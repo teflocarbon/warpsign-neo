@@ -5,6 +5,7 @@ pub mod entitlements;
 pub mod info_plist;
 pub mod inspect;
 pub mod ipa;
+pub mod profile;
 mod pyrandom;
 pub mod signature;
 pub mod signing;

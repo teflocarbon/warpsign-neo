@@ -3348,6 +3348,7 @@ name = "warpsign-core"
 version = "0.1.0"
 dependencies = [
  "apple-codesign",
+ "cryptographic-message-syntax",
  "indexmap",
  "plist",
  "serde_json",
