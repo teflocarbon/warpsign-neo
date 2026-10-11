@@ -38,6 +38,19 @@ pub fn is_banned(key: &str) -> bool {
 pub struct EntitlementsProcessor {
     /// Entitlement key -> capability ID
     capabilities: HashMap<String, String>,
+    /// Entitlement key -> whether its capability must be requested from
+    /// Apple (`canRequestFromPortal`), and if so, its details
+    request_only: HashMap<String, Option<RequestOnly>>,
+}
+
+/// A capability a team has to ask Apple for before it can use it, e.g.
+/// Family Controls (Distribution)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestOnly {
+    pub capability: String,
+    pub name: String,
+    /// Where to ask for it
+    pub request_url: Option<String>,
 }
 
 fn array<'a>(value: &'a Json, key: &str) -> &'a [Json] {
@@ -62,6 +75,7 @@ impl EntitlementsProcessor {
             ProfileType::AdHoc => "Ad hoc",
         };
         let mut capabilities = HashMap::new();
+        let mut request_only_by_key: HashMap<String, Option<RequestOnly>> = HashMap::new();
 
         for capability in array(capabilities_response, "data") {
             let Some(id) = capability.get("id").and_then(Json::as_str) else {
@@ -88,13 +102,46 @@ impl EntitlementsProcessor {
                 .flat_map(|option| array(option, "entitlements"))
                 .filter_map(profile_key);
 
-            // A key offered by several capabilities belongs to the last one listed
+            // Some capabilities are only granted on request from Apple, e.g.
+            // Family Controls (Distribution), which offers the same key as
+            // Family Controls. Prefer one that needs no request; among
+            // equals the last listed wins (as Python warpsign, dbed168).
+            let request_only = (attributes.get("canRequestFromPortal") == Some(&Json::Bool(true)))
+                .then(|| RequestOnly {
+                    capability: id.to_owned(),
+                    name: attributes
+                        .get("name")
+                        .and_then(Json::as_str)
+                        .unwrap_or(id)
+                        .to_owned(),
+                    request_url: attributes
+                        .get("requestFormUrl")
+                        .and_then(Json::as_str)
+                        .map(String::from),
+                });
             for key in direct_keys.chain(setting_keys) {
+                if request_only.is_some() && matches!(request_only_by_key.get(key), Some(None)) {
+                    continue;
+                }
+                request_only_by_key.insert(key.to_owned(), request_only.clone());
                 capabilities.insert(key.to_owned(), id.to_owned());
             }
         }
 
-        Self { capabilities }
+        Self {
+            capabilities,
+            request_only: request_only_by_key,
+        }
+    }
+
+    /// The capability `key` maps to, if any
+    pub fn capability(&self, key: &str) -> Option<&str> {
+        self.capabilities.get(key).map(String::as_str)
+    }
+
+    /// The capability `key` maps to, if the team must request it from Apple
+    pub fn request_only(&self, key: &str) -> Option<&RequestOnly> {
+        self.request_only.get(key).and_then(Option::as_ref)
     }
 
     pub fn process(&self, entitlements: &Dictionary) -> EntitlementsPlan {

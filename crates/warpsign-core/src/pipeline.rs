@@ -281,6 +281,8 @@ pub enum ChangeReason {
     /// Frameworks and other non-primary components are signed without
     /// entitlements
     NotPrimary,
+    /// Its capability must be requested from Apple, and the team hasn't
+    NotGranted,
 }
 
 impl ChangeReason {
@@ -295,6 +297,9 @@ impl ChangeReason {
             ChangeReason::Remapped => "Remapped to the new team and identifiers",
             ChangeReason::PushEnvironment => "Set to match the provisioning profile type",
             ChangeReason::NotPrimary => "Frameworks and libraries are signed without entitlements",
+            ChangeReason::NotGranted => {
+                "Apple hasn't granted this team its capability, which must be requested"
+            }
         }
     }
 }
@@ -681,6 +686,13 @@ pub fn sign_ipa(
                     log.log(format!("Warning: {warning}"));
                     warnings.push(warning);
                 }
+                if !update.not_granted.is_empty() {
+                    // Their entitlements are dropped at signing, with a warning
+                    log.log(format!(
+                        "  left off {}: Apple refused them, as they must be requested",
+                        update.not_granted.join(", ")
+                    ));
+                }
             }
             bundles.push(bundle);
             profile_plans.push(profile_plan);
@@ -849,30 +861,60 @@ pub fn sign_ipa(
         Ok::<_, PipelineError>(())
     })?;
 
+    // Which keys come from capabilities a team must request from Apple, and
+    // which have a development capability that needs no request
+    let requests = EntitlementsProcessor::new(&capabilities_response, profile_type);
+    let development = EntitlementsProcessor::new(&capabilities_response, ProfileType::Development);
+    let mut not_granted: BTreeMap<usize, BTreeSet<String>> = BTreeMap::new();
     let signed_entitlements = run_step(observer, Step::Sign, |log| {
         let mut bundle_entitlements = Vec::new();
         for plan in &plans {
             let component = &app.components[plan.component];
-            let entitlements =
+            let mut entitlements =
                 signing_entitlements(component, plan, &mut mapping, &team_id, options, log);
+            // Named now, rather than as installd's "A valid provisioning
+            // profile for this executable was not found". Keys from
+            // capabilities the team hasn't been granted are dropped, so the
+            // app still installs.
+            if let Some(profile) = parsed_profiles.get(bundle_entitlements.len()) {
+                for key in ungranted(profile, &entitlements) {
+                    let value = entitlements.get(&key).map(short_value).unwrap_or_default();
+                    let warning = if let Some(request) = requests.request_only(&key) {
+                        entitlements.remove(&key);
+                        not_granted
+                            .entry(plan.component)
+                            .or_default()
+                            .insert(key.clone());
+                        let mut warning = format!(
+                            "{}: removed {key}, as Apple hasn't granted your team {}",
+                            describe(component),
+                            request.name
+                        );
+                        if let Some(url) = &request.request_url {
+                            warning += &format!(". Request it at {url}");
+                        }
+                        let development_keeps_it = development
+                            .capability(&key)
+                            .is_some_and(|_| development.request_only(&key).is_none());
+                        if profile_type == ProfileType::AdHoc && development_keeps_it {
+                            warning += ", or sign with a development certificate to keep it";
+                        }
+                        warning
+                    } else {
+                        format!(
+                            "{}: its provisioning profile doesn't grant {key} ({value}), so iOS will refuse to install the app",
+                            describe(component)
+                        )
+                    };
+                    log.log(format!("Warning: {warning}"));
+                    warnings.push(warning);
+                }
+            }
             log.log(format!(
                 "{}: {} entitlements",
                 describe(component),
                 entitlements.len()
             ));
-            // Named now, rather than as installd's "A valid provisioning
-            // profile for this executable was not found"
-            if let Some(profile) = parsed_profiles.get(bundle_entitlements.len()) {
-                for key in ungranted(profile, &entitlements) {
-                    let value = entitlements.get(&key).map(short_value).unwrap_or_default();
-                    let warning = format!(
-                        "{}: its provisioning profile doesn't grant {key} ({value}), so iOS will refuse to install the app",
-                        describe(component)
-                    );
-                    log.log(format!("Warning: {warning}"));
-                    warnings.push(warning);
-                }
-            }
             bundle_entitlements.push(BundleEntitlements {
                 bundle_path: slash_path(&component.path),
                 entitlements,
@@ -930,12 +972,22 @@ pub fn sign_ipa(
                     .get(&index)
                     .cloned()
                     .unwrap_or_else(|| component.bundle_id.clone()),
-                changes: entitlement_changes(
-                    component,
-                    &entitlements,
-                    removals,
-                    options.patch_debug,
-                ),
+                changes: {
+                    let mut changes = entitlement_changes(
+                        component,
+                        &entitlements,
+                        removals,
+                        options.patch_debug,
+                    );
+                    if let Some(keys) = not_granted.get(&index) {
+                        for change in &mut changes {
+                            if keys.contains(&change.key) {
+                                change.reason = Some(ChangeReason::NotGranted);
+                            }
+                        }
+                    }
+                    changes
+                },
                 names: component
                     .entitlements
                     .keys()

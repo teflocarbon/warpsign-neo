@@ -122,6 +122,8 @@ struct FakePortal {
     /// Make profiles as the portal would (for the App ID, with the
     /// certificate, devices and app groups it has) instead of `profile`
     realistic_profiles: bool,
+    /// Instead of the usual capabilities response
+    capability_list: Option<Json>,
     state: Mutex<FakeState>,
 }
 
@@ -204,6 +206,7 @@ impl FakePortal {
             certificates: json!({"data": [{"id": "CERT1", "attributes": {"serialNumber": serial, "certificateType": "DEVELOPMENT", "name": "Apple Development: Test User"}}]}),
             profiles: json!({"data": []}),
             realistic_profiles: false,
+            capability_list: None,
             state: Mutex::default(),
         })
     }
@@ -254,9 +257,10 @@ impl Transport for FakePortal {
         let reading = request.header_value("X-HTTP-Method-Override") == Some("GET");
         let body = String::from_utf8(request.body.clone()).unwrap();
         Ok(match (request.method, url) {
-            (Method::Post, url) if url.starts_with("/v1/capabilities") => {
-                ok(FakePortal::capabilities())
-            }
+            (Method::Post, url) if url.starts_with("/v1/capabilities") => ok(self
+                .capability_list
+                .clone()
+                .unwrap_or_else(FakePortal::capabilities)),
             (Method::Post, "/v1/devices") => {
                 let mut devices = self.devices.clone();
                 for (index, udid) in state.extra_devices.iter().enumerate() {
@@ -1000,4 +1004,55 @@ fn names_entitlements_the_profile_does_not_grant() {
             "{start} in {warnings:?}"
         );
     }
+}
+
+#[test]
+fn drops_entitlements_apple_has_not_granted() {
+    // Push Notifications as if it had to be requested from Apple (as
+    // Family Controls (Distribution) does), and the profile doesn't grant it
+    let mut list = FakePortal::capabilities();
+    for capability in list["data"].as_array_mut().unwrap() {
+        if capability["id"] == "PUSH_NOTIFICATIONS" {
+            capability["attributes"]["canRequestFromPortal"] = json!(true);
+            capability["attributes"]["requestFormUrl"] =
+                json!("https://developer.apple.com/contact/request/push/");
+        }
+    }
+    let fake =
+        FakePortal::new("no-ppq.mobileprovision").with(|fake| fake.capability_list = Some(list));
+    let (_dir, result, _) = sign(&fake, &SignOptions::default(), TEAM);
+    let signed = result.unwrap();
+
+    assert!(
+        signed.warnings.iter().any(|warning| warning
+            == "App: removed aps-environment, as Apple hasn't granted your team Push Notifications. Request it at https://developer.apple.com/contact/request/push/"),
+        "{:?}",
+        signed.warnings
+    );
+    // Nothing else is dropped for it: an ungranted app group still only warns
+    assert!(
+        signed.warnings.iter().any(|warning| warning.starts_with(
+            "App: its provisioning profile doesn't grant com.apple.security.application-groups"
+        )),
+        "{:?}",
+        signed.warnings
+    );
+    let main = &signed.components[0];
+    let main = if main.path.is_empty() {
+        main
+    } else {
+        signed
+            .components
+            .iter()
+            .find(|c| c.path.is_empty())
+            .unwrap()
+    };
+    assert!(!main.entitlements.contains_key("aps-environment"));
+    let change = main
+        .changes
+        .iter()
+        .find(|change| change.key == "aps-environment")
+        .unwrap();
+    assert_eq!(change.kind, ChangeKind::Removed);
+    assert_eq!(change.reason, Some(ChangeReason::NotGranted));
 }

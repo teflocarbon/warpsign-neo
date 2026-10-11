@@ -40,3 +40,12 @@ Python warpsign re-registers every identifier, sets every App ID's capabilities 
 - Profiles are cached by portal ID (app: Application Support/Caches/Profiles; CLI: `profiles/` in the config directory) and only trusted while their expiry matches what the portal lists, so one regenerated elsewhere is downloaded again. Profiles the portal no longer lists are pruned.
 
 An unchanged re-sign makes about six reads and no writes. Checked in `tests/sign_pipeline.rs` for: an unchanged app (no writes, no downloads with the cache), no cache (downloads only), a new device (regenerations only), invalid profiles (capabilities and regenerations, nothing re-registered) and a profile missing an entitlement (only that component's App ID and profile).
+
+## Capabilities Apple must grant
+
+Some capabilities are only usable once a team has asked Apple for them (`canRequestFromPortal`, with `requestFormUrl` saying where), e.g. Family Controls (Distribution), Critical Alerts, CarPlay Audio. The capabilities list looks the same whether or not a team has been granted one (checked October 2026 before and after a grant), so only the profile tells.
+
+- When several capabilities grant a key, one that needs no request wins (Python warpsign dbed168). For development this picks Family Controls over Family Controls (Distribution); ad hoc has only the Distribution one.
+- If setting an App ID's capabilities is refused and it included request-only ones, it's retried without them.
+- If a profile doesn't grant a key whose capability must be requested, the key is dropped before signing, with a warning linking the request page (and, for ad hoc, saying a development certificate keeps it when one would). The app installs without that feature. Any other key a profile doesn't grant is only warned about: it's more likely a bug.
+- Until the team is granted it, such a component's profile can't be reused, so signing it again sets capabilities and regenerates as before.

@@ -208,7 +208,7 @@
           "ENERGY_KIT_LOAD_EVENTS",
           "ENHANCED_SECURITY",
           "EXTENDED_VIRTUAL_ADDRESSING",
-          "FAMILY_CONTROLS_DISTRIBUTION",
+          "FAMILY_CONTROLS",
           "FAMILY_CONTROLS_WEBSITE_USAGE",
           "FILEPROVIDER_TESTINGMODE",
           "FINANCEKIT_TRANSACTION_PICKER",
@@ -350,7 +350,7 @@
       },
       "expected": {
         "capabilities_to_enable": [
-          "FAMILY_CONTROLS_DISTRIBUTION"
+          "FAMILY_CONTROLS"
         ],
         "entitlements_to_remove": []
       },
@@ -777,6 +777,6 @@
   ],
   "source": {
     "python": "3.13.16",
-    "warpsign_commit": "dec458435fab4217d003a4e68764bd3b38969313"
+    "warpsign_commit": "dbed168d63fd9eda207c8f1e092609bb572b9054"
   }
 }

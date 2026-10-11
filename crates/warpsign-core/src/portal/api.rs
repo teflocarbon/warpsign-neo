@@ -141,6 +141,10 @@ pub struct CapabilityUpdate {
     /// Asked for, but left off: Apple wants settings warpsign doesn't know
     /// how to choose
     pub skipped: Vec<String>,
+    /// Asked for, but left off when Apple refused them: capabilities teams
+    /// must request from Apple (`canRequestFromPortal`), e.g. Family
+    /// Controls (Distribution)
+    pub not_granted: Vec<String>,
 }
 
 /// The portal API for one team
@@ -319,6 +323,7 @@ impl Portal {
 
         let mut update = CapabilityUpdate::default();
         let mut unknown_settings = Vec::new();
+        let mut request_only = Vec::new();
         for capability in &available {
             let Some(id) = capability.get("id").and_then(Value::as_str) else {
                 continue;
@@ -331,6 +336,13 @@ impl Portal {
             if !optional {
                 update.required.push(id.to_string());
             } else if enable.iter().any(|e| e == id) {
+                if attributes
+                    .and_then(|a| a.get("canRequestFromPortal"))
+                    .and_then(Value::as_bool)
+                    == Some(true)
+                {
+                    request_only.push(id.to_string());
+                }
                 let has_settings = attributes
                     .and_then(|a| a.get("settings"))
                     .and_then(Value::as_array)
@@ -346,19 +358,25 @@ impl Portal {
         if first.is_success() {
             return Ok(update);
         }
-        if unknown_settings.is_empty() {
+        // Not in Python warpsign: also leave off capabilities the team may
+        // not have been granted, which the profile check then drops
+        let mut skip = unknown_settings.clone();
+        for id in &request_only {
+            if !skip.contains(id) {
+                skip.push(id.clone());
+            }
+        }
+        if skip.is_empty() {
             return Err(PortalError::from_response(&operation, &first));
         }
-        let second = self.patch_capabilities(
-            bundle,
-            &available,
-            enable,
-            &unknown_settings,
-            relationships,
-            &operation,
-        )?;
+        let second =
+            self.patch_capabilities(bundle, &available, enable, &skip, relationships, &operation)?;
         if second.is_success() {
             update.skipped = unknown_settings;
+            update.not_granted = request_only
+                .into_iter()
+                .filter(|id| !update.skipped.contains(id))
+                .collect();
             Ok(update)
         } else {
             Err(PortalError::from_response(&operation, &second))

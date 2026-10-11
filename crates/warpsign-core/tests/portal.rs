@@ -804,3 +804,47 @@ fn registers_devices() {
     assert_eq!(device.device_class, "IPHONE");
     mock.assert_done();
 }
+
+#[test]
+fn leaves_off_capabilities_apple_must_grant_when_refused() {
+    // As if Push Notifications had to be requested, and this team hadn't
+    let mut list = capabilities();
+    for capability in list["data"].as_array_mut().unwrap() {
+        if capability["id"] == "PUSH_NOTIFICATIONS" {
+            capability["attributes"]["canRequestFromPortal"] = json!(true);
+        }
+    }
+    let mock = MockApple::new();
+    mock.respond(
+        "https://developer.apple.com/services-account/v1/capabilities",
+        json_response(200, list),
+    );
+    mock.expect(
+        "https://developer.apple.com/services-account/v1/bundleIds/BUNDLE1",
+        |request| {
+            assert_eq!(enabled(request), ["PUSH_NOTIFICATIONS", "IN_APP_PURCHASE"]);
+            json_response(
+                403,
+                json!({"errors": [{"status": "403", "detail": "Not allowed."}]}),
+            )
+        },
+    );
+    mock.expect(
+        "https://developer.apple.com/services-account/v1/bundleIds/BUNDLE1",
+        |request| {
+            assert_eq!(enabled(request), ["IN_APP_PURCHASE"]);
+            json_response(200, json!({"data": {}}))
+        },
+    );
+    let bundle = BundleId {
+        id: "BUNDLE1".into(),
+        identifier: "com.example.app".into(),
+        name: "x".into(),
+    };
+    let update = portal(&mock, true)
+        .update_capabilities(&bundle, &["PUSH_NOTIFICATIONS".into()], &BTreeMap::new())
+        .unwrap();
+    assert_eq!(update.not_granted, ["PUSH_NOTIFICATIONS"]);
+    assert!(update.skipped.is_empty());
+    mock.assert_done();
+}
