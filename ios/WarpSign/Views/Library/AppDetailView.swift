@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct AppDetailView: View {
     @Environment(LibraryStore.self) private var library
@@ -164,6 +165,9 @@ private struct SignedCopyView: View {
                     Label("Share Signed IPA", systemImage: "square.and.arrow.up")
                 }
             }
+            if let record {
+                signingReportSection(record)
+            }
             Section {
                 LabeledContent("Signed") {
                     Text(copy.date, format: .dateTime.day().month().year().hour().minute())
@@ -194,6 +198,20 @@ private struct SignedCopyView: View {
         }
         .navigationTitle(app.displayName)
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func signingReportSection(_ record: SigningRecord) -> some View {
+        let report = SigningReport.markdown(app: app, copy: copy, record: record)
+        return Section {
+            Button("Copy Signing Report", systemImage: "doc.on.doc") {
+                UIPasteboard.general.string = report
+            }
+            ShareLink(item: report) {
+                Label("Share Signing Report", systemImage: "doc.text")
+            }
+        } footer: {
+            Text("Everything below as Markdown: options, each part's bundle IDs, capabilities and entitlements as a diff with reasons, profiles and the full log. For bug reports, or to ask an AI what changed.")
+        }
     }
 }
 
