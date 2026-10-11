@@ -39,6 +39,8 @@ final class AccountStore {
     private(set) var portalStatus: [String: Bool] = [:]
 
     @ObservationIgnored private var account: AppleAccount?
+    /// Screenshots: certificate details without real certificates
+    @ObservationIgnored private var demoInfos: [CertificateType: IdentityInfo] = [:]
     @ObservationIgnored private let transport = URLSessionTransport()
     @ObservationIgnored private let defaults = UserDefaults.standard
 
@@ -61,6 +63,18 @@ final class AccountStore {
                 identities[kind] = identity
             }
         }
+    }
+
+    init(demoAppleId: String, team: TeamInfo, identities infos: [CertificateType: IdentityInfo]) {
+        phase = .signedIn
+        appleId = demoAppleId
+        teams = [team]
+        selectedTeamId = team.teamId
+        demoInfos = infos
+        for kind in infos.keys {
+            identities[kind] = StoredIdentity(certificate: Data(), privateKey: Data(), backedUp: true)
+        }
+        portalStatus = Dictionary(uniqueKeysWithValues: infos.values.map { ($0.serialNumber, true) })
     }
 
     var selectedTeam: TeamInfo? {
@@ -168,6 +182,7 @@ final class AccountStore {
     // MARK: Identities
 
     func info(_ kind: CertificateType) -> IdentityInfo? {
+        if let demo = demoInfos[kind] { return demo }
         guard let identity = identities[kind] else { return nil }
         return try? identityInfo(identity: identity.data)
     }

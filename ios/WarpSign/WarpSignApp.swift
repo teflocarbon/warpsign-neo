@@ -2,12 +2,12 @@ import SwiftUI
 
 @main
 struct WarpSignApp: App {
-    @State private var library = LibraryStore()
-    @State private var account = AccountStore()
-    @State private var sources = SourcesStore()
+    @State private var library = Demo.isOn ? Demo.library() : LibraryStore()
+    @State private var account = Demo.isOn ? Demo.account() : AccountStore()
+    @State private var sources = Demo.isOn ? Demo.sources() : SourcesStore()
     @State private var inspection = InspectionModel()
     @State private var device = DeviceStore()
-    @State private var tab = AppTab.library
+    @State private var tab = Demo.isOn ? Demo.tab : AppTab.library
 
     enum AppTab: Hashable {
         case library, sources, settings
@@ -16,13 +16,13 @@ struct WarpSignApp: App {
     var body: some Scene {
         WindowGroup {
             TabView(selection: $tab) {
-                LibraryView()
+                libraryTab
                     .tabItem { Label("Library", systemImage: "square.stack.3d.up.fill") }
                     .tag(AppTab.library)
                 SourcesView()
                     .tabItem { Label("Sources", systemImage: "globe") }
                     .tag(AppTab.sources)
-                SettingsView()
+                settingsTab
                     .tabItem { Label("Settings", systemImage: "gearshape") }
                     .tag(AppTab.settings)
                     .badge(account.needsBackup ? Text("!") : nil)
@@ -52,6 +52,48 @@ struct WarpSignApp: App {
                     }
                 }
             }
+        }
+    }
+
+    /// The Library tab, or a screen inside it for screenshots
+    @ViewBuilder
+    private var libraryTab: some View {
+        if Demo.isOn, let app = library.apps.first {
+            switch Demo.screen {
+            case .signOptions:
+                NavigationStack { SignOptionsView(app: app) }
+            case .signing:
+                let demo = Demo.signingResult
+                NavigationStack { SigningView(demoApp: app, result: demo.0, copy: demo.1, steps: demo.2) }
+            case .install:
+                NavigationStack { InstallView(demoName: app.displayName, steps: Demo.installSteps) }
+            default:
+                LibraryView()
+            }
+        } else {
+            LibraryView()
+        }
+    }
+
+    /// The Settings tab, or a screen inside it for screenshots
+    @ViewBuilder
+    private var settingsTab: some View {
+        if Demo.isOn && Demo.screen == .installing {
+            NavigationStack { InstallingView() }
+        } else if Demo.isOn && Demo.screen == .signIn {
+            SignInView()
+        } else {
+            SettingsView()
+        }
+    }
+}
+
+extension Demo {
+    static var tab: WarpSignApp.AppTab {
+        switch screen {
+        case .library, .appDetail, .signOptions, .signing, .install: .library
+        case .sources, .sourceDetail: .sources
+        case .settings, .installing, .signIn: .settings
         }
     }
 }

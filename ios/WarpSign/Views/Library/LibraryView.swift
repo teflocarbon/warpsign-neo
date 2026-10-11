@@ -6,6 +6,7 @@ struct LibraryView: View {
     @Environment(LibraryStore.self) private var library
     @State private var showingImporter = false
     @State private var search = ""
+    @State private var path: [UUID] = Demo.isOn && Demo.screen == .appDetail ? [Demo.appIds[0]] : []
 
     static let ipaType = UTType("com.apple.itunes.ipa")
         ?? UTType(filenameExtension: "ipa")
@@ -20,7 +21,7 @@ struct LibraryView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 if !library.importing.isEmpty {
                     Section {

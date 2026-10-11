@@ -55,6 +55,8 @@ final class LibraryStore {
     var importError: String?
 
     @ObservationIgnored private var icons: [UUID: UIImage] = [:]
+    /// Screenshots: sample apps, nothing read or written on disk
+    @ObservationIgnored private var isDemo = false
 
     nonisolated static let directory: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -68,6 +70,12 @@ final class LibraryStore {
            let apps = try? JSONDecoder().decode([LibraryApp].self, from: data) {
             self.apps = apps
         }
+    }
+
+    init(demoApps: [LibraryApp], icons: [UUID: UIImage]) {
+        apps = demoApps
+        self.icons = icons
+        isDemo = true
     }
 
     nonisolated static func folder(of id: UUID) -> URL {
@@ -218,6 +226,7 @@ final class LibraryStore {
     }
 
     private func save() {
+        guard !isDemo else { return }
         do {
             try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
             let data = try JSONEncoder().encode(apps)

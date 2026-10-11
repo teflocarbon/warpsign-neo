@@ -24,6 +24,21 @@ struct InstallView: View {
     @State private var method = InstallMethod.web
     @State private var server: WebInstall?
 
+    init(ipa: URL, name: String, icon: URL? = nil) {
+        self.ipa = ipa
+        self.name = name
+        self.icon = icon
+    }
+
+    /// Waiting for the user to accept iOS's prompt, for screenshots
+    init(demoName name: String, steps: [StepState]) {
+        ipa = URL(fileURLWithPath: "/dev/null")
+        self.name = name
+        _phase = State(initialValue: .waitingForPrompt)
+        _steps = State(initialValue: steps)
+        _started = State(initialValue: true)
+    }
+
     var body: some View {
         List {
             Section { header }

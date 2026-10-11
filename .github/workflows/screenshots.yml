@@ -1,0 +1,28 @@
+name: Screenshots
+
+# Manual: screenshots of every main screen in the iOS simulator (demo mode)
+on:
+  workflow_dispatch:
+
+jobs:
+  screenshots:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+      - name: Install XcodeGen and Pillow
+        run: |
+          brew install xcodegen
+          python3 -m pip install --break-system-packages Pillow || python3 -m pip install Pillow
+      - name: Build Rust core, bindings and Xcode project
+        run: PROFILE=dev tools/build_ios.sh
+      - name: Take screenshots
+        run: tools/screenshots.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screenshots/
+          if-no-files-found: error

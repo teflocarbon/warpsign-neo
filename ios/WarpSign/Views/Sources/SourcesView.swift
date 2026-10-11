@@ -7,9 +7,10 @@ struct SourcesView: View {
     @State private var newURL = ""
     @State private var addError: String?
     @State private var checking = false
+    @State private var path: [String] = Demo.isOn && Demo.screen == .sourceDetail ? [Demo.sourceURL] : []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 if let addError {
                     Section { ErrorRow(message: addError) }

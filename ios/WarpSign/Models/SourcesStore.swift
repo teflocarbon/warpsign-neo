@@ -15,9 +15,17 @@ final class SourcesStore {
     var downloadError: String?
 
     private static let key = "sources"
+    /// Screenshots: sample sources, never fetched
+    @ObservationIgnored private var isDemo = false
 
     init() {
         urls = UserDefaults.standard.stringArray(forKey: Self.key) ?? []
+    }
+
+    init(demoSources: [String: Source]) {
+        urls = Array(demoSources.keys)
+        sources = demoSources
+        isDemo = true
     }
 
     /// Add a source after checking it loads
@@ -44,7 +52,7 @@ final class SourcesStore {
     }
 
     func refresh(_ text: String) async {
-        guard let url = URL(string: text), !loading.contains(text) else { return }
+        guard !isDemo, let url = URL(string: text), !loading.contains(text) else { return }
         loading.insert(text)
         defer { loading.remove(text) }
         do {
@@ -94,6 +102,7 @@ final class SourcesStore {
     }
 
     private func save() {
+        guard !isDemo else { return }
         UserDefaults.standard.set(urls, forKey: Self.key)
     }
 }

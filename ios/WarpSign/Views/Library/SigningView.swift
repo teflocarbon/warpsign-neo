@@ -19,6 +19,21 @@ struct SigningView: View {
     @State private var steps = [StepState](pending: signSteps())
     @State private var started = false
 
+    init(app: LibraryApp, options: SigningOptions, icon: Data? = nil) {
+        self.app = app
+        self.options = options
+        self.icon = icon
+    }
+
+    /// A finished sign, for screenshots
+    init(demoApp app: LibraryApp, result: SignResult, copy: SignedCopy, steps: [StepState]) {
+        self.app = app
+        options = SigningOptions()
+        _phase = State(initialValue: .done(result, copy))
+        _steps = State(initialValue: steps)
+        _started = State(initialValue: true)
+    }
+
     var body: some View {
         List {
             Section { header }
