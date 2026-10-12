@@ -68,6 +68,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           notes="Unsigned WarpSign.ipa (with WarpSign Companion inside) from $GITHUB_SHA, for signing with WarpSign or the CLI."
+          # The release's tag follows the commit it was built from
+          git tag -f latest "$GITHUB_SHA"
+          git push -f origin refs/tags/latest
           if gh release view latest >/dev/null 2>&1; then
             gh release upload latest WarpSign.ipa WarpSignCompanion.ipa --clobber
             gh release edit latest --notes "$notes"
