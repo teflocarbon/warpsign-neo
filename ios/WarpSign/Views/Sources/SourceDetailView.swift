@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// A source: its header, description and news, then its apps. A source
 /// with one app opens straight to it, unless `showsSource`.
@@ -48,6 +49,16 @@ struct SourceDetailView: View {
                     SourceHeader(source: source, url: url)
                         .listRowInsets(EdgeInsets())
                 }
+                Section {
+                    Toggle("Update Its Apps Automatically", isOn: Binding(
+                        get: { sources.updatesAutomatically(url) },
+                        set: { sources.setUpdatesAutomatically($0, for: url) }
+                    ))
+                } footer: {
+                    Text(sources.updatesAutomatically(url)
+                         ? "Apps you get from \(source.name) update by themselves, unless one is set not to."
+                         : "Apps from \(source.name) won't update by themselves. You can still update each from its page or the library.")
+                }
                 if !source.news.isEmpty {
                     Section("News") {
                         NewsStrip(source: source, url: url)
@@ -63,6 +74,7 @@ struct SourceDetailView: View {
                     } label: {
                         SourceAppRow(app: app)
                     }
+                    .contextMenu { SourceAppMenu(app: app, source: source) }
                 }
             }
             if !source.warnings.isEmpty {
@@ -178,6 +190,16 @@ private struct NewsStrip: View {
     @ViewBuilder
     private func card(_ item: NewsItem) -> some View {
         let content = NewsCard(item: item, tint: Color(hex: source.tintColor) ?? .accentColor)
+            .contextMenu {
+                if let link = item.url.flatMap(URL.init(string:)) {
+                    Link(destination: link) { Label("Open Link", systemImage: "safari") }
+                    Button("Copy Link", systemImage: "link") { UIPasteboard.general.string = link.absoluteString }
+                    ShareLink(item: link) { Label("Share", systemImage: "square.and.arrow.up") }
+                }
+                Button("Copy Text", systemImage: "doc.on.doc") {
+                    UIPasteboard.general.string = [item.title, item.caption].compactMap { $0 }.joined(separator: "\n")
+                }
+            }
         if let appId = item.appId, let app = source.apps.first(where: { $0.bundleId == appId }) {
             NavigationLink {
                 SourceAppView(app: app, source: source, sourceURL: url)

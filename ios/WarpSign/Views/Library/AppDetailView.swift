@@ -26,7 +26,7 @@ struct AppDetailView: View {
                         Text(app.bundleId)
                             .font(.footnote.monospaced())
                             .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
+                            .contextMenu { CopyMenu(title: "Bundle ID", value: app.bundleId) }
                         Text("Version \(app.versionText)")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -62,6 +62,22 @@ struct AppDetailView: View {
                         } label: {
                             SignedCopyRow(app: app, copy: copy)
                         }
+                        .contextMenu {
+                            ShareLink(item: library.signedURL(copy, of: app)) {
+                                Label("Share Signed IPA", systemImage: "square.and.arrow.up")
+                            }
+                            Button("Copy Bundle ID", systemImage: "doc.on.doc") {
+                                UIPasteboard.general.string = copy.bundleId
+                            }
+                            if let record = library.signingRecord(for: copy, of: app) {
+                                Button("Copy Signing Report", systemImage: "doc.text") {
+                                    UIPasteboard.general.string = SigningReport.markdown(app: app, copy: copy, record: record)
+                                }
+                            }
+                            Button("Delete Signed Copy", systemImage: "trash", role: .destructive) {
+                                library.deleteSignedCopy(copy, of: app)
+                            }
+                        }
                     }
                     .onDelete { offsets in
                         for index in offsets {
@@ -77,7 +93,9 @@ struct AppDetailView: View {
 
             Section("Details") {
                 LabeledContent("Version", value: app.version ?? "—")
+                    .contextMenu { CopyMenu(title: "Version", value: app.version ?? "") }
                 LabeledContent("Build", value: app.build ?? "—")
+                    .contextMenu { CopyMenu(title: "Build", value: app.build ?? "") }
                 LabeledContent("Requires", value: app.minimumOS.map { "iOS \($0)" } ?? "—")
                 LabeledContent("Size", value: ByteCountFormatter.file(app.fileSize))
                 LabeledContent("Installed Size", value: ByteCountFormatter.file(app.installedSize))

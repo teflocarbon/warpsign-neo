@@ -126,6 +126,15 @@ struct SourcesView: View {
             ShareLink(item: link) { Label("Share", systemImage: "square.and.arrow.up") }
         }
         Button("Edit", systemImage: "pencil") { edit(url) }
+        if sources.updatesAutomatically(url) {
+            Button("Don't Update Its Apps Automatically", systemImage: "pause.circle") {
+                sources.setUpdatesAutomatically(false, for: url)
+            }
+        } else {
+            Button("Update Its Apps Automatically", systemImage: "arrow.triangle.2.circlepath") {
+                sources.setUpdatesAutomatically(true, for: url)
+            }
+        }
         Button("Refresh", systemImage: "arrow.clockwise") {
             Task { await sources.refresh(url) }
         }
@@ -209,6 +218,11 @@ private struct SourceRow: View {
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
+                    if !sources.updatesAutomatically(url) {
+                        Label("Its apps won't update by themselves", systemImage: "pause.circle")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                    }
                 } else {
                     Text(url)
                         .font(.caption)

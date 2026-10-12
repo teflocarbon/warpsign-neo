@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Apps whose source has a newer version, at the top of the library
 struct UpdatesSection: View {
@@ -16,6 +17,26 @@ struct UpdatesSection: View {
                         .swipeActions {
                             Button("Skip This Version") { updater.skip(entry.app.id) }
                                 .tint(.orange)
+                        }
+                        .contextMenu {
+                            Button("Update to \(entry.item.version.version)", systemImage: "arrow.down.circle") {
+                                Task { await updater.run([entry.app.id], automatic: false) }
+                            }
+                            .disabled(updater.isUpdating)
+                            Button("Skip \(entry.item.version.version)", systemImage: "forward") {
+                                updater.skip(entry.app.id)
+                            }
+                            Toggle(isOn: Binding(
+                                get: { entry.app.updatesAutomatically },
+                                set: { library.setAutoUpdate($0, for: entry.app) }
+                            )) {
+                                Label("Update Automatically", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                            if let notes = entry.item.version.notes {
+                                Button("Copy Release Notes", systemImage: "doc.plaintext") {
+                                    UIPasteboard.general.string = notes
+                                }
+                            }
                         }
                 }
             } header: {
@@ -224,6 +245,30 @@ struct AppUpdatesSection: View {
                 get: { app.updatesAutomatically },
                 set: { library.setAutoUpdate($0, for: app) }
             ))
+            if let reason = updater.manualReason(app) {
+                // Plainly: it won't update unless asked
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Won't update by itself").font(.subheadline.weight(.semibold))
+                        Text("\(reason) Update it here when you want to.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "pause.circle.fill").foregroundStyle(.orange)
+                }
+                if !sources.updatesAutomatically(url) {
+                    Button("Turn On for \(source?.name ?? app.origin ?? "Its Source")", systemImage: "arrow.triangle.2.circlepath") {
+                        sources.setUpdatesAutomatically(true, for: url)
+                    }
+                } else if !updater.automatic {
+                    NavigationLink {
+                        UpdatesSettingsView()
+                    } label: {
+                        Label("Automatic Updates Settings", systemImage: "gearshape")
+                    }
+                }
+            }
             LabeledContent("Last Checked") {
                 HStack(spacing: 8) {
                     if updater.isChecking {
@@ -433,12 +478,12 @@ struct UpdateOriginLabel: View {
         Group {
             switch app.updateOrigin {
             case .source:
-                if app.updatesAutomatically {
+                if Updater.shared.manualReason(app) == nil {
                     Label(app.origin ?? "Source", systemImage: "arrow.triangle.2.circlepath")
                         .foregroundStyle(.tint)
                 } else {
-                    Label("\(app.origin ?? "Source") · updates off", systemImage: "arrow.triangle.2.circlepath")
-                        .foregroundStyle(.secondary)
+                    Label("\(app.origin ?? "Source") · won't update by itself", systemImage: "pause.circle")
+                        .foregroundStyle(.orange)
                 }
             case .unlinked(let name):
                 Label("\(name) · not in your sources", systemImage: "exclamationmark.arrow.triangle.2.circlepath")

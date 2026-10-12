@@ -13,16 +13,22 @@ final class SourcesStore {
     /// A source opened from a link (altstore://, sidestore://, a web page
     /// wrapping one): Sources asks whether to add it
     var proposed: String?
+    /// Sources whose apps don't update by themselves (they can still be
+    /// updated by hand)
+    private(set) var manualUpdates: Set<String>
 
     private static let key = "sources"
+    private static let manualKey = "sources.manualUpdates"
     /// Screenshots: sample sources, never fetched
     @ObservationIgnored private var isDemo = false
 
     init() {
         urls = UserDefaults.standard.stringArray(forKey: Self.key) ?? []
+        manualUpdates = Set(UserDefaults.standard.stringArray(forKey: Self.manualKey) ?? [])
     }
 
     init(demoSources: [String: Source]) {
+        manualUpdates = []
         urls = Array(demoSources.keys)
         sources = demoSources
         isDemo = true
@@ -43,6 +49,21 @@ final class SourcesStore {
         save()
     }
 
+    /// Whether apps from the source at `url` update by themselves
+    func updatesAutomatically(_ url: String?) -> Bool {
+        guard let url else { return true }
+        return !manualUpdates.contains(url)
+    }
+
+    func setUpdatesAutomatically(_ on: Bool, for url: String) {
+        if on {
+            manualUpdates.remove(url)
+        } else {
+            manualUpdates.insert(url)
+        }
+        save()
+    }
+
     /// Change a source's address, after checking the new one loads; it
     /// keeps its place. Returns the address it now has.
     @discardableResult
@@ -58,6 +79,7 @@ final class SourcesStore {
         let source = try await Self.fetch(url)
         guard let index = urls.firstIndex(of: old) else { return old }
         urls[index] = new
+        if manualUpdates.remove(old) != nil { manualUpdates.insert(new) }
         sources[old] = nil
         errors[old] = nil
         sources[new] = source
@@ -76,6 +98,7 @@ final class SourcesStore {
         for index in offsets {
             sources[urls[index]] = nil
             errors[urls[index]] = nil
+            manualUpdates.remove(urls[index])
         }
         urls.remove(atOffsets: offsets)
         save()
@@ -111,25 +134,41 @@ final class SourcesStore {
         return try await background { try parseSource(data: data) }
     }
 
-    /// Download an app version into the library (`DownloadManager`)
-    func download(_ version: AppVersion, of app: SourceApp, from source: Source) {
+    /// What happens to updates for an older version the user gets
+    enum OlderVersionChoice {
+        /// Skip the update it would get; later versions still update it
+        case skipNewer
+        /// It doesn't update by itself
+        case noAutomaticUpdates
+        /// Apps from its source don't update by themselves
+        case noAutomaticUpdatesFromSource
+    }
+
+    /// Download an app version into the library (`DownloadManager`).
+    /// `older`: for a version that isn't the source's latest, what
+    /// happens to updates.
+    func download(_ version: AppVersion, of app: SourceApp, from source: Source, older: OlderVersionChoice? = nil) {
         guard let url = URL(string: version.downloadUrl) else { return }
         // Remembered, so the library can look here for updates
         let sourceURL = urls.first { sources[$0]?.name == source.name }
+        if older == .noAutomaticUpdatesFromSource, let sourceURL {
+            setUpdatesAutomatically(false, for: sourceURL)
+        }
         DownloadManager.shared.download(url, name: app.name, purpose: .library(
             origin: source.name,
             sourceURL: sourceURL,
             sourceAppId: app.bundleId,
-            autoUpdate: Updater.shared.newAppsUpdate,
+            autoUpdate: older == .noAutomaticUpdates ? false : Updater.shared.newAppsUpdate,
             link: nil,
             sourceVersion: version.version,
             sourceBuild: version.build,
-            olderVersion: version.downloadUrl != app.versions.first?.downloadUrl
+            olderVersion: older == .skipNewer ? true : nil
         ))
     }
 
     private func save() {
         guard !isDemo else { return }
         UserDefaults.standard.set(urls, forKey: Self.key)
+        UserDefaults.standard.set(Array(manualUpdates).sorted(), forKey: Self.manualKey)
     }
 }

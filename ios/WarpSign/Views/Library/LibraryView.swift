@@ -6,6 +6,8 @@ struct LibraryView: View {
     @Environment(LibraryStore.self) private var library
     @State private var showingImporter = false
     @State private var showingLink = false
+    @State private var linking: LibraryApp?
+    @State private var removing: LibraryApp?
     @State private var search = ""
     @State private var companionDismissed = UserDefaults.standard.bool(forKey: BundledCompanion.dismissedKey)
     @State private var path: [UUID] = Demo.isOn && Demo.screen == .appDetail ? [Demo.appIds[0]] : []
@@ -49,6 +51,14 @@ struct LibraryView: View {
                     NavigationLink(value: app.id) {
                         LibraryRow(app: app)
                     }
+                    .contextMenu {
+                        LibraryAppMenu(
+                            app: app,
+                            open: { path.append(app.id) },
+                            link: { linking = app },
+                            remove: { removing = app }
+                        )
+                    }
                 }
                 .onDelete { offsets in
                     for index in offsets { library.delete(apps[index]) }
@@ -87,6 +97,19 @@ struct LibraryView: View {
                 }
             }
             .modifier(LinkDownloadAlert(isPresented: $showingLink))
+            .sheet(item: $linking) { app in
+                LinkSourceView(app: app)
+            }
+            .confirmationDialog(
+                removing.map { "Remove \($0.displayName)?" } ?? "",
+                isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                titleVisibility: .visible,
+                presenting: removing
+            ) { app in
+                Button("Remove", role: .destructive) { library.delete(app) }
+            } message: { _ in
+                Text("The IPA and its signed copies are deleted from WarpSign.")
+            }
             .fileImporter(
                 isPresented: $showingImporter,
                 // Any file: the type iOS gives .ipa files depends on which installed

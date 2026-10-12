@@ -9,6 +9,7 @@ struct DownloadsSection: View {
             Section {
                 ForEach(downloads.items) { item in
                     DownloadRow(item: item)
+                        .contextMenu { DownloadMenu(item: item) }
                 }
             } header: {
                 Text("Downloads")

@@ -100,6 +100,7 @@ struct SourceAppView: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 16) {
             RemoteIconView(url: app.iconUrl, size: 112)
+                .contextMenu { SourceAppMenu(app: app, source: source) }
             VStack(alignment: .leading, spacing: 4) {
                 Text(app.name)
                     .font(.title2.weight(.bold))
@@ -385,9 +386,10 @@ private struct InfoRow: View {
                 Text(value)
                     .font(monospaced ? .body.monospaced() : .body)
                     .multilineTextAlignment(.trailing)
-                    .textSelection(.enabled)
             }
             .padding(.vertical, 12)
+            .contentShape(Rectangle())
+            .contextMenu { CopyMenu(title: label, value: value) }
             Divider()
         }
     }
@@ -410,11 +412,15 @@ private struct PermissionRow: View {
                 Text(detail)
                     .font(monospacedDetail ? .caption.monospaced() : .callout)
                     .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
             }
             Spacer(minLength: 0)
         }
         .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .contextMenu {
+            CopyMenu(title: "Name", value: title)
+            CopyMenu(title: monospacedDetail ? "Key" : "Reason", value: detail)
+        }
     }
 }
 
@@ -490,9 +496,10 @@ struct SourceVersionsView: View {
             Section {
                 ForEach(Array(app.versions.enumerated()), id: \.offset) { index, version in
                     row(index, version)
+                        .contextMenu { SourceVersionMenu(version: version) }
                 }
             } footer: {
-                Text("Getting an older version skips the update it would get, so it isn't updated straight back; later versions still update it. Its page has Don't Skip.")
+                Text("Getting an older version asks what happens to updates, so it isn't updated straight back: skip the newer version, or stop it, or every app from \(source.name), updating by itself.")
             }
         }
         .listStyle(.plain)
@@ -542,6 +549,10 @@ struct DownloadButton: View {
     let source: Source
     /// The header's, larger and filled
     var large = false
+    @State private var choosing = false
+
+    /// Not the source's latest: getting it asks what happens to updates
+    private var isOlder: Bool { version.downloadUrl != app.versions.first?.downloadUrl }
 
     /// This version's download, while there is one
     private var item: DownloadManager.Item? {
@@ -567,7 +578,29 @@ struct DownloadButton: View {
             .tint(.orange)
         case nil:
             pill("Get") {
-                sources.download(version, of: app, from: source)
+                if isOlder {
+                    choosing = true
+                } else {
+                    sources.download(version, of: app, from: source)
+                }
+            }
+            .confirmationDialog(
+                "Get \(app.name) \(version.version)?",
+                isPresented: $choosing,
+                titleVisibility: .visible
+            ) {
+                let latest = app.versions.first?.version ?? "the latest"
+                Button("Skip \(latest)") {
+                    sources.download(version, of: app, from: source, older: .skipNewer)
+                }
+                Button("Don't Update This App") {
+                    sources.download(version, of: app, from: source, older: .noAutomaticUpdates)
+                }
+                Button("Don't Update Apps from \(source.name)") {
+                    sources.download(version, of: app, from: source, older: .noAutomaticUpdatesFromSource)
+                }
+            } message: {
+                Text("It's older than \(app.versions.first?.version ?? "the latest"), so it would be updated straight back. Skip \(app.versions.first?.version ?? "it") (later versions still update it), or stop it, or every app from \(source.name), updating by itself. You can still update by hand, and change this on its page.")
             }
         }
     }

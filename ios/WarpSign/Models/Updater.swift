@@ -298,7 +298,22 @@ final class Updater {
     /// Every app with an update that's set to update by itself
     var automaticIds: [UUID] {
         guard let library else { return [] }
-        return available.keys.filter { library.app($0)?.updatesAutomatically ?? false }
+        return available.keys.filter { id in
+            library.app(id).map { manualReason($0) == nil } ?? false
+        }
+    }
+
+    /// Why an app from a source won't update by itself, if it won't:
+    /// automatic updates off in Settings, for its source, or for it. It
+    /// can still be updated by hand.
+    func manualReason(_ app: LibraryApp) -> String? {
+        guard app.sourceURL != nil else { return nil }
+        if !automatic { return "Automatic updates are off in Settings." }
+        if sources?.updatesAutomatically(app.sourceURL) == false {
+            return "Automatic updates are off for \(app.origin ?? "its source")."
+        }
+        if !app.updatesAutomatically { return "Automatic updates are off for this app." }
+        return nil
     }
 
     private func update(_ id: UUID, automatic: Bool) async -> Entry? {
