@@ -47,7 +47,8 @@ final class LoopbackTunnel {
 
     /// Find WarpSign's VPN configuration, if it has been added
     func refresh() async {
-        if Demo.isOn {
+        // Screenshots (WarpSign's -demo): shown as on, nothing touched
+        if ProcessInfo.processInfo.arguments.contains("-demo") {
             status = .on
             return
         }

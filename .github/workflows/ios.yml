@@ -17,11 +17,13 @@ jobs:
         run: brew install xcodegen
       - name: Build Rust core, bindings and Xcode project
         run: PROFILE=dev tools/build_ios.sh
-      - name: Build app for device (unsigned)
-        run: >
-          xcodebuild -project ios/WarpSign.xcodeproj -scheme WarpSign
-          -configuration Debug -destination 'generic/platform=iOS'
-          CODE_SIGNING_ALLOWED=NO build
+      - name: Build apps for device (unsigned)
+        run: |
+          for scheme in WarpSign WarpSignCompanion; do
+            xcodebuild -project ios/WarpSign.xcodeproj -scheme "$scheme" \
+              -configuration Debug -destination 'generic/platform=iOS' \
+              CODE_SIGNING_ALLOWED=NO build
+          done
       - name: Build app for simulator
         run: >
           xcodebuild -project ios/WarpSign.xcodeproj -scheme WarpSign

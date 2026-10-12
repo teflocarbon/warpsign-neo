@@ -22,28 +22,44 @@ jobs:
         run: brew install xcodegen
       - name: Build Rust core, bindings and Xcode project
         run: tools/build_ios.sh
-      - name: Build app for device (unsigned)
-        run: >
-          xcodebuild -project ios/WarpSign.xcodeproj -scheme WarpSign
-          -configuration Release -destination 'generic/platform=iOS'
-          -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
-      - name: Package IPA
+      - name: Build apps for device (unsigned)
         run: |
+          for scheme in WarpSign WarpSignCompanion; do
+            xcodebuild -project ios/WarpSign.xcodeproj -scheme "$scheme" \
+              -configuration Release -destination 'generic/platform=iOS' \
+              -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+          done
+      - name: Package IPAs
+        run: |
+          products=build/Build/Products/Release-iphoneos
+          # Ad-hoc signed with their entitlements, so signing them with
+          # WarpSign knows the VPN extensions need Network Extensions
+          mkdir -p companion/Payload
+          cp -R "$products/WarpSignCompanion.app" companion/Payload/
+          app=companion/Payload/WarpSignCompanion.app
+          codesign --force --sign - --entitlements ios/CompanionTunnel/CompanionTunnel.entitlements \
+            "$app/PlugIns/CompanionTunnel.appex"
+          codesign --force --sign - --entitlements ios/Companion/WarpSignCompanion.entitlements "$app"
+          (cd companion && zip -qry ../WarpSignCompanion.ipa Payload)
+
+          # Companion travels inside WarpSign, which offers to sign and
+          # install it
           mkdir -p ipa/Payload
-          cp -R build/Build/Products/Release-iphoneos/WarpSign.app ipa/Payload/
-          # Ad-hoc signed with its entitlements, so signing WarpSign with
-          # WarpSign knows the VPN extension needs Network Extensions
+          cp -R "$products/WarpSign.app" ipa/Payload/
           app=ipa/Payload/WarpSign.app
+          cp WarpSignCompanion.ipa "$app/WarpSignCompanion.ipa"
           codesign --force --sign - --entitlements ios/WarpSignTunnel/WarpSignTunnel.entitlements \
             "$app/PlugIns/WarpSignTunnel.appex"
           codesign --force --sign - --entitlements ios/WarpSign/WarpSign.entitlements "$app"
           codesign -d --entitlements - "$app/PlugIns/WarpSignTunnel.appex"
           (cd ipa && zip -qry ../WarpSign.ipa Payload)
-          unzip -l WarpSign.ipa | tail -1
+          ls -l WarpSign.ipa WarpSignCompanion.ipa
       - uses: actions/upload-artifact@v4
         with:
           name: WarpSign-ipa
-          path: WarpSign.ipa
+          path: |
+            WarpSign.ipa
+            WarpSignCompanion.ipa
           if-no-files-found: error
       # A plain .ipa link Safari saves straight to Files: iOS can't always
       # unzip artifact downloads ("Bad message")
@@ -51,11 +67,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          notes="Unsigned WarpSign.ipa from $GITHUB_SHA, for signing with WarpSign or the CLI."
+          notes="Unsigned WarpSign.ipa (with WarpSign Companion inside) from $GITHUB_SHA, for signing with WarpSign or the CLI."
           if gh release view latest >/dev/null 2>&1; then
-            gh release upload latest WarpSign.ipa --clobber
+            gh release upload latest WarpSign.ipa WarpSignCompanion.ipa --clobber
             gh release edit latest --notes "$notes"
           else
-            gh release create latest WarpSign.ipa --prerelease \
+            gh release create latest WarpSign.ipa WarpSignCompanion.ipa --prerelease \
               --title "WarpSign (latest build)" --notes "$notes" --target "$GITHUB_SHA"
           fi

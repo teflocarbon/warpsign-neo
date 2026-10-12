@@ -224,7 +224,7 @@ extension InstallView {
         bundleId == Bundle.main.bundleIdentifier
     }
 
-    static let selfInstallMessage = "This is the WarpSign you're using, and it can't install over itself: iOS has to stop it partway through, which leaves iOS unable to install anything until the device restarts. Install it from a computer with `warpsign install`, or share the IPA to another installer."
+    static let selfInstallMessage = "This is the WarpSign you're using, and it can't install over itself: iOS has to stop it partway through, which leaves iOS unable to install anything until the device restarts. Install it with WarpSign Companion (Share Signed IPA → Companion), from a computer with `warpsign install`, or with another installer."
 }
 
 /// Install, or explain how to set installing up

@@ -126,3 +126,102 @@ targets:
         NSExtension:
           NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider
+  # WarpSign Companion (Companion/): installs an already-signed IPA, so
+  # WarpSign can be installed over WarpSign, which it can't do itself. CI
+  # bundles its IPA inside WarpSign, which offers to sign and install it.
+  WarpSignCompanion:
+    type: application
+    platform: iOS
+    sources:
+      - Companion
+      # Shared with WarpSign
+      - WarpSign/Platform/Background.swift
+      - WarpSign/Platform/Keychain.swift
+      - WarpSign/Platform/KeepAlive.swift
+      - WarpSign/Platform/ContinuedWork.swift
+      - WarpSign/Platform/LoopbackTunnel.swift
+      - WarpSign/Models/StepProgress.swift
+      - WarpSign/Views/Shared/StepListView.swift
+      - WarpSign/Views/Shared/Components.swift
+      - WarpSign/Generated/warpsign_ffi.swift
+      - WarpSign/Resources/silence.wav
+      - WarpSign/Assets.xcassets
+    dependencies:
+      - framework: Frameworks/WarpsignFFI.xcframework
+        embed: false
+      - target: CompanionTunnel
+    entitlements:
+      path: Companion/WarpSignCompanion.entitlements
+      properties:
+        com.apple.developer.networking.networkextension:
+          - packet-tunnel-provider
+    scheme: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.warpsigncompanion
+        "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    info:
+      path: Companion/Info.plist
+      properties:
+        CFBundleDisplayName: Companion
+        UILaunchScreen: {}
+        UIBackgroundModes:
+          - audio
+          - processing
+        BGTaskSchedulerPermittedIdentifiers:
+          - $(PRODUCT_BUNDLE_IDENTIFIER).continued.*
+        LSSupportsOpeningDocumentsInPlace: false
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: iOS App
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - com.apple.itunes.ipa
+          - CFBundleTypeName: Device Pairing File
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - dev.warpsign.mobiledevicepairing
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: com.apple.itunes.ipa
+            UTTypeDescription: iOS App
+            UTTypeConformsTo:
+              - public.zip-archive
+              - public.data
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - ipa
+          - UTTypeIdentifier: dev.warpsign.mobiledevicepairing
+            UTTypeDescription: Device Pairing File
+            UTTypeConformsTo:
+              - public.data
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - mobiledevicepairing
+  # Companion's own loopback VPN: WarpSign's lives inside WarpSign, and
+  # stops when WarpSign is replaced
+  CompanionTunnel:
+    type: app-extension
+    platform: iOS
+    sources:
+      - WarpSignTunnel/PacketTunnelProvider.swift
+    entitlements:
+      path: CompanionTunnel/CompanionTunnel.entitlements
+      properties:
+        com.apple.developer.networking.networkextension:
+          - packet-tunnel-provider
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.warpsigncompanion.Tunnel
+        "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
+        TARGETED_DEVICE_FAMILY: "1,2"
+    info:
+      path: CompanionTunnel/Info.plist
+      properties:
+        CFBundleDisplayName: Companion VPN
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider

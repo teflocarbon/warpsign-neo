@@ -6,6 +6,7 @@ struct LibraryView: View {
     @Environment(LibraryStore.self) private var library
     @State private var showingImporter = false
     @State private var search = ""
+    @State private var companionDismissed = UserDefaults.standard.bool(forKey: BundledCompanion.dismissedKey)
     @State private var path: [UUID] = Demo.isOn && Demo.screen == .appDetail ? [Demo.appIds[0]] : []
 
     static let ipaType = UTType("com.apple.itunes.ipa")
@@ -39,6 +40,7 @@ struct LibraryView: View {
                 }
                 if search.isEmpty {
                     MigrationBanner()
+                    companionCard
                 }
                 ForEach(apps) { app in
                     NavigationLink(value: app.id) {
@@ -84,6 +86,53 @@ struct LibraryView: View {
                         await library.importFile(url)
                     }
                 }
+            }
+        }
+    }
+}
+
+/// WarpSign Companion, bundled inside WarpSign by CI: a second app that
+/// can install WarpSign over WarpSign, which WarpSign can't do itself
+enum BundledCompanion {
+    static var url: URL? {
+        Bundle.main.url(forResource: "WarpSignCompanion", withExtension: "ipa")
+    }
+
+    /// The library origin it's added with, to know it's there
+    static let origin = "Bundled with WarpSign"
+    static let dismissedKey = "companion.dismissed"
+}
+
+extension LibraryView {
+    /// Offered once, until it's set up or dismissed
+    @ViewBuilder
+    var companionCard: some View {
+        if let url = BundledCompanion.url, !companionDismissed,
+           !library.apps.contains(where: { $0.origin == BundledCompanion.origin }) {
+            Section {
+                Label {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Set Up WarpSign Companion").font(.headline)
+                        Text("A small second app that installs WarpSign's own updates, which WarpSign can't install over itself. Sign and install it once.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                        .foregroundStyle(.tint)
+                }
+                Button("Set Up Companion", systemImage: "plus.app") {
+                    Task {
+                        if let app = await library.importFile(url, origin: BundledCompanion.origin) {
+                            path.append(app.id)
+                        }
+                    }
+                }
+                Button("Not Now", role: .cancel) {
+                    companionDismissed = true
+                    UserDefaults.standard.set(true, forKey: BundledCompanion.dismissedKey)
+                }
+                .foregroundStyle(.secondary)
             }
         }
     }

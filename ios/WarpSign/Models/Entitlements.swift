@@ -365,27 +365,3 @@ struct SavedChange: Codable, Hashable {
     }
 }
 
-/// A step of a finished operation, with its log
-struct SavedStep: Codable {
-    var title: String
-    var status: StepState.Status
-    var log: [String]
-
-    init(title: String, status: StepState.Status, log: [String]) {
-        self.title = title
-        self.status = status
-        self.log = log
-    }
-
-    init(_ step: StepState) {
-        self.init(title: step.title, status: step.status, log: step.log)
-    }
-}
-
-extension Array where Element == SavedStep {
-    /// Plain-text log of every step, for copying into a bug report
-    var transcript: String {
-        map { StepState.transcript(title: $0.title, status: $0.status, log: $0.log) }
-            .joined(separator: "\n")
-    }
-}

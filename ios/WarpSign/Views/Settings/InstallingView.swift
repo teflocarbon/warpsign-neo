@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 struct InstallingView: View {
     @Environment(DeviceStore.self) private var device
     @Environment(AccountStore.self) private var account
+    @Environment(LibraryStore.self) private var library
     @State private var importing = false
     @State private var confirmingRemove = false
     @State private var registered: Bool?
@@ -43,6 +44,7 @@ struct InstallingView: View {
             } else {
                 manifestServerSection
             }
+            companionSection
         }
         .navigationTitle("Installing")
         .fileImporter(isPresented: $importing, allowedContentTypes: Self.pairingTypes) { result in
@@ -209,6 +211,22 @@ struct InstallingView: View {
             }
         }
         .task { await device.tunnel.refresh() }
+    }
+
+    /// WarpSign Companion, if this build carries it and it isn't in the
+    /// library yet: offered again here after the library card is dismissed
+    @ViewBuilder
+    private var companionSection: some View {
+        if let url = BundledCompanion.url,
+           !library.apps.contains(where: { $0.origin == BundledCompanion.origin }) {
+            Section {
+                Button("Add WarpSign Companion to Library", systemImage: "plus.app") {
+                    Task { await library.importFile(url, origin: BundledCompanion.origin) }
+                }
+            } footer: {
+                Text("A small second app that installs WarpSign's own updates, which WarpSign can't install over itself. Add it, then sign and install it from the Library.")
+            }
+        }
     }
 
     @ViewBuilder
