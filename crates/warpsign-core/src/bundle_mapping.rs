@@ -70,6 +70,22 @@ fn char_len(s: &str) -> usize {
     s.chars().count()
 }
 
+/// The bundle ID an app's main bundle gets when signed for `team_id`: its
+/// own with `force_original_id` (as `InfoPlistPatcher` keeps it), the
+/// original with `encode_ids` off, otherwise the mapped one. Shown before
+/// signing, so a sign that would make it a different app can say so.
+pub fn preview_bundle_id(
+    original: &str,
+    team_id: &str,
+    encode_ids: bool,
+    force_original_id: bool,
+) -> String {
+    if force_original_id {
+        return original.to_owned();
+    }
+    BundleMapping::new(Vec::new(), team_id, original, encode_ids).map_bundle_id(original)
+}
+
 impl BundleMapping {
     /// `value` with an original team ID prefix moved to this team
     fn with_this_team(&self, value: &str) -> String {

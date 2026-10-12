@@ -478,6 +478,23 @@ pub struct NewsItem {
     pub app_id: Option<String>,
 }
 
+/// The bundle ID an app gets when signed for `team_id` with these options,
+/// to show before signing
+#[uniffi::export]
+pub fn signed_bundle_id(
+    bundle_id: String,
+    team_id: String,
+    encode_ids: bool,
+    force_original_id: bool,
+) -> String {
+    warpsign_core::bundle_mapping::preview_bundle_id(
+        &bundle_id,
+        &team_id,
+        encode_ids,
+        force_original_id,
+    )
+}
+
 /// Whether a source's version (and build) is newer than the library's
 #[uniffi::export]
 pub fn is_newer_version(

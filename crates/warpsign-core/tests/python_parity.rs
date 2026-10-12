@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use base64::Engine;
 use plist::{Dictionary, Value};
 use serde_json::{Value as Json, json};
-use warpsign_core::bundle_mapping::BundleMapping;
+use warpsign_core::bundle_mapping::{BundleMapping, preview_bundle_id};
 use warpsign_core::entitlements::EntitlementsProcessor;
 use warpsign_core::{ProfileType, PyRandom};
 
@@ -117,6 +117,38 @@ fn random_ids_match() {
             "{case}"
         );
     }
+}
+
+/// The bundle ID shown before signing is the one Python gives the main app
+#[test]
+fn bundle_id_preview_matches() {
+    let mut checked = 0;
+    for case in cases(&load_fixture("bundle_mapping.json")) {
+        let name = str_of(&case["name"]);
+        let main = str_of(&case["main_bundle_id"]);
+        let components = case["components"].as_array().unwrap();
+        let Some(index) = components
+            .iter()
+            .position(|c| str_of(&c["bundle_id"]) == main)
+        else {
+            continue;
+        };
+        let force = case["force_original_id"].as_bool().unwrap();
+        let preview = preview_bundle_id(
+            main,
+            str_of(&case["new_team_id"]),
+            case["randomize"].as_bool().unwrap(),
+            force,
+        );
+        let expected = if force {
+            main.to_string()
+        } else {
+            str_of(&case["expected"]["mapped_bundle_ids"][index]).to_string()
+        };
+        assert_eq!(preview, expected, "{name}");
+        checked += 1;
+    }
+    assert!(checked > 0);
 }
 
 /// Mirrors `run_mapping_case` in tools/gen_fixtures.py

@@ -5,8 +5,11 @@ import UIKit
 /// Everything about how an app gets signed, then the button
 struct SignOptionsView: View {
     @Environment(AccountStore.self) private var account
+    @Environment(LibraryStore.self) private var library
     let app: LibraryApp
-    @State private var options = SigningOptions.saved
+    /// Set when the view appears: this app's own last options
+    @State private var options = SigningOptions()
+    @State private var loaded = false
     @State private var signing = false
     @State private var iconItem: PhotosPickerItem?
     /// The chosen icon, as PNG
@@ -48,6 +51,27 @@ struct SignOptionsView: View {
                 Toggle("Keep Original Bundle ID", isOn: $options.forceOriginalId)
                 if options.forceOriginalId {
                     originalIdWarning
+                }
+                if let preview = previewBundleId {
+                    LabeledContent("Signs As") {
+                        Text(preview)
+                            .font(.caption.monospaced())
+                            .multilineTextAlignment(.trailing)
+                    }
+                    .contextMenu { CopyMenu(title: "Bundle ID", value: preview) }
+                    if let last = lastBundleId, last != preview {
+                        Label {
+                            Text("Last signed as \(last). This gives it a different bundle ID, so it installs as a separate app, and doesn't get the other one's data.")
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        }
+                        .font(.callout)
+                        if let lastOptions = library.lastSigningOptions(of: app) {
+                            Button("Use Its Last Options", systemImage: "arrow.uturn.backward") {
+                                options = lastOptions
+                            }
+                        }
+                    }
                 }
             } header: {
                 Text("Identifiers")
@@ -130,6 +154,14 @@ struct SignOptionsView: View {
             .listRowBackground(Color.clear)
         }
         .navigationTitle("Sign")
+        .onAppear {
+            // This app's own options, once: never another app's
+            guard !loaded else { return }
+            loaded = true
+            options = SigningOptions.starting(for: app, in: library)
+            // And the icon it was last signed with, if it had its own
+            if icon == nil { icon = library.customIcon(of: app) }
+        }
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $signing) {
             SigningView(app: app, options: options, icon: icon)
@@ -147,6 +179,26 @@ struct SignOptionsView: View {
     }
 
     @ViewBuilder
+    /// The bundle ID this sign gives the app, as the signer works it out
+    private var previewBundleId: String? {
+        guard let team = account.selectedTeam?.teamId else { return nil }
+        return signedBundleId(
+            bundleId: app.bundleId,
+            teamId: team,
+            encodeIds: options.encodeIds,
+            forceOriginalId: options.forceOriginalId
+        )
+    }
+
+    /// What its newest signed copy (for the team signing now) was signed as
+    private var lastBundleId: String? {
+        let team = account.selectedTeam?.teamId
+        return app.signedCopies
+            .filter { team == nil || $0.teamId == team }
+            .max(by: { $0.date < $1.date })?
+            .bundleId
+    }
+
     private var originalIdWarning: some View {
         switch teamUsesPPQ {
         case .some(true):

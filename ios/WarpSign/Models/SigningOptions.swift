@@ -93,6 +93,22 @@ struct SigningOptions: Codable, Equatable {
 
     private static let key = "signingOptions"
 
+    /// Where a sign of `app` starts: the options it was last signed with,
+    /// or for an app never signed, the last options used with what decides
+    /// its bundle ID (and its name) back at their defaults, so one app's
+    /// choices never carry over to another
+    @MainActor
+    static func starting(for app: LibraryApp, in library: LibraryStore) -> SigningOptions {
+        if let last = library.lastSigningOptions(of: app) { return last }
+        var options = saved
+        let defaults = SigningOptions()
+        options.encodeIds = defaults.encodeIds
+        options.patchIds = defaults.patchIds
+        options.forceOriginalId = defaults.forceOriginalId
+        options.bundleName = defaults.bundleName
+        return options
+    }
+
     /// The last options used, without the per-app name
     static var saved: SigningOptions {
         guard let data = UserDefaults.standard.data(forKey: key),
