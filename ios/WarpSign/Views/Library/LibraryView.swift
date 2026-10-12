@@ -173,12 +173,19 @@ struct LibraryRow: View {
                 if app.isEncrypted {
                     Badge("Encrypted", color: .red)
                 }
-                if device.installedApp(app) != nil {
+                switch device.compareInstalled(app) {
+                case .same:
                     Badge("Installed", color: .green)
-                } else if device.isMissing(app) {
-                    Badge("Not Installed", color: .secondary)
-                } else if !app.signedCopies.isEmpty {
-                    Badge("Signed", color: .green)
+                case .libraryNewer:
+                    Badge("Not Installed Yet", color: .orange)
+                case .installedNewer:
+                    Badge("Newer Installed", color: .secondary)
+                case nil:
+                    if device.isMissing(app) {
+                        Badge("Not Installed", color: .secondary)
+                    } else if !app.signedCopies.isEmpty {
+                        Badge("Signed", color: .green)
+                    }
                 }
             }
         }

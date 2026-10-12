@@ -650,7 +650,11 @@ struct InstalledSection: View {
                     LabeledContent("Installed") {
                         Text(Self.versionText(installed.version, installed.build))
                     }
-                    if !matchesLibrary(installed) {
+                    if case .installedNewer = device.compareInstalled(app) {
+                        Label("This is an older copy: \(Self.versionText(installed.version, installed.build)) is installed. Remove this one from the library if you don't need it.", systemImage: "clock.arrow.circlepath")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    } else if !matchesLibrary(installed) {
                         if let newestCopy {
                             Label("\(app.versionText) is signed but not installed yet.", systemImage: "arrow.down.app")
                                 .font(.callout)

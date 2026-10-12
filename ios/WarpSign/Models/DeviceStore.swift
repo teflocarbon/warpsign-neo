@@ -205,6 +205,33 @@ final class DeviceStore {
         return ids.lazy.compactMap { installed[$0] }.first
     }
 
+    /// How a library app compares with what's installed under its bundle
+    /// ID. Two library entries for the same app (an old IPA and a new one)
+    /// share one installed app: only the one it is says Installed.
+    enum InstalledComparison {
+        /// This version is the one installed
+        case same
+        /// This one's newer: signed, but not installed yet
+        case libraryNewer(InstalledApp)
+        /// What's installed is newer: this entry is an older copy
+        case installedNewer(InstalledApp)
+    }
+
+    func compareInstalled(_ app: LibraryApp) -> InstalledComparison? {
+        guard let installed = installedApp(app) else { return nil }
+        guard let version = app.version else { return .same }
+        if installed.version == version && (app.build == nil || installed.build == app.build) {
+            return .same
+        }
+        if isNewerVersion(
+            candidate: installed.version ?? "", candidateBuild: installed.build,
+            current: version, currentBuild: app.build
+        ) {
+            return .installedNewer(installed)
+        }
+        return .libraryNewer(installed)
+    }
+
     /// Whether a library app that's been signed isn't on this device (it
     /// was deleted, say): false when that isn't known
     func isMissing(_ app: LibraryApp) -> Bool {
