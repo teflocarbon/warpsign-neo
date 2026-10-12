@@ -140,6 +140,15 @@ struct InstallView: View {
 
     private func start() async {
         method = device.method
+        // Never over the running WarpSign: iOS has to stop it mid-install,
+        // and with it what's feeding the install (the VPN extension, or the
+        // web server), which leaves installd stuck until a restart
+        let path = ipa.path
+        let bundleId = try? await runInBackground { try readIpaMetadata(ipaPath: path).bundleId }
+        if let bundleId, Self.isThisApp(bundleId) {
+            phase = .failed(Self.selfInstallMessage, unreachable: false)
+            return
+        }
         switch method {
         case .web: startWeb()
         case .pairing: await installWithPairing()
@@ -209,15 +218,32 @@ struct InstallView: View {
     }
 }
 
+extension InstallView {
+    /// Whether `bundleId` is the WarpSign that's running
+    static func isThisApp(_ bundleId: String) -> Bool {
+        bundleId == Bundle.main.bundleIdentifier
+    }
+
+    static let selfInstallMessage = "This is the WarpSign you're using, and it can't install over itself: iOS has to stop it partway through, which leaves iOS unable to install anything until the device restarts. Install it from a computer with `warpsign install`, or share the IPA to another installer."
+}
+
 /// Install, or explain how to set installing up
 struct InstallButton: View {
     @Environment(DeviceStore.self) private var device
     let ipa: URL
     let name: String
     var icon: URL?
+    /// The signed copy's bundle ID, to refuse installing over this WarpSign
+    var bundleId: String?
 
     var body: some View {
-        if device.isReady {
+        if let bundleId, InstallView.isThisApp(bundleId) {
+            Label("Can't Install Over Itself", systemImage: "nosign")
+                .foregroundStyle(.secondary)
+            Text(InstallView.selfInstallMessage)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        } else if device.isReady {
             NavigationLink {
                 InstallView(ipa: ipa, name: name, icon: icon)
             } label: {

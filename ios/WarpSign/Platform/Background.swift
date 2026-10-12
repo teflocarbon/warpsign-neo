@@ -7,6 +7,11 @@ func background<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async t
     }.value
 }
 
+/// `background`, for views, where that name means SwiftUI's modifier
+func runInBackground<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+    try await background(work)
+}
+
 /// Files picked outside the app's sandbox need explicit access
 func withSecurityScopedAccess<T>(to url: URL, _ work: () throws -> T) rethrows -> T {
     let accessing = url.startAccessingSecurityScopedResource()

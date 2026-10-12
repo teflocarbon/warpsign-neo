@@ -159,7 +159,8 @@ private struct SignedCopyView: View {
                 InstallButton(
                     ipa: library.signedURL(copy, of: app),
                     name: app.displayName,
-                    icon: LibraryStore.folder(of: app.id).appendingPathComponent("icon.png")
+                    icon: LibraryStore.folder(of: app.id).appendingPathComponent("icon.png"),
+                    bundleId: copy.bundleId
                 )
                 ShareLink(item: library.signedURL(copy, of: app)) {
                     Label("Share Signed IPA", systemImage: "square.and.arrow.up")
