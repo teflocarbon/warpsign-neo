@@ -79,10 +79,6 @@ pub fn check(
     entitlements: &Dictionary,
     now: SystemTime,
 ) -> Result<(), NotReusable> {
-    match profile.expiration_date {
-        Some(expires) if expires > now + MINIMUM_VALIDITY => {}
-        _ => return Err(NotReusable::Expiring),
-    }
     let profile_app_id = profile
         .entitlements
         .get("application-identifier")
@@ -90,6 +86,21 @@ pub fn check(
         .unwrap_or_default();
     if profile_app_id != app_identifier {
         return Err(NotReusable::AppId(profile_app_id.to_string()));
+    }
+    // Before the reasons that only need a regeneration, so one of them
+    // can't hide that the App ID's capabilities need updating too
+    for (key, wanted) in entitlements {
+        let granted = profile
+            .entitlements
+            .get(key)
+            .is_some_and(|allowed| grants(allowed, wanted));
+        if !granted {
+            return Err(NotReusable::Entitlement(key.clone()));
+        }
+    }
+    match profile.expiration_date {
+        Some(expires) if expires > now + MINIMUM_VALIDITY => {}
+        _ => return Err(NotReusable::Expiring),
     }
     let has_certificate = profile
         .plist
@@ -114,15 +125,6 @@ pub fn check(
         .count();
     if missing > 0 {
         return Err(NotReusable::Devices(missing));
-    }
-    for (key, wanted) in entitlements {
-        let granted = profile
-            .entitlements
-            .get(key)
-            .is_some_and(|allowed| grants(allowed, wanted));
-        if !granted {
-            return Err(NotReusable::Entitlement(key.clone()));
-        }
     }
     Ok(())
 }
@@ -176,7 +178,7 @@ pub fn portal_date(text: &str) -> Option<SystemTime> {
     let month: i64 = date_parts.next()?.parse().ok()?;
     let day: i64 = date_parts.next()?.parse().ok()?;
 
-    // The time, then an offset: Z, +hh:mm or -hh:mm
+    // The time, then an offset: Z, +hh:mm, +hhmm or the same with -
     let offset_at = rest.find(['Z', '+', '-']).unwrap_or(rest.len());
     let (time, offset) = rest.split_at(offset_at);
     let time = time.split('.').next()?;
@@ -188,7 +190,13 @@ pub fn portal_date(text: &str) -> Option<SystemTime> {
         "" | "Z" => 0,
         offset => {
             let sign = if offset.starts_with('-') { -1 } else { 1 };
-            let (hours, minutes) = offset[1..].split_once(':').unwrap_or((&offset[1..], "0"));
+            let digits = &offset[1..];
+            let (hours, minutes) = match digits.split_once(':') {
+                Some(parts) => parts,
+                // +hhmm
+                None if digits.len() == 4 => digits.split_at(2),
+                None => (digits, "0"),
+            };
             sign * (hours.parse::<i64>().ok()? * 3600 + minutes.parse::<i64>().ok()? * 60)
         }
     };
@@ -299,6 +307,7 @@ mod tests {
         assert_eq!(seconds("2027-10-11T12:00:00.000+00:00"), 1_823_256_000);
         assert_eq!(seconds("2027-10-11T14:00:00+02:00"), 1_823_256_000);
         assert_eq!(seconds("2027-10-11T07:30:00-04:30"), 1_823_256_000);
+        assert_eq!(seconds("2027-10-11T13:00:00.000+0100"), 1_823_256_000);
         assert_eq!(seconds("2024-02-29T00:00:00Z"), 1_709_164_800);
         assert_eq!(portal_date("not a date"), None);
         assert_eq!(portal_date("2027-13-01T00:00:00Z"), None);

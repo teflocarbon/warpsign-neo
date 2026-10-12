@@ -933,6 +933,45 @@ fn a_profile_missing_an_entitlement_updates_only_its_app_id() {
 }
 
 #[test]
+fn a_profile_missing_an_entitlement_and_more_still_updates_its_app_id() {
+    let fake = realistic_portal();
+    let options = SignOptions::default();
+    let (before, signed) = signed_once(&fake, &options);
+    // The main app's profile no longer grants its app group, as if the
+    // group were unlinked on the portal
+    let main = signed
+        .profiles
+        .iter()
+        .find(|profile| profile.bundle_path.is_empty())
+        .unwrap();
+    {
+        let mut state = fake.state.lock().unwrap();
+        let profile = state
+            .made_profiles
+            .iter_mut()
+            .find(|(_, name, ..)| name == &main.name)
+            .unwrap();
+        profile.3 = make_profile(&main.name, &format!("{TEAM}.{}", main.bundle_id), &[], &[]);
+    }
+
+    let (_dir, result, _) = sign(&fake, &options, TEAM);
+    result.unwrap();
+    let state = fake.state.lock().unwrap();
+    let again = writes(&state.requests[before..]);
+    let patches = again
+        .iter()
+        .filter(|write| write.starts_with("PATCH"))
+        .count();
+    let regenerated: Vec<&String> = state.profile_forms[2..].iter().collect();
+    assert_eq!(patches, 1, "{again:?}");
+    assert_eq!(regenerated.len(), 1);
+    assert!(
+        regenerated[0].contains(&main.name.replace(' ', "+")),
+        "{regenerated:?}"
+    );
+}
+
+#[test]
 fn names_bundles_that_got_no_profile() {
     // An app somewhere unusual: not a component Python warpsign finds, so
     // it gets no profile of its own
