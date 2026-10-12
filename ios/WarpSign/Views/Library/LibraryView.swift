@@ -10,16 +10,17 @@ struct LibraryView: View {
     @State private var linking: LibraryApp?
     @State private var removing: LibraryApp?
     @State private var search = ""
-    @State private var companionDismissed = UserDefaults.standard.bool(forKey: BundledCompanion.dismissedKey)
     @State private var path: [UUID] = Demo.isOn && Demo.screen == .appDetail ? [Demo.appIds[0]] : []
 
     static let ipaType = UTType("com.apple.itunes.ipa")
         ?? UTType(filenameExtension: "ipa")
         ?? .data
 
+    /// The library's apps; WarpSign Companion lives in Settings instead
     private var apps: [LibraryApp] {
-        guard !search.isEmpty else { return library.apps }
-        return library.apps.filter {
+        let apps = library.apps.filter { $0.updateOrigin != .bundled }
+        guard !search.isEmpty else { return apps }
+        return apps.filter {
             $0.displayName.localizedCaseInsensitiveContains(search)
                 || $0.bundleId.localizedCaseInsensitiveContains(search)
         }
@@ -46,7 +47,6 @@ struct LibraryView: View {
                 if search.isEmpty {
                     MigrationBanner()
                     UpdatesSection()
-                    companionCard
                 }
                 ForEach(apps) { app in
                     NavigationLink(value: app.id) {
@@ -146,42 +146,6 @@ enum BundledCompanion {
 
     /// The library origin it's added with, to know it's there
     static let origin = "Bundled with WarpSign"
-    static let dismissedKey = "companion.dismissed"
-}
-
-extension LibraryView {
-    /// Offered once, until it's set up or dismissed
-    @ViewBuilder
-    var companionCard: some View {
-        if let url = BundledCompanion.url, !companionDismissed,
-           !library.apps.contains(where: { $0.origin == BundledCompanion.origin }) {
-            Section {
-                Label {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Set Up WarpSign Companion").font(.headline)
-                        Text("A small second app that installs WarpSign's own updates, which WarpSign can't install over itself. Sign and install it once.")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                } icon: {
-                    Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
-                        .foregroundStyle(.tint)
-                }
-                Button("Set Up Companion", systemImage: "plus.app") {
-                    Task {
-                        if let app = await library.importFile(url, origin: BundledCompanion.origin) {
-                            path.append(app.id)
-                        }
-                    }
-                }
-                Button("Not Now", role: .cancel) {
-                    companionDismissed = true
-                    UserDefaults.standard.set(true, forKey: BundledCompanion.dismissedKey)
-                }
-                .foregroundStyle(.secondary)
-            }
-        }
-    }
 }
 
 struct LibraryRow: View {

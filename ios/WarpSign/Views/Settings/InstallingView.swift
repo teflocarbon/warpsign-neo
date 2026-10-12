@@ -230,18 +230,19 @@ struct InstallingView: View {
         .task { await device.tunnel.refresh() }
     }
 
-    /// WarpSign Companion, if this build carries it and it isn't in the
-    /// library yet: offered again here after the library card is dismissed
+    /// WarpSign Companion, if this build carries it: set up and kept up to
+    /// date on its own page
     @ViewBuilder
     private var companionSection: some View {
-        if let url = BundledCompanion.url,
-           !library.apps.contains(where: { $0.origin == BundledCompanion.origin }) {
+        if BundledCompanion.url != nil {
             Section {
-                Button("Add WarpSign Companion to Library", systemImage: "plus.app") {
-                    Task { await library.importFile(url, origin: BundledCompanion.origin) }
+                NavigationLink {
+                    CompanionView()
+                } label: {
+                    Label("WarpSign Companion", systemImage: "arrow.triangle.2.circlepath.circle")
                 }
             } footer: {
-                Text("A small second app that installs WarpSign's own updates, which WarpSign can't install over itself. Add it, then sign and install it from the Library.")
+                Text("A small second app that installs WarpSign's own updates, which WarpSign can't install over itself.")
             }
         }
     }

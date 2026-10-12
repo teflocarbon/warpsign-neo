@@ -149,7 +149,17 @@ final class Updater {
     }
 
     /// The bundled Companion's version, build and size, once read
-    @ObservationIgnored private var bundledCompanion: (version: String?, build: String?, size: UInt64)?
+    @ObservationIgnored private var bundledCompanion: (version: String?, build: String?, size: UInt64)? {
+        didSet { bundledCompanionVersion = bundledCompanion.map { InstalledSection.versionText($0.version, $0.build) } }
+    }
+
+    /// "0.3.0 (45)": the Companion inside this WarpSign, for Settings
+    private(set) var bundledCompanionVersion: String?
+
+    /// WarpSign Companion in the library (hidden there: Settings shows it)
+    var companion: LibraryApp? {
+        library?.apps.first { $0.updateOrigin == .bundled }
+    }
 
     // MARK: Checking
 
@@ -428,6 +438,12 @@ final class Updater {
                 try await CompanionHandoff.send(library.signedURL(copy, of: updated), name: updated.displayName)
                 return finish(id, app: updated, from: from, to: to, done: "Sent to Companion",
                               problem: nil, note: "Installed with Companion")
+            }
+            // Companion, in the background without a pairing file: it
+            // matters, so say it's waiting rather than leave it quietly
+            if automatic && !installsAutomatically && updated.updateOrigin == .bundled {
+                return finish(id, app: updated, from: from, to: to, done: "Signed: ready to install",
+                              problem: "WarpSign Companion \(to) is ready to install: open WarpSign, then Settings → WarpSign Companion.")
             }
             // Automatic updates install only with the pairing file (iOS asks
             // before each web install), and only with Install Updates on

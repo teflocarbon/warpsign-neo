@@ -7,8 +7,10 @@ struct UpdatesSection: View {
     private var updater: Updater { .shared }
 
     var body: some View {
+        // Companion's updates are in Settings, with Companion
         let items = updater.available.values
             .compactMap { item in library.app(item.appId).map { (app: $0, item: item) } }
+            .filter { $0.app.updateOrigin != .bundled }
             .sorted { $0.app.displayName.localizedCaseInsensitiveCompare($1.app.displayName) == .orderedAscending }
         if !items.isEmpty {
             Section {

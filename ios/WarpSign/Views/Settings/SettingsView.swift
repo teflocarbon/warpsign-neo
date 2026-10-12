@@ -55,6 +55,20 @@ struct SettingsView: View {
 
                 MigrationBanner()
 
+                if BundledCompanion.url != nil {
+                    Section {
+                        NavigationLink {
+                            CompanionView()
+                        } label: {
+                            LabeledContent {
+                                companionStatus
+                            } label: {
+                                Label("WarpSign Companion", systemImage: "arrow.triangle.2.circlepath.circle")
+                            }
+                        }
+                    }
+                }
+
                 Section {
                     NavigationLink {
                         IdentityView()
@@ -159,6 +173,25 @@ struct SettingsView: View {
             } message: {
                 Text("Your signing identity stays on this device.")
             }
+        }
+    }
+}
+
+extension SettingsView {
+    /// Set up, an update waiting, or its version
+    @ViewBuilder
+    var companionStatus: some View {
+        let updater = Updater.shared
+        if let companion = updater.companion {
+            if updater.available[companion.id] != nil {
+                Text("Update").foregroundStyle(.tint)
+            } else if companion.signedCopies.isEmpty || device.isMissing(companion) {
+                Text("Install").foregroundStyle(.tint)
+            } else {
+                Text(device.installedApp(companion).map { InstalledSection.versionText($0.version, $0.build) } ?? companion.versionText)
+            }
+        } else {
+            Text("Set Up").foregroundStyle(.tint)
         }
     }
 }
