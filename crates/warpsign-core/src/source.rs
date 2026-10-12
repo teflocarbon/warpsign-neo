@@ -282,6 +282,14 @@ pub fn is_newer_version(
     }
 }
 
+/// Whether a version is a pre-release: letters after the numbers
+/// (`1.2-beta`, `2.0b3`, `3.1 RC1`). An unreadable version isn't one.
+pub fn is_pre_release(version: &str) -> bool {
+    version_parts(version)
+        .and_then(|(_, pre)| pre)
+        .is_some_and(|pre| pre.chars().any(|c| c.is_ascii_alphabetic()))
+}
+
 fn compare_versions(a: &str, b: &str) -> Option<std::cmp::Ordering> {
     use std::cmp::Ordering;
     let (a_numbers, a_pre) = version_parts(a)?;
@@ -352,6 +360,18 @@ mod version_tests {
         assert!(!newer("1.2", Some("44"), "1.2", Some("45")));
         assert!(!newer("1.2", Some("45"), "1.2", None));
         assert!(!newer("1.2", None, "1.2", None));
+    }
+
+    #[test]
+    fn finds_pre_releases() {
+        use super::is_pre_release as pre;
+        assert!(pre("1.2-beta"));
+        assert!(pre("2.0b3"));
+        assert!(pre("v3.1 RC1"));
+        assert!(!pre("1.2"));
+        assert!(!pre("v1.2.3"));
+        assert!(!pre("1.2 (45)"));
+        assert!(!pre("nightly"));
     }
 
     #[test]

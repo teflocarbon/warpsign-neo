@@ -100,7 +100,8 @@ final class SourcesStore {
                 origin: source.name,
                 move: true,
                 sourceURL: sourceURL,
-                sourceAppId: app.bundleId
+                sourceAppId: app.bundleId,
+                autoUpdate: Updater.shared.newAppsUpdate
             )
             try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
             downloadError = nil

@@ -25,4 +25,17 @@ WarpSign itself is never updated this way: installing over the running app locks
 - iOS decides exactly when either runs, and runs neither for an app that was force-quit or with Background App Refresh off.
 - The session, signing identities and pairing file are Keychain items readable after first unlock, so updates work with the phone locked (not after a restart before it's unlocked, when iOS doesn't run them anyway).
 
+## Settings
+
+Settings > Automatic Updates, beyond the main switch:
+
+- **Only While Charging** (on): the processing task's `requiresExternalPower`. Off, iOS runs it whenever it likes, which can close an app you're using while it installs.
+- **Wi-Fi Only** (on): iOS can require a network but not Wi-Fi, so an automatic run checks first (`NWPathMonitor`) and waits for another chance on cellular or a network iOS counts as expensive. Low Data Mode always holds automatic updates back.
+- **Install Updates** (on): off, automatic updates stop at signed and wait in the library. Updates started by hand always install.
+- **New Apps Update Automatically** (on): the per-app switch's starting value for apps downloaded (or linked to their source) from now on.
+- **Notify When Apps Update** (off): one notification for what updated. Problems always notify.
+- **Skip Betas** (on): a source's pre-releases (letters after the numbers, `is_pre_release`) aren't offered unless the library's version is one; the newest release is offered instead. Applies to updates started by hand too.
+
+Per app, besides its switch: **Skip This Version** (on the app's page, or swiping its update in the library) stops offering that version; later versions are offered as usual.
+
 The background task identifiers are read from Info.plist (`$(PRODUCT_BUNDLE_IDENTIFIER).refresh` and `.updates`), so they match however WarpSign was signed, as for the continued-processing task.

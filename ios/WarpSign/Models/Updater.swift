@@ -37,6 +37,8 @@ final class Updater {
         let date: Date
         /// Why it stopped short of installed, if it did
         let problem: String?
+        /// How it ended when that wasn't a problem (signed, not installed)
+        var note: String? = nil
     }
 
     private(set) var available: [UUID: Available] = [:]
@@ -51,6 +53,39 @@ final class Updater {
         didSet { UserDefaults.standard.set(automatic, forKey: Keys.automatic) }
     }
 
+    // How automatic updates run (updates started by hand ignore these)
+
+    /// Only while the phone is charging; off, whenever iOS likes
+    var requireCharging: Bool {
+        didSet { UserDefaults.standard.set(requireCharging, forKey: Keys.requireCharging) }
+    }
+    /// Not over cellular. Low Data Mode always stops them.
+    var wifiOnly: Bool {
+        didSet { UserDefaults.standard.set(wifiOnly, forKey: Keys.wifiOnly) }
+    }
+    /// Install once signed; off, they wait in the library to be installed
+    var installUpdates: Bool {
+        didSet { UserDefaults.standard.set(installUpdates, forKey: Keys.installUpdates) }
+    }
+    /// Notify when apps were updated, not only when one needs the user
+    var notifySuccess: Bool {
+        didSet { UserDefaults.standard.set(notifySuccess, forKey: Keys.notifySuccess) }
+    }
+
+    // Which updates there are (by hand too)
+
+    /// Ignore a source's pre-releases, unless the library's version is one
+    var skipBetas: Bool {
+        didSet {
+            UserDefaults.standard.set(skipBetas, forKey: Keys.skipBetas)
+            evaluate()
+        }
+    }
+    /// Whether apps downloaded from now on update by themselves
+    var newAppsUpdate: Bool {
+        didSet { UserDefaults.standard.set(newAppsUpdate, forKey: Keys.newAppsUpdate) }
+    }
+
     @ObservationIgnored private var library: LibraryStore?
     @ObservationIgnored private var account: AccountStore?
     @ObservationIgnored private var sources: SourcesStore?
@@ -60,11 +95,23 @@ final class Updater {
         static let automatic = "updates.automatic"
         static let history = "updates.history"
         static let lastCheck = "updates.lastCheck"
+        static let requireCharging = "updates.requireCharging"
+        static let wifiOnly = "updates.wifiOnly"
+        static let installUpdates = "updates.install"
+        static let notifySuccess = "updates.notifySuccess"
+        static let skipBetas = "updates.skipBetas"
+        static let newAppsUpdate = "updates.newApps"
     }
 
     init() {
         let defaults = UserDefaults.standard
         automatic = defaults.object(forKey: Keys.automatic) as? Bool ?? true
+        requireCharging = defaults.object(forKey: Keys.requireCharging) as? Bool ?? true
+        wifiOnly = defaults.object(forKey: Keys.wifiOnly) as? Bool ?? true
+        installUpdates = defaults.object(forKey: Keys.installUpdates) as? Bool ?? true
+        notifySuccess = defaults.object(forKey: Keys.notifySuccess) as? Bool ?? false
+        skipBetas = defaults.object(forKey: Keys.skipBetas) as? Bool ?? true
+        newAppsUpdate = defaults.object(forKey: Keys.newAppsUpdate) as? Bool ?? true
         lastCheck = defaults.object(forKey: Keys.lastCheck) as? Date
         if let data = defaults.data(forKey: Keys.history),
            let saved = try? JSONDecoder().decode([Entry].self, from: data) {
@@ -98,24 +145,53 @@ final class Updater {
         for url in urls {
             await sources.refresh(url)
         }
+        evaluate()
+        lastCheck = Date()
+        UserDefaults.standard.set(lastCheck, forKey: Keys.lastCheck)
+    }
+
+    /// Work out the updates from the sources as last downloaded
+    private func evaluate() {
+        guard let library, let sources else { return }
         var found: [UUID: Available] = [:]
         for app in library.apps {
             guard let url = app.sourceURL,
                   let source = sources.sources[url],
                   let sourceApp = source.apps.first(where: { $0.bundleId == (app.sourceAppId ?? app.bundleId) }),
-                  let latest = sourceApp.versions.first,
+                  let version = newest(of: sourceApp.versions, for: app),
+                  version.version != app.skippedVersion,
                   isNewerVersion(
-                      candidate: latest.version,
-                      candidateBuild: latest.build,
+                      candidate: version.version,
+                      candidateBuild: version.build,
                       current: app.version ?? "",
                       currentBuild: app.build
                   )
             else { continue }
-            found[app.id] = Available(appId: app.id, sourceName: source.name, version: latest)
+            found[app.id] = Available(appId: app.id, sourceName: source.name, version: version)
         }
         available = found
-        lastCheck = Date()
-        UserDefaults.standard.set(lastCheck, forKey: Keys.lastCheck)
+    }
+
+    /// The version to offer: the source's newest (sources list newest
+    /// first), or with Skip Betas its newest release, unless the library
+    /// already has a pre-release
+    private func newest(of versions: [AppVersion], for app: LibraryApp) -> AppVersion? {
+        guard skipBetas, !isPreRelease(version: app.version ?? "") else { return versions.first }
+        return versions.first { !isPreRelease(version: $0.version) }
+    }
+
+    /// Don't offer this update; later versions still are
+    func skip(_ id: UUID) {
+        guard let library, let app = library.app(id), let update = available[id] else { return }
+        library.setSkippedVersion(update.version.version, for: app)
+        available[id] = nil
+        status[id] = nil
+    }
+
+    func stopSkipping(_ id: UUID) {
+        guard let library, let app = library.app(id) else { return }
+        library.setSkippedVersion(nil, for: app)
+        evaluate()
     }
 
     /// Apps downloaded before sources were remembered: matched by source
@@ -129,17 +205,19 @@ final class Updater {
                           && sources.sources[url]?.apps.contains(where: { $0.bundleId == app.bundleId }) == true
                   })
             else { continue }
-            library.link(app, sourceURL: url, sourceAppId: app.bundleId)
+            library.link(app, sourceURL: url, sourceAppId: app.bundleId, autoUpdate: newAppsUpdate)
         }
     }
 
     // MARK: Updating
 
-    /// Update `ids` one after another. `showCard` puts the progress in the
-    /// Dynamic Island (only when the user started it); `notify` reports
-    /// what needs the user (background runs). Returns what happened.
+    /// Update `ids` one after another. Started by the user, the progress is
+    /// in the Dynamic Island and each update installs; `automatic` (in the
+    /// background) follows the settings above and notifies instead.
+    /// Returns what happened.
     @discardableResult
-    func run(_ ids: [UUID], showCard: Bool, notify: Bool) async -> [Entry] {
+    func run(_ ids: [UUID], automatic: Bool) async -> [Entry] {
+        let showCard = !automatic
         guard let library, !isUpdating else { return [] }
         let ids = ids.filter { available[$0] != nil }
         guard !ids.isEmpty else { return [] }
@@ -159,14 +237,31 @@ final class Updater {
             if showCard, let name = library.app(id)?.displayName {
                 ContinuedWork.shared.update(subtitle: name, fraction: Double(index) / Double(ids.count))
             }
-            if let entry = await update(id) {
+            if let entry = await update(id, install: !automatic || installUpdates) {
                 entries.append(entry)
-                if notify, let problem = entry.problem {
+                if automatic, let problem = entry.problem {
                     Notifier.post(title: "\(entry.appName) wasn't updated", body: problem)
                 }
             }
         }
+        if automatic && notifySuccess {
+            notifyUpdated(entries.filter { $0.problem == nil })
+        }
         return entries
+    }
+
+    /// One notification for everything that updated
+    private func notifyUpdated(_ entries: [Entry]) {
+        guard !entries.isEmpty else { return }
+        let names = entries.map(\.appName)
+        let list = names.count <= 3
+            ? ListFormatter.localizedString(byJoining: names)
+            : "\(names.prefix(2).joined(separator: ", ")) and \(names.count - 2) more"
+        let signedOnly = entries.allSatisfy { $0.note != nil }
+        Notifier.post(
+            title: signedOnly ? "Updates Ready to Install" : "Apps Updated",
+            body: signedOnly ? "\(list): signed, and waiting in WarpSign." : "\(list) updated."
+        )
     }
 
     /// Every app with an update that's set to update by itself
@@ -175,7 +270,7 @@ final class Updater {
         return available.keys.filter { library.app($0)?.updatesAutomatically ?? false }
     }
 
-    private func update(_ id: UUID) async -> Entry? {
+    private func update(_ id: UUID, install: Bool) async -> Entry? {
         guard let library, let account, let device,
               let update = available[id], let app = library.app(id)
         else { return nil }
@@ -214,6 +309,10 @@ final class Updater {
                 observer: StepRecorder { event in signLog.steps.apply(event) },
                 steps: { signLog.steps }
             )
+            guard install else {
+                return finish(id, app: updated, from: from, to: to, done: "Signed: ready to install",
+                              problem: nil, note: "Signed, not installed")
+            }
             guard device.method == .pairing, device.isReady else {
                 return finish(id, app: updated, from: from, to: to, done: "Signed",
                               problem: "Signed \(to). Install it from the Library: installing over the web needs you to confirm.")
@@ -231,9 +330,11 @@ final class Updater {
         }
     }
 
-    private func finish(_ id: UUID, app: LibraryApp, from: String, to: String, done: String, problem: String?) -> Entry {
+    private func finish(
+        _ id: UUID, app: LibraryApp, from: String, to: String, done: String, problem: String?, note: String? = nil
+    ) -> Entry {
         status[id] = .done(done)
-        return record(Entry(appName: app.displayName, from: from, to: to, date: Date(), problem: problem))
+        return record(Entry(appName: app.displayName, from: from, to: to, date: Date(), problem: problem, note: note))
     }
 
     private func record(_ entry: Entry) -> Entry {

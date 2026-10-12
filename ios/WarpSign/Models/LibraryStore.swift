@@ -25,6 +25,9 @@ struct LibraryApp: Codable, Identifiable, Hashable, Sendable {
     var sourceAppId: String? = nil
     /// Update by itself when its source has a newer version (nil: yes)
     var autoUpdate: Bool? = nil
+    /// A version of it the user chose to skip (a broken release, say): not
+    /// offered as an update, though later versions are
+    var skippedVersion: String? = nil
 
     var updatesAutomatically: Bool { autoUpdate ?? true }
 
@@ -133,7 +136,8 @@ final class LibraryStore {
         origin: String? = nil,
         move: Bool = false,
         sourceURL: String? = nil,
-        sourceAppId: String? = nil
+        sourceAppId: String? = nil,
+        autoUpdate: Bool? = nil
     ) async -> LibraryApp? {
         let name = url.lastPathComponent
         guard ["ipa", "zip"].contains(url.pathExtension.lowercased()) else {
@@ -148,6 +152,7 @@ final class LibraryStore {
             }
             app.sourceURL = sourceURL
             app.sourceAppId = sourceAppId
+            app.autoUpdate = autoUpdate
             apps.insert(app, at: 0)
             save()
             importError = nil
@@ -273,12 +278,19 @@ final class LibraryStore {
         save()
     }
 
+    func setSkippedVersion(_ version: String?, for app: LibraryApp) {
+        guard let index = apps.firstIndex(where: { $0.id == app.id }) else { return }
+        apps[index].skippedVersion = version
+        save()
+    }
+
     /// Remember which source an app came from (apps downloaded before
     /// sources were remembered are matched by source name and bundle ID)
-    func link(_ app: LibraryApp, sourceURL: String, sourceAppId: String) {
+    func link(_ app: LibraryApp, sourceURL: String, sourceAppId: String, autoUpdate: Bool) {
         guard let index = apps.firstIndex(where: { $0.id == app.id }) else { return }
         apps[index].sourceURL = sourceURL
         apps[index].sourceAppId = sourceAppId
+        if apps[index].autoUpdate == nil { apps[index].autoUpdate = autoUpdate }
         save()
     }
 

@@ -1,4 +1,5 @@
 import BackgroundTasks
+import Network
 import UIKit
 
 /// Updates on their own: a background refresh now and then checks sources
@@ -42,10 +43,12 @@ enum BackgroundUpdates {
     }
 
     /// Ask to make the updates found, next time the phone is charging
+    /// (or whenever iOS likes, with Only While Charging off)
+    @MainActor
     static func scheduleUpdates() {
         guard let updatesId else { return }
         let request = BGProcessingTaskRequest(identifier: updatesId)
-        request.requiresExternalPower = true
+        request.requiresExternalPower = Updater.shared.requireCharging
         request.requiresNetworkConnectivity = true
         try? BGTaskScheduler.shared.submit(request)
     }
@@ -72,14 +75,49 @@ enum BackgroundUpdates {
         let work = Task { @MainActor in
             let updater = Updater.shared
             if updater.automatic {
-                if updater.available.isEmpty { await updater.check() }
-                await updater.run(updater.automaticIds, showCard: false, notify: true)
+                if await networkAllows(wifiOnly: updater.wifiOnly) {
+                    if updater.available.isEmpty { await updater.check() }
+                    await updater.run(updater.automaticIds, automatic: true)
+                } else {
+                    // Try again later, on another network
+                    scheduleUpdates()
+                }
             }
             once.complete(success: true)
         }
         task.expirationHandler = {
             work.cancel()
             once.complete(success: false)
+        }
+    }
+}
+
+/// Whether the network suits downloading updates: connected, not in Low
+/// Data Mode, and with Wi-Fi Only, not cellular (or another network iOS
+/// counts as expensive, such as a hotspot)
+private func networkAllows(wifiOnly: Bool) async -> Bool {
+    let path = await withCheckedContinuation { (continuation: CheckedContinuation<NWPath, Never>) in
+        let monitor = NWPathMonitor()
+        let once = ResumeOnce()
+        monitor.pathUpdateHandler = { path in
+            guard once.take() else { return }
+            monitor.cancel()
+            continuation.resume(returning: path)
+        }
+        monitor.start(queue: DispatchQueue(label: "updates.network"))
+    }
+    guard path.status == .satisfied, !path.isConstrained else { return false }
+    return !wifiOnly || !(path.isExpensive || path.usesInterfaceType(.cellular))
+}
+
+private final class ResumeOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+
+    func take() -> Bool {
+        lock.withLock {
+            defer { done = true }
+            return !done
         }
     }
 }

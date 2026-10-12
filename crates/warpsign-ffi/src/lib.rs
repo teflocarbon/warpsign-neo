@@ -457,6 +457,12 @@ pub fn is_newer_version(
     )
 }
 
+/// Whether a source's version is a pre-release (`1.2-beta`, `2.0b3`)
+#[uniffi::export]
+pub fn is_pre_release(version: String) -> bool {
+    source::is_pre_release(&version)
+}
+
 /// Parse a downloaded AltStore-format source
 #[uniffi::export]
 pub fn parse_source(data: Vec<u8>) -> Result<Source, WarpsignError> {
