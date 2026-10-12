@@ -1,8 +1,8 @@
 # Design: installing on the device
 
-Agreed October 2026. WarpSign installs signed apps on the device it runs on in two ways. You pick one in Settings > Installing.
+Agreed October 2026. WarpSign installs signed apps on the device it runs on in two ways. You pick one in Settings > Installing. A pairing file is recommended: installs need no prompt, so automatic updates install themselves, and WarpSign can ask the device what's installed. Over the web is for when there's no computer to make one with; adding a pairing file switches to it, and someone with one who never chose starts on it.
 
-## Over the web (default): ESign's way
+## Over the web, without a computer: ESign's way
 
 No setup. Found by static analysis of ESign 5.0.2, which you described as the most reliable installer you'd used (Feather's local server install has been flaky).
 
@@ -21,7 +21,7 @@ No setup. Found by static analysis of ESign 5.0.2, which you described as the mo
 
 In the Cloudflare dashboard: Workers & Pages > Create > Worker, name it, then Edit code, replace it with `worker/src/index.js` and Deploy. Or `npx wrangler deploy` in `worker/`. Check it with `https://<name>.<account>.workers.dev/manifest?slot=1&port=14310&id=com.example.app&title=Example&version=1.0`.
 
-## With a pairing file: SideStore's way
+## With a pairing file (recommended): SideStore's way
 
 - A pairing file, made once on a computer with `warpsign pair`, plus a loopback VPN that loops `10.7.0.1` back to the device itself: WarpSign's own (below), or LocalDevVPN.
 - **Since iOS 26.6, lockdownd resets connections that arrive through the VPN** (first `QueryType`/`StartSession` gets "connection reset" or "broken pipe"; seen on a device in October 2026, and by SideStore and AirCard users). So `warpsign pair` makes a **RemotePairing** file by default (iOS 17.4+): idevice_pair's format, paired promptlessly over USB through `com.apple.dt.remotepairingdeviced.lockdown`, plus a `UDID` key other tools ignore. On the device, WarpSign pair-verifies on the remote pairing port (usually 49152; overridable in Settings, as some devices advertise another as `_remotepairing._tcp`), opens the TLS-PSK tunnel, runs idevice's userspace TCP stack through it, and reaches AFC and installation_proxy as RSD shim services. It only ever verifies: it never starts a pair-setup from the device. `warpsign pair --lockdown` still makes the old kind for earlier iOS.

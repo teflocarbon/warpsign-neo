@@ -2,20 +2,31 @@ import Foundation
 import Observation
 import UIKit
 
-/// How WarpSign installs apps on this device
+/// How WarpSign installs apps on this device. A pairing file is the way to
+/// go: silent installs, so updates install themselves, and WarpSign can
+/// see what's installed. Over the web is for when there's no computer to
+/// make one with.
 enum InstallMethod: String, CaseIterable, Identifiable {
-    /// iOS's own installer, fed from a loopback server (ESign's way)
-    case web
     /// installation_proxy through a loopback VPN with a pairing file
     /// (SideStore's way): WarpSign's own, or LocalDevVPN
     case pairing
+    /// iOS's own installer, fed from a loopback server (ESign's way)
+    case web
 
     var id: Self { self }
 
     var title: String {
         switch self {
-        case .web: "Over the Web"
         case .pairing: "With a Pairing File"
+        case .web: "Over the Web"
+        }
+    }
+
+    /// What it's for, in the Installing picker
+    var subtitle: String {
+        switch self {
+        case .pairing: "Recommended. Installs without asking, so updates install themselves, and WarpSign sees what's installed. A computer once."
+        case .web: "Without a computer. iOS asks before every install."
         }
     }
 }
@@ -95,13 +106,15 @@ final class DeviceStore {
     }
 
     init() {
+        let pairing = Keychain.data(for: Self.key)
+        // Not chosen yet: a pairing file if there is one
         method = UserDefaults.standard.string(forKey: Self.methodKey)
-            .flatMap(InstallMethod.init(rawValue:)) ?? .web
+            .flatMap(InstallMethod.init(rawValue:)) ?? (pairing == nil ? .web : .pairing)
         manifestServer = UserDefaults.standard.string(forKey: Self.manifestServerKey) ?? ""
         remotePairingPort = UserDefaults.standard.string(forKey: Self.remotePairingPortKey) ?? ""
-        if let data = Keychain.data(for: Self.key) {
+        if let pairing {
             hasPairingFile = true
-            let info = try? pairingFileInfo(pairingFile: data)
+            let info = try? pairingFileInfo(pairingFile: pairing)
             udid = info?.udid
             isRemotePairing = info?.remotePairing ?? false
         }
@@ -119,6 +132,8 @@ final class DeviceStore {
             isRemotePairing = info.remotePairing
             connection = .unknown
             importError = nil
+            // The better way: use it
+            method = .pairing
         } catch {
             importError = error.userMessage
         }

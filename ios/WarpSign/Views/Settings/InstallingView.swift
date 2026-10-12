@@ -25,7 +25,13 @@ struct InstallingView: View {
             Section {
                 Picker("Method", selection: $device.method) {
                     ForEach(InstallMethod.allCases) { method in
-                        Text(method.title).tag(method)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(method.title)
+                            Text(method.subtitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .tag(method)
                     }
                 }
                 .pickerStyle(.inline)
@@ -33,9 +39,19 @@ struct InstallingView: View {
             } footer: {
                 switch device.method {
                 case .web:
-                    Text("No setup. WarpSign hands the app to iOS's own installer, as ESign does: iOS asks you to confirm, then installs it. Needs an internet connection to start each install.")
+                    Text("WarpSign hands the app to iOS's own installer, as ESign does: iOS asks you to confirm each install, so updates wait for you, and WarpSign can't see what's installed. Needs an internet connection to start each install. Make a pairing file once on a computer (`warpsign pair`) to do without all that.")
                 case .pairing:
-                    Text("WarpSign talks to this device's installer directly, as SideStore does, with clearer errors. Needs a pairing file made once on a computer.")
+                    Text("WarpSign talks to this device's installer directly, as SideStore does: no prompts, clearer errors, updates that install themselves, and it knows what's installed. Needs a pairing file made once on a computer with `warpsign pair`.")
+                }
+            }
+
+            if device.method == .web && device.hasPairingFile {
+                Section {
+                    Button("Use the Pairing File", systemImage: "cable.connector") {
+                        device.method = .pairing
+                    }
+                } footer: {
+                    Text("You've added one: installs, updates and what's installed all work better with it.")
                 }
             }
 
