@@ -41,6 +41,8 @@ struct AppDetailView: View {
                 }
             }
 
+            AppUpdatesSection(app: app)
+
             if app.isEncrypted {
                 Section {
                     Label {

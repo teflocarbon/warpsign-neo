@@ -51,7 +51,7 @@ crates/warpsign-cli/    The `warpsign` command
 crates/warpsign-ffi/    Swift bindings for the iOS app (uniffi)
 crates/uniffi-bindgen/  Generates those bindings
 ios/                    SwiftUI app (XcodeGen spec + sources)
-docs/design/            Agreed designs (certificates, portal login and API)
+docs/design/            Agreed designs (certificates, installing, portal, updates)
 docs/spikes/            Findings from experiments (e.g. signing with rcodesign)
 fixtures/               Reference outputs from Python warpsign
 tools/                  Fixture generator, test data builders, iOS build, macOS A/B test for rcodesign
@@ -62,6 +62,7 @@ tools/                  Fixture generator, test data builders, iOS build, macOS 
 - **Library**: import IPAs from Files or the share sheet, or download them from sources. Shows icons, versions and sizes without unpacking, and flags IPAs that are still App Store encrypted (they install but crash).
 - **Signing**: Python warpsign's options (name, icon, identifiers, device and display tweaks, debugging), remembered between signs. Signing runs as ten named steps shown live; each step expands to its log, and the log can be copied for bug reports. The result is shared from the app.
 - **Sources**: AltStore-format repos, with search, screenshots, versions and downloads.
+- **Automatic updates**: apps from sources update overnight while charging, signed as they were last signed and installed with the pairing file, with a notification only when one needs you. Per app, or off entirely ([design](docs/design/updates.md)).
 - **Settings**: sign in with your Apple ID (device or SMS two-factor codes; the session lives in the Keychain), pick a team, create the development and distribution certificates, back them up as one passphrase-protected `.p12`, restore a backup, and check certificates with Apple. Diagnostics check provisioning profiles for PPQ.
 
 To build it on a Mac (Xcode, rustup and `brew install xcodegen`):

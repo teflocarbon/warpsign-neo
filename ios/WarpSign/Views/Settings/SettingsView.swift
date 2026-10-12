@@ -102,6 +102,11 @@ struct SettingsView: View {
 
                 Section {
                     NavigationLink {
+                        UpdatesSettingsView()
+                    } label: {
+                        Label("Automatic Updates", systemImage: "arrow.down.app")
+                    }
+                    NavigationLink {
                         StorageView()
                     } label: {
                         Label("Storage", systemImage: "internaldrive")

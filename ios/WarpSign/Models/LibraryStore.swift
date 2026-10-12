@@ -19,6 +19,14 @@ struct LibraryApp: Codable, Identifiable, Hashable, Sendable {
     /// Where it came from: a source's name, or nil if imported from a file
     var origin: String?
     var signedCopies: [SignedCopy] = []
+    /// The source it was downloaded from, and its bundle ID there, to look
+    /// for updates
+    var sourceURL: String? = nil
+    var sourceAppId: String? = nil
+    /// Update by itself when its source has a newer version (nil: yes)
+    var autoUpdate: Bool? = nil
+
+    var updatesAutomatically: Bool { autoUpdate ?? true }
 
     var isEncrypted: Bool { encryption == "encrypted" }
 
@@ -120,7 +128,13 @@ final class LibraryStore {
     /// Copy an IPA (from Files or the share sheet), or the IPA in a zip, into
     /// the library
     @discardableResult
-    func importFile(_ url: URL, origin: String? = nil, move: Bool = false) async -> LibraryApp? {
+    func importFile(
+        _ url: URL,
+        origin: String? = nil,
+        move: Bool = false,
+        sourceURL: String? = nil,
+        sourceAppId: String? = nil
+    ) async -> LibraryApp? {
         let name = url.lastPathComponent
         guard ["ipa", "zip"].contains(url.pathExtension.lowercased()) else {
             importError = "\(name) isn't an app: choose an .ipa file (or a .zip with one inside)."
@@ -129,9 +143,11 @@ final class LibraryStore {
         importing.append(name)
         defer { importing.removeAll { $0 == name } }
         do {
-            let app = try await background {
+            var app = try await background {
                 try Self.add(url, origin: origin, move: move)
             }
+            app.sourceURL = sourceURL
+            app.sourceAppId = sourceAppId
             apps.insert(app, at: 0)
             save()
             importError = nil
@@ -176,11 +192,7 @@ final class LibraryStore {
             if let icon = metadata.icon {
                 try icon.write(to: folder.appendingPathComponent("icon.png"))
             }
-            let encryption = switch metadata.encryption {
-            case .decrypted: "decrypted"
-            case .encrypted: "encrypted"
-            case .unknown: "unknown"
-            }
+            let encryption = encryptionName(metadata.encryption)
             return LibraryApp(
                 id: id,
                 displayName: metadata.displayName,
@@ -199,6 +211,100 @@ final class LibraryStore {
             try? fileManager.removeItem(at: folder)
             throw error
         }
+    }
+
+    nonisolated private static func encryptionName(_ encryption: Encryption) -> String {
+        switch encryption {
+        case .decrypted: "decrypted"
+        case .encrypted: "encrypted"
+        case .unknown: "unknown"
+        }
+    }
+
+    // MARK: Updates
+
+    /// Put a newer version of `app` in place of its IPA: the same library
+    /// entry, with its signed copies and settings kept. Refuses a different
+    /// app.
+    func replaceIPA(of app: LibraryApp, with file: URL) async throws -> LibraryApp {
+        let id = app.id
+        let bundleId = app.bundleId
+        let metadata = try await background { () throws -> IpaMetadata in
+            let fileManager = FileManager.default
+            let folder = Self.folder(of: id)
+            let staged = folder.appendingPathComponent("update.ipa")
+            try? fileManager.removeItem(at: staged)
+            try fileManager.moveItem(at: file, to: staged)
+            let unwrapped = folder.appendingPathComponent("unwrapped.ipa")
+            if try unwrapIpa(path: staged.path, output: unwrapped.path) {
+                try fileManager.removeItem(at: staged)
+                try fileManager.moveItem(at: unwrapped, to: staged)
+            }
+            let metadata = try readIpaMetadata(ipaPath: staged.path)
+            guard metadata.bundleId == bundleId else {
+                try? fileManager.removeItem(at: staged)
+                throw WarpsignError.Ipa(message: "The update is a different app (\(metadata.bundleId)), not \(bundleId).")
+            }
+            _ = try fileManager.replaceItemAt(Self.ipaURL(of: id), withItemAt: staged)
+            if let icon = metadata.icon {
+                try? icon.write(to: folder.appendingPathComponent("icon.png"))
+            }
+            return metadata
+        }
+        guard let index = apps.firstIndex(where: { $0.id == id }) else {
+            throw WarpsignError.Ipa(message: "\(app.displayName) is no longer in the library.")
+        }
+        apps[index].displayName = metadata.displayName
+        apps[index].version = metadata.version
+        apps[index].build = metadata.build
+        apps[index].minimumOS = metadata.minimumOs
+        apps[index].fileSize = metadata.fileSize
+        apps[index].installedSize = metadata.installedSize
+        apps[index].extensionCount = metadata.extensionCount
+        apps[index].encryption = Self.encryptionName(metadata.encryption)
+        icons[id] = nil
+        save()
+        return apps[index]
+    }
+
+    func setAutoUpdate(_ on: Bool, for app: LibraryApp) {
+        guard let index = apps.firstIndex(where: { $0.id == app.id }) else { return }
+        apps[index].autoUpdate = on
+        save()
+    }
+
+    /// Remember which source an app came from (apps downloaded before
+    /// sources were remembered are matched by source name and bundle ID)
+    func link(_ app: LibraryApp, sourceURL: String, sourceAppId: String) {
+        guard let index = apps.firstIndex(where: { $0.id == app.id }) else { return }
+        apps[index].sourceURL = sourceURL
+        apps[index].sourceAppId = sourceAppId
+        save()
+    }
+
+    /// The icon chosen at the last sign, if any, so updates keep it
+    nonisolated static func customIconURL(of id: UUID) -> URL {
+        folder(of: id).appendingPathComponent("custom-icon.png")
+    }
+
+    func customIcon(of app: LibraryApp) -> Data? {
+        try? Data(contentsOf: Self.customIconURL(of: app.id))
+    }
+
+    func setCustomIcon(_ icon: Data?, of app: LibraryApp) {
+        guard !isDemo else { return }
+        let url = Self.customIconURL(of: app.id)
+        if let icon {
+            try? icon.write(to: url, options: .atomic)
+        } else {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
+    /// The options `app` was last signed with, if WarpSign kept them
+    func lastSigningOptions(of app: LibraryApp) -> SigningOptions? {
+        guard let newest = app.signedCopies.max(by: { $0.date < $1.date }) else { return nil }
+        return signingRecord(for: newest, of: app)?.options
     }
 
     func delete(_ app: LibraryApp) {

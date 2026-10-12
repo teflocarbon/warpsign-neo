@@ -441,6 +441,22 @@ pub struct NewsItem {
     pub app_id: Option<String>,
 }
 
+/// Whether a source's version (and build) is newer than the library's
+#[uniffi::export]
+pub fn is_newer_version(
+    candidate: String,
+    candidate_build: Option<String>,
+    current: String,
+    current_build: Option<String>,
+) -> bool {
+    source::is_newer_version(
+        &candidate,
+        candidate_build.as_deref(),
+        &current,
+        current_build.as_deref(),
+    )
+}
+
 /// Parse a downloaded AltStore-format source
 #[uniffi::export]
 pub fn parse_source(data: Vec<u8>) -> Result<Source, WarpsignError> {

@@ -2,12 +2,27 @@ import SwiftUI
 
 @main
 struct WarpSignApp: App {
-    @State private var library = Demo.isOn ? Demo.library() : LibraryStore()
-    @State private var account = Demo.isOn ? Demo.account() : AccountStore()
-    @State private var sources = Demo.isOn ? Demo.sources() : SourcesStore()
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var library: LibraryStore
+    @State private var account: AccountStore
+    @State private var sources: SourcesStore
     @State private var inspection = InspectionModel()
-    @State private var device = DeviceStore()
+    @State private var device: DeviceStore
     @State private var tab = Demo.isOn ? Demo.tab : AppTab.library
+
+    init() {
+        let library = Demo.isOn ? Demo.library() : LibraryStore()
+        let account = Demo.isOn ? Demo.account() : AccountStore()
+        let sources = Demo.isOn ? Demo.sources() : SourcesStore()
+        let device = DeviceStore()
+        _library = State(initialValue: library)
+        _account = State(initialValue: account)
+        _sources = State(initialValue: sources)
+        _device = State(initialValue: device)
+        // Background launches update apps without any screen
+        Updater.shared.attach(library: library, account: account, sources: sources, device: device)
+    }
 
     enum AppTab: Hashable {
         case library, sources, settings
@@ -32,7 +47,23 @@ struct WarpSignApp: App {
             .environment(sources)
             .environment(inspection)
             .environment(device)
-            .task { await account.restore() }
+            .task {
+                await account.restore()
+                await Updater.shared.checkIfDue()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                switch phase {
+                case .active:
+                    Task { await Updater.shared.checkIfDue() }
+                case .background:
+                    BackgroundUpdates.scheduleRefresh()
+                    if Updater.shared.automatic && !Updater.shared.automaticIds.isEmpty {
+                        BackgroundUpdates.scheduleUpdates()
+                    }
+                default:
+                    break
+                }
+            }
             // IPAs, profiles and pairing files opened in WarpSign from Files or the share sheet
             .onOpenURL { url in
                 Task {

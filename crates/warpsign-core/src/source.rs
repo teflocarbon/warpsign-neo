@@ -259,3 +259,105 @@ fn number(value: &Value) -> Option<u64> {
 fn hex_color(color: String) -> String {
     format!("#{}", color.trim_start_matches('#').to_ascii_uppercase())
 }
+
+/// Whether a source's version is newer than the one in the library, by
+/// version, then build when the versions are the same. Lenient, as sources
+/// are: `v1.2`, `1.10` > `1.9`, a pre-release (`1.2-beta`) before its
+/// release, missing parts as 0. Different but incomparable strings aren't
+/// newer, so nothing updates on a guess.
+pub fn is_newer_version(
+    candidate: &str,
+    candidate_build: Option<&str>,
+    current: &str,
+    current_build: Option<&str>,
+) -> bool {
+    use std::cmp::Ordering;
+    match compare_versions(candidate, current) {
+        Some(Ordering::Greater) => true,
+        Some(Ordering::Equal) => match (candidate_build, current_build) {
+            (Some(new), Some(old)) => compare_versions(new, old) == Some(Ordering::Greater),
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn compare_versions(a: &str, b: &str) -> Option<std::cmp::Ordering> {
+    use std::cmp::Ordering;
+    let (a_numbers, a_pre) = version_parts(a)?;
+    let (b_numbers, b_pre) = version_parts(b)?;
+    let length = a_numbers.len().max(b_numbers.len());
+    for index in 0..length {
+        let x = a_numbers.get(index).copied().unwrap_or(0);
+        let y = b_numbers.get(index).copied().unwrap_or(0);
+        match x.cmp(&y) {
+            Ordering::Equal => {}
+            other => return Some(other),
+        }
+    }
+    // Same numbers: a release is newer than its pre-releases
+    Some(match (a_pre, b_pre) {
+        (None, None) => Ordering::Equal,
+        (None, Some(_)) => Ordering::Greater,
+        (Some(_), None) => Ordering::Less,
+        (Some(x), Some(y)) => x.cmp(&y),
+    })
+}
+
+/// "v1.2.3-beta.2" → ([1, 2, 3], Some("beta.2")); None without a number
+fn version_parts(text: &str) -> Option<(Vec<u64>, Option<String>)> {
+    let text = text.trim();
+    let text = text.strip_prefix(['v', 'V']).unwrap_or(text);
+    let end = text
+        .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .unwrap_or(text.len());
+    let (numbers, rest) = text.split_at(end);
+    let numbers: Vec<u64> = numbers
+        .split('.')
+        .filter(|part| !part.is_empty())
+        .map(|part| part.parse().ok())
+        .collect::<Option<_>>()?;
+    if numbers.is_empty() {
+        return None;
+    }
+    let pre = rest.trim_start_matches(['-', '+', ' ', '_']);
+    Some((numbers, (!pre.is_empty()).then(|| pre.to_ascii_lowercase())))
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::is_newer_version as newer;
+
+    #[test]
+    fn compares_versions_as_numbers() {
+        assert!(newer("1.10", None, "1.9", None));
+        assert!(newer("2.0", None, "1.99.9", None));
+        assert!(newer("1.2.1", None, "1.2", None));
+        assert!(!newer("1.2", None, "1.2.0", None));
+        assert!(!newer("1.9", None, "1.10", None));
+        assert!(newer("v21.42.1", None, "21.41.5", None));
+    }
+
+    #[test]
+    fn releases_beat_their_pre_releases() {
+        assert!(newer("1.2", None, "1.2-beta", None));
+        assert!(!newer("1.2-beta", None, "1.2", None));
+        assert!(newer("1.2-beta.2", None, "1.2-beta.1", None));
+        assert!(newer("1.3-beta", None, "1.2", None));
+    }
+
+    #[test]
+    fn builds_break_ties() {
+        assert!(newer("1.2", Some("45"), "1.2", Some("44")));
+        assert!(!newer("1.2", Some("44"), "1.2", Some("45")));
+        assert!(!newer("1.2", Some("45"), "1.2", None));
+        assert!(!newer("1.2", None, "1.2", None));
+    }
+
+    #[test]
+    fn never_guesses() {
+        assert!(!newer("latest", None, "1.0", None));
+        assert!(!newer("1.0", None, "nightly", None));
+        assert!(!newer("", None, "", None));
+    }
+}

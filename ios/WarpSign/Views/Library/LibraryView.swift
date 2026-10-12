@@ -40,6 +40,7 @@ struct LibraryView: View {
                 }
                 if search.isEmpty {
                     MigrationBanner()
+                    UpdatesSection()
                     companionCard
                 }
                 ForEach(apps) { app in

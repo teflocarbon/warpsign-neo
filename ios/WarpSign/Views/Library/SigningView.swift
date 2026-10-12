@@ -152,7 +152,6 @@ struct SigningView: View {
     }
 
     private func sign() async {
-        let (output, draft) = library.newSignedCopy(of: app)
         let recorder = StepRecorder { event in
             steps.apply(event)
             ContinuedWork.shared.update(steps)
@@ -160,29 +159,17 @@ struct SigningView: View {
         ContinuedWork.shared.begin(title: "Signing \(app.displayName)", subtitle: "Starting")
         defer { ContinuedWork.shared.finish() }
         do {
-            let result = try await account.sign(
-                ipa: LibraryStore.ipaURL(of: app.id),
-                output: output,
-                kind: options.certificate.type,
-                settings: options.settings(icon: icon),
-                observer: recorder
+            let (result, copy) = try await SignJob.run(
+                app: app,
+                options: options,
+                icon: icon,
+                account: account,
+                library: library,
+                observer: recorder,
+                steps: { steps }
             )
-            var copy = draft
-            copy.bundleId = result.bundleId
-            copy.teamId = account.selectedTeam?.teamId ?? ""
-            copy.certificate = options.certificate == .development ? "Development" : "Ad Hoc"
-            copy.certificateSerial = account.info(options.certificate.type)?.serialNumber
-            copy.ppqCheck = result.profiles.contains { $0.ppqCheck }
-            copy.profileExpires = result.profiles
-                .compactMap { $0.expiresAt.map(Date.init(unixTime:)) }
-                .min()
-            // Let the last step events (queued on the main thread) land first
-            await Task.yield()
-            let record = SigningRecord(result: result, options: options, customIcon: icon != nil, steps: steps)
-            library.addSignedCopy(copy, record: record, to: app)
             phase = .done(result, copy)
         } catch {
-            try? FileManager.default.removeItem(at: output.deletingLastPathComponent())
             phase = .failed(error.userMessage)
         }
     }

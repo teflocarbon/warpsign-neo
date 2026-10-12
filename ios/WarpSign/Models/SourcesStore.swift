@@ -93,7 +93,15 @@ final class SourcesStore {
                     if self.downloads[key] != nil { self.downloads[key] = progress }
                 }
             }
-            await library.importFile(file, origin: source.name, move: true)
+            // Remembered, so the library can look here for updates
+            let sourceURL = urls.first { sources[$0]?.name == source.name }
+            await library.importFile(
+                file,
+                origin: source.name,
+                move: true,
+                sourceURL: sourceURL,
+                sourceAppId: app.bundleId
+            )
             try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
             downloadError = nil
         } catch {

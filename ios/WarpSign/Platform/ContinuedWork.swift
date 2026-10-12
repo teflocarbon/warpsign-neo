@@ -81,6 +81,14 @@ final class ContinuedWork {
         Self.grant.show(title: title, subtitle: subtitle, fraction: fraction)
     }
 
+    /// Show a step of a job made of several (updates), and how far it is
+    func update(subtitle: String, fraction: Double) {
+        guard wanted else { return }
+        self.subtitle = subtitle
+        self.fraction = fraction
+        Self.grant.show(title: title, subtitle: subtitle, fraction: fraction)
+    }
+
     /// The job is over, however it went
     func finish() {
         wanted = false
