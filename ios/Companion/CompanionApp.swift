@@ -44,14 +44,12 @@ struct ContentView: View {
             .navigationTitle("Companion")
             .fileImporter(
                 isPresented: Binding(get: { importing != nil }, set: { if !$0 { importing = nil } }),
-                allowedContentTypes: importing == .pairing ? Self.pairingTypes : [Self.ipaType]
+                // Any file, checked after: types depend on which apps declared them
+                allowedContentTypes: [.data]
             ) { result in
                 guard case .success(let url) = result else { return }
-                if url.pathExtension.lowercased() == "ipa" {
-                    Task { await store.pick(url) }
-                } else {
-                    store.importPairingFile(url)
-                }
+                // By extension: .ipa, or a pairing file
+                store.open(url)
             }
             .task { await store.tunnel.refresh() }
         }

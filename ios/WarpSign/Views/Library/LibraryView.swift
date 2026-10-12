@@ -77,7 +77,9 @@ struct LibraryView: View {
             }
             .fileImporter(
                 isPresented: $showingImporter,
-                allowedContentTypes: [Self.ipaType, .zip],
+                // Any file: the type iOS gives .ipa files depends on which installed
+                // app declared it, and a mismatch greys them out. Checked after.
+                allowedContentTypes: [.data],
                 allowsMultipleSelection: true
             ) { result in
                 guard case .success(let urls) = result else { return }

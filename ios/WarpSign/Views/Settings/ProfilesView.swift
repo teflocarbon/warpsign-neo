@@ -46,7 +46,8 @@ struct ProfilesView: View {
         }
         .fileImporter(
             isPresented: $showingImporter,
-            allowedContentTypes: [Self.profileType]
+            // Any file, checked after: types depend on which apps declared them
+            allowedContentTypes: [.data]
         ) { result in
             if case .success(let url) = result {
                 Task { await model.addProfile(url) }

@@ -47,7 +47,8 @@ struct InstallingView: View {
             companionSection
         }
         .navigationTitle("Installing")
-        .fileImporter(isPresented: $importing, allowedContentTypes: Self.pairingTypes) { result in
+        // Any file, checked after: types depend on which apps declared them
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.data]) { result in
             if case .success(let url) = result {
                 device.importPairingFile(url)
                 Task { await device.check() }

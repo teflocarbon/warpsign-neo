@@ -122,6 +122,10 @@ final class LibraryStore {
     @discardableResult
     func importFile(_ url: URL, origin: String? = nil, move: Bool = false) async -> LibraryApp? {
         let name = url.lastPathComponent
+        guard ["ipa", "zip"].contains(url.pathExtension.lowercased()) else {
+            importError = "\(name) isn't an app: choose an .ipa file (or a .zip with one inside)."
+            return nil
+        }
         importing.append(name)
         defer { importing.removeAll { $0 == name } }
         do {

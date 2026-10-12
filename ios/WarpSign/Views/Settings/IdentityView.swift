@@ -61,7 +61,8 @@ struct IdentityView: View {
         }
         .task { await check() }
         .sheet(isPresented: $backingUp) { BackupView() }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [Self.p12Type]) { result in
+        // Any file, checked after: types depend on which apps declared them
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.data]) { result in
             if case .success(let url) = result {
                 importURL = url
                 importPassword = ""
