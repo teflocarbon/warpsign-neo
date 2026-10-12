@@ -8,7 +8,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.2.0"
+    MARKETING_VERSION: "0.3.0"
     # CI sets both from the IPA workflow's run number and the commit built
     CURRENT_PROJECT_VERSION: "1"
     WARPSIGN_COMMIT: local

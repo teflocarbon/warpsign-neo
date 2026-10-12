@@ -4441,7 +4441,7 @@ dependencies = [
 
 [[package]]
 name = "uniffi-bindgen"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "uniffi",
 ]
@@ -4669,7 +4669,7 @@ dependencies = [
 
 [[package]]
 name = "warpsign-cli"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4686,7 +4686,7 @@ dependencies = [
 
 [[package]]
 name = "warpsign-core"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "apple-codesign",
  "base64 0.22.1",
@@ -4717,7 +4717,7 @@ dependencies = [
 
 [[package]]
 name = "warpsign-ffi"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "plist",
  "serde_json",
