@@ -69,7 +69,8 @@ struct SigningOptions: Codable, Equatable {
             patchGameMode: patchGameMode,
             statusBar: ffiStatusBar,
             interfaceStyle: ffiInterfaceStyle,
-            removeUrlSchemes: removeUrlSchemes
+            removeUrlSchemes: removeUrlSchemes,
+            pretendNotGranted: DeveloperOptions.pretendNotGranted
         )
     }
 

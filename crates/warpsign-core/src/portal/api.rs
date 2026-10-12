@@ -216,6 +216,25 @@ impl Portal {
         Ok((certificate, content))
     }
 
+    /// Revoke a certificate. Every app signed with it stops opening at
+    /// once, so only ever on the user's explicit say-so.
+    ///
+    /// Not in Python warpsign; the App Store Connect API's request, which
+    /// the portal fronts, as for creating certificates.
+    pub fn revoke_certificate(&self, certificate_id: &str) -> Result<(), PortalError> {
+        let operation = "revoking a certificate";
+        let request = self.write_json(Request::new(
+            Method::Delete,
+            format!("{V1}/certificates/{certificate_id}"),
+        ));
+        let response = self.send(request, operation)?;
+        if response.is_success() {
+            Ok(())
+        } else {
+            Err(PortalError::from_response(operation, &response))
+        }
+    }
+
     /// A certificate's DER contents
     pub fn certificate_content(&self, certificate_id: &str) -> Result<Vec<u8>, PortalError> {
         let operation = "downloading a certificate";

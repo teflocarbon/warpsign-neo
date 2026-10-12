@@ -263,6 +263,9 @@ pub struct SignSettings {
     pub status_bar: StatusBar,
     pub interface_style: InterfaceStyle,
     pub remove_url_schemes: bool,
+    /// Developer option: drop keys from capabilities Apple must grant, as
+    /// if the team hadn't been granted them
+    pub pretend_not_granted: bool,
 }
 
 /// Python warpsign's defaults
@@ -285,6 +288,7 @@ pub fn default_sign_settings() -> SignSettings {
         status_bar: StatusBar::Unchanged,
         interface_style: InterfaceStyle::Automatic,
         remove_url_schemes: false,
+        pretend_not_granted: false,
     }
 }
 
@@ -318,6 +322,7 @@ impl From<SignSettings> for SignOptions {
             encode_ids: settings.encode_ids,
             patch_debug: settings.patch_debug,
             profile_cache: None,
+            pretend_not_granted: settings.pretend_not_granted,
         }
     }
 }
@@ -715,6 +720,18 @@ impl AppleAccount {
             certificate: identity.certificate_der().to_vec(),
             private_key: key,
         })
+    }
+
+    /// Revoke a certificate by its portal ID. Every app signed with it
+    /// stops opening at once: only on the user's explicit say-so.
+    pub fn revoke_certificate(
+        &self,
+        team_id: String,
+        certificate_id: String,
+    ) -> Result<(), WarpsignError> {
+        self.portal(&team_id)
+            .revoke_certificate(&certificate_id)
+            .map_err(portal_error)
     }
 
     /// Which of `identities` still have their certificate on the portal (not

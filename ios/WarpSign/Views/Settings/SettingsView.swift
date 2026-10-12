@@ -53,11 +53,25 @@ struct SettingsView: View {
                     Text("For paid Apple Developer Program members. Free accounts aren't supported.")
                 }
 
+                MigrationBanner()
+
                 Section {
                     NavigationLink {
                         IdentityView()
                     } label: {
                         IdentitySummary()
+                    }
+                    ForEach([CertificateType.development, .distribution], id: \.self) { kind in
+                        if account.identities[kind] != nil && account.isSignedIn {
+                            NavigationLink {
+                                MigrationView(kind: kind)
+                            } label: {
+                                Label(
+                                    kind == .development ? "New Development Certificate" : "New Distribution Certificate",
+                                    systemImage: "arrow.triangle.2.circlepath"
+                                )
+                            }
+                        }
                     }
                 } header: {
                     Text("Signing Identity")
@@ -111,6 +125,11 @@ struct SettingsView: View {
                         NetworkLogView()
                     } label: {
                         Label("Network Log", systemImage: "network")
+                    }
+                    NavigationLink {
+                        DeveloperView()
+                    } label: {
+                        Label("Developer", systemImage: "hammer")
                     }
                 }
 

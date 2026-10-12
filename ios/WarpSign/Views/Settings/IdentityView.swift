@@ -92,7 +92,7 @@ struct IdentityView: View {
         if !account.isSignedIn {
             return "Sign in to create certificates. Restoring a backup works without signing in."
         }
-        return "WarpSign makes its own development and distribution certificates, with keys that never leave this device except in your backup. It never revokes certificates: to free a slot, revoke one at developer.apple.com."
+        return "WarpSign makes its own development and distribution certificates, with keys that never leave this device except in your backup. To replace one, as it nears expiry or after it's revoked, use New Certificate in Settings: it only ever revokes a certificate you choose, when there's no room for another."
     }
 
     @ViewBuilder

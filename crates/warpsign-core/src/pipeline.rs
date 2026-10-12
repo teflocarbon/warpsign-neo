@@ -178,6 +178,10 @@ pub struct SignOptions {
     /// Where to keep provisioning profiles between signs (see
     /// [`crate::profile_reuse`]); None downloads them each time
     pub profile_cache: Option<PathBuf>,
+    /// Developer option: treat keys from capabilities Apple must grant
+    /// (e.g. Family Controls (Distribution)) as not granted even when the
+    /// profile grants them, to see that path on any account
+    pub pretend_not_granted: bool,
 }
 
 impl Default for SignOptions {
@@ -187,6 +191,7 @@ impl Default for SignOptions {
             encode_ids: true,
             patch_debug: false,
             profile_cache: None,
+            pretend_not_granted: false,
         }
     }
 }
@@ -877,7 +882,15 @@ pub fn sign_ipa(
             // capabilities the team hasn't been granted are dropped, so the
             // app still installs.
             if let Some(profile) = parsed_profiles.get(bundle_entitlements.len()) {
-                for key in ungranted(profile, &entitlements) {
+                let mut keys = ungranted(profile, &entitlements);
+                if options.pretend_not_granted {
+                    for key in entitlements.keys() {
+                        if requests.request_only(key).is_some() && !keys.contains(key) {
+                            keys.push(key.clone());
+                        }
+                    }
+                }
+                for key in keys {
                     let value = entitlements.get(&key).map(short_value).unwrap_or_default();
                     let warning = if let Some(request) = requests.request_only(&key) {
                         entitlements.remove(&key);

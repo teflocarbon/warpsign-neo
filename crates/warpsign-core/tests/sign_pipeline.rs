@@ -1046,6 +1046,40 @@ fn names_entitlements_the_profile_does_not_grant() {
 }
 
 #[test]
+fn can_pretend_apple_has_not_granted_a_capability() {
+    // Push Notifications as if it had to be requested, on a portal whose
+    // profiles grant it
+    let request_only = || {
+        let mut list = FakePortal::capabilities();
+        for capability in list["data"].as_array_mut().unwrap() {
+            if capability["id"] == "PUSH_NOTIFICATIONS" {
+                capability["attributes"]["canRequestFromPortal"] = json!(true);
+            }
+        }
+        list
+    };
+    let removed = |signed: &warpsign_core::pipeline::SignedApp| {
+        signed
+            .warnings
+            .iter()
+            .any(|warning| warning.starts_with("App: removed aps-environment"))
+    };
+
+    let fake = realistic_portal().with(|fake| fake.capability_list = Some(request_only()));
+    let (_dir, result, _) = sign(&fake, &SignOptions::default(), TEAM);
+    assert!(!removed(&result.unwrap()));
+
+    let fake = realistic_portal().with(|fake| fake.capability_list = Some(request_only()));
+    let options = SignOptions {
+        pretend_not_granted: true,
+        ..Default::default()
+    };
+    let (_dir, result, _) = sign(&fake, &options, TEAM);
+    let signed = result.unwrap();
+    assert!(removed(&signed), "{:?}", signed.warnings);
+}
+
+#[test]
 fn drops_entitlements_apple_has_not_granted() {
     // Push Notifications as if it had to be requested from Apple (as
     // Family Controls (Distribution) does), and the profile doesn't grant it

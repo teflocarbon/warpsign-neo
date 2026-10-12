@@ -872,6 +872,7 @@ fn sign(store: &Store, args: SignArgs) -> Result<()> {
         patch_debug: args.patch_debug,
         // Profiles kept between signs, so an unchanged app makes no portal changes
         profile_cache: Some(store.dir().join("profiles")),
+        pretend_not_granted: false,
     };
 
     let work = tempfile::tempdir()?;

@@ -37,6 +37,9 @@ struct LibraryView: View {
                 if let error = library.importError {
                     Section { ErrorRow(message: error) }
                 }
+                if search.isEmpty {
+                    MigrationBanner()
+                }
                 ForEach(apps) { app in
                     NavigationLink(value: app.id) {
                         LibraryRow(app: app)

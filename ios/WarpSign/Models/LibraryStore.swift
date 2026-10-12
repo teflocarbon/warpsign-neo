@@ -288,6 +288,19 @@ final class LibraryStore {
         }
     }
 
+    /// Apps whose newest signed copy used the certificate `serial`; for
+    /// copies signed before serials were kept, the same kind of
+    /// certificate (`certificate`, e.g. "Ad Hoc") before `before`
+    func apps(signedWith serial: String, certificate: String, before: Date) -> [LibraryApp] {
+        apps.filter { app in
+            guard let newest = app.signedCopies.max(by: { $0.date < $1.date }) else { return false }
+            if let used = newest.certificateSerial {
+                return used.caseInsensitiveCompare(serial) == .orderedSame
+            }
+            return newest.certificate == certificate && newest.date < before
+        }
+    }
+
     /// Where the library's files are, to measure
     func storageFiles() -> StorageUsage.Files {
         let superseded = Set(supersededCopies.map(\.copy.id))

@@ -37,6 +37,12 @@ final class AccountStore {
     private(set) var identities: [CertificateType: StoredIdentity] = [:]
     /// Certificate serial → whether the portal still lists it
     private(set) var portalStatus: [String: Bool] = [:]
+    /// Moves to a new certificate under way, by kind
+    private(set) var migrations: [String: CertificateMigration] = [:]
+    /// Developer option: offer migration as if each certificate were expiring
+    var forceMigration: Bool {
+        didSet { defaults.set(forceMigration, forKey: Keys.forceMigration) }
+    }
 
     @ObservationIgnored private var account: AppleAccount?
     /// The password from the sign-in under way, kept if it's remembered
@@ -58,11 +64,18 @@ final class AccountStore {
             kind == .development ? "identity.development" : "identity.distribution"
         }
         static func ppq(_ team: String) -> String { "ppq.\(team)" }
+        static let migrations = "certificateMigrations"
+        static let forceMigration = "developer.forceMigration"
     }
 
     init() {
         appleId = defaults.string(forKey: Keys.appleId)
         selectedTeamId = defaults.string(forKey: Keys.team)
+        forceMigration = UserDefaults.standard.bool(forKey: Keys.forceMigration)
+        if let data = UserDefaults.standard.data(forKey: Keys.migrations),
+           let saved = try? JSONDecoder().decode([String: CertificateMigration].self, from: data) {
+            migrations = saved
+        }
         for kind in [CertificateType.development, .distribution] {
             if let data = Keychain.data(for: Keys.identity(kind)),
                let identity = try? JSONDecoder().decode(StoredIdentity.self, from: data) {
@@ -72,6 +85,7 @@ final class AccountStore {
     }
 
     init(demoAppleId: String, team: TeamInfo, identities infos: [CertificateType: IdentityInfo]) {
+        forceMigration = false
         phase = .signedIn
         appleId = demoAppleId
         teams = [team]
@@ -482,4 +496,90 @@ final class AccountStore {
         CapabilitiesCache.save(result.capabilitiesJson, team: teamId)
         return result
     }
+
+    // MARK: Moving to a new certificate
+
+    /// Why this kind's certificate should be moved off, if it should: it
+    /// expires within 30 days, or Apple no longer lists it
+    func migrationReason(_ kind: CertificateType) -> String? {
+        guard let info = info(kind) else { return nil }
+        if portalStatus[info.serialNumber] == false {
+            return "Apple no longer lists it: it was revoked or has expired."
+        }
+        let expires = Date(unixTime: info.expiresAt)
+        let date = expires.formatted(date: .long, time: .omitted)
+        if expires < Date() { return "It expired on \(date)." }
+        if expires < Date().addingTimeInterval(30 * 24 * 60 * 60) { return "It expires on \(date)." }
+        if forceMigration { return "Shown by the developer option; it expires on \(date)." }
+        return nil
+    }
+
+    func migration(_ kind: CertificateType) -> CertificateMigration? {
+        migrations[CertificateMigration.key(kind)]
+    }
+
+    func finishMigration(_ kind: CertificateType) {
+        migrations[CertificateMigration.key(kind)] = nil
+        saveMigrations()
+    }
+
+    private func saveMigrations() {
+        if let data = try? JSONEncoder().encode(migrations) {
+            defaults.set(data, forKey: Keys.migrations)
+        }
+    }
+
+    /// The team's certificates of this kind on the portal
+    func portalCertificates(_ kind: CertificateType) async throws -> [PortalCertificateInfo] {
+        guard let team = selectedTeam else { return [] }
+        let teamId = team.teamId
+        let all = try await portalCall { try $0.certificates(teamId: teamId) }
+        return all.filter { $0.kind == kind }
+    }
+
+    /// Make a new certificate of this kind and sign with it from now on.
+    /// The old certificate isn't touched, so apps signed with it keep
+    /// working until it expires; its serial is kept to know which apps to
+    /// sign again. Uses one of the team's certificate slots.
+    func moveToNewCertificate(_ kind: CertificateType) async throws {
+        guard account != nil, let team = selectedTeam else {
+            throw WarpsignError.Portal(message: "Sign in first.")
+        }
+        let teamId = team.teamId
+        let oldSerial = info(kind)?.serialNumber
+        let created = try await portalCall { try $0.createIdentity(teamId: teamId, kind: kind) }
+        try store(StoredIdentity(certificate: created.certificate, privateKey: created.privateKey), as: kind)
+        if let serial = info(kind)?.serialNumber { portalStatus[serial] = true }
+        if let oldSerial {
+            migrations[CertificateMigration.key(kind)] = CertificateMigration(oldSerial: oldSerial, startedAt: Date())
+            saveMigrations()
+        }
+    }
+
+    /// Revoke a certificate on the portal. Every app signed with it stops
+    /// opening at once: only after the user has explicitly chosen it.
+    func revoke(_ certificate: PortalCertificateInfo) async throws {
+        guard let team = selectedTeam else { return }
+        let teamId = team.teamId
+        let id = certificate.id
+        try await portalCall { try $0.revokeCertificate(teamId: teamId, certificateId: id) }
+        portalStatus[certificate.serialNumber] = false
+    }
 }
+
+/// A move from one certificate to a new one, until every app is signed again
+struct CertificateMigration: Codable, Equatable, Sendable {
+    /// The certificate being moved off
+    var oldSerial: String
+    var startedAt: Date
+
+    static func key(_ kind: CertificateType) -> String {
+        kind == .development ? "development" : "distribution"
+    }
+
+    /// What signed copies call this kind of certificate
+    static func copyName(_ kind: CertificateType) -> String {
+        kind == .development ? "Development" : "Ad Hoc"
+    }
+}
+

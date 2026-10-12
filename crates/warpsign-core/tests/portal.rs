@@ -719,6 +719,34 @@ fn test_certificate_der() -> Vec<u8> {
 }
 
 #[test]
+fn revokes_certificates() {
+    let mock = MockApple::new();
+    mock.expect(
+        "https://developer.apple.com/services-account/v1/certificates/CERT9",
+        |request| {
+            assert_eq!(request.method, Method::Delete);
+            assert_eq!(header(request, "csrf"), "csrf-token");
+            response(204, &[], "")
+        },
+    );
+    portal(&mock, true).revoke_certificate("CERT9").unwrap();
+    mock.assert_done();
+
+    // Apple's reason comes through, and nothing is assumed revoked
+    let mock = MockApple::new();
+    mock.respond(
+        "https://developer.apple.com/services-account/v1/certificates/CERT9",
+        json_response(
+            404,
+            json!({"errors": [{"status": "404", "code": "NOT_FOUND", "title": "The specified resource does not exist", "detail": "There is no resource of type 'certificates' with id 'CERT9'"}]}),
+        ),
+    );
+    let error = portal(&mock, true).revoke_certificate("CERT9").unwrap_err();
+    assert_eq!(error.status, Some(404));
+    assert!(error.to_string().contains("CERT9"), "{error}");
+}
+
+#[test]
 fn creates_certificates_from_a_csr() {
     let der = test_certificate_der();
     let mock = MockApple::new();
