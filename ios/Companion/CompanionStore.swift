@@ -100,20 +100,11 @@ final class CompanionStore {
         guard let data = Keychain.data(for: Self.pairingKey) else {
             throw WarpsignError.Device(message: "Add this device's pairing file first.")
         }
-        if tunnel.status == .unknown { await tunnel.refresh() }
-        var tunnelProblem: String?
-        if tunnel.isAvailable {
-            do { try await tunnel.connect() } catch { tunnelProblem = error.userMessage }
-        }
         UIApplication.shared.isIdleTimerDisabled = true
         defer { UIApplication.shared.isIdleTimerDisabled = false }
         let path = app.url.path
-        do {
-            try await runInBackground {
-                try installIpa(pairingFile: data, remotePairingPort: nil, ipaPath: path, observer: observer)
-            }
-        } catch WarpsignError.DeviceUnreachable(let message) {
-            throw WarpsignError.DeviceUnreachable(message: tunnelProblem.map { "\($0) (\(message))" } ?? message)
+        try await tunnel.reachDevice {
+            try installIpa(pairingFile: data, remotePairingPort: nil, ipaPath: path, observer: observer)
         }
     }
 }

@@ -126,39 +126,19 @@ final class DeviceStore {
         connection = .unknown
     }
 
-    /// Turn on WarpSign's own VPN if it has one. LocalDevVPN may be on
-    /// instead, so failing isn't final: returns why, for if the device
-    /// can't be reached.
-    private func prepareTunnel() async -> String? {
-        if tunnel.status == .unknown { await tunnel.refresh() }
-        guard tunnel.isAvailable else { return nil }
-        do {
-            try await tunnel.connect()
-            return nil
-        } catch {
-            return error.userMessage
-        }
-    }
-
-    private static func unreachable(_ message: String, tunnelProblem: String?) -> String {
-        guard let tunnelProblem else { return message }
-        return "\(tunnelProblem) (\(message))"
-    }
-
     /// Check the VPN and pairing file work
     func check() async {
         guard let data = Keychain.data(for: Self.key) else { return }
         connection = .checking
-        let tunnelProblem = await prepareTunnel()
         let port = remotePairingPortOverride
         do {
-            let device = try await background {
+            let device = try await tunnel.reachDevice {
                 try connectedDevice(pairingFile: data, remotePairingPort: port)
             }
             if udid == nil { udid = device.udid }
             connection = .connected(name: device.name, iosVersion: device.iosVersion)
         } catch WarpsignError.DeviceUnreachable(let message) {
-            connection = .unreachable(Self.unreachable(message, tunnelProblem: tunnelProblem))
+            connection = .unreachable(message)
         } catch {
             connection = .failed(error.userMessage)
         }
@@ -172,20 +152,14 @@ final class DeviceStore {
         // Copying a big app takes a while: don't let the screen lock
         UIApplication.shared.isIdleTimerDisabled = true
         defer { UIApplication.shared.isIdleTimerDisabled = false }
-        let tunnelProblem = await prepareTunnel()
         let port = remotePairingPortOverride
-        do {
-            try await background {
-                try installIpa(
-                    pairingFile: data,
-                    remotePairingPort: port,
-                    ipaPath: ipa.path,
-                    observer: observer
-                )
-            }
-        } catch WarpsignError.DeviceUnreachable(let message) {
-            throw WarpsignError.DeviceUnreachable(
-                message: Self.unreachable(message, tunnelProblem: tunnelProblem)
+        let path = ipa.path
+        try await tunnel.reachDevice {
+            try installIpa(
+                pairingFile: data,
+                remotePairingPort: port,
+                ipaPath: path,
+                observer: observer
             )
         }
     }

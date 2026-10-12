@@ -68,46 +68,108 @@ final class LoopbackTunnel {
     }
 
     /// Turn the VPN on, adding its configuration first if needed (iOS asks
-    /// to allow that once), and wait until it's up
+    /// to allow that once), and wait until it's up. Goes by the system's
+    /// live status, never a remembered one.
     func connect() async throws {
         if status == .unknown { await refresh() }
         if case .unavailable(let reason) = status {
             throw WarpsignError.DeviceUnreachable(message: reason)
         }
-        if status == .on { return }
-        do {
-            let manager = try await configured()
-            status = .connecting
-            try manager.connection.startVPNTunnel()
-            for _ in 0..<50 where manager.connection.status != .connected {
-                try await Task.sleep(for: .milliseconds(200))
-            }
+        if let manager, manager.connection.status == .connected {
             update()
-            if manager.connection.status != .connected {
-                throw WarpsignError.DeviceUnreachable(message: "WarpSign's VPN didn't connect.")
-            }
+            return
+        }
+        let manager: NETunnelProviderManager
+        do {
+            manager = try await configured()
         } catch let error as WarpsignError {
             update()
             throw error
         } catch {
+            // Only a refusal to save the configuration means this copy of
+            // WarpSign can't have a VPN (no Network Extensions); anything
+            // else may pass, so the next try tries again
             let reason = Self.explain(error)
-            if (error as NSError).domain == NEVPNErrorDomain,
-               (error as NSError).code == NEVPNError.configurationInvalid.rawValue
-                || (error as NSError).code == NEVPNError.configurationReadWriteFailed.rawValue {
+            if Self.isRefusal(error) {
                 status = .unavailable(reason)
             } else {
                 update()
             }
             throw WarpsignError.DeviceUnreachable(message: reason)
         }
+        status = .connecting
+        do {
+            try manager.connection.startVPNTunnel()
+        } catch {
+            // Often a configuration gone stale, e.g. after WarpSign was
+            // updated underneath it: load it again and try once more
+            do {
+                try await manager.loadFromPreferences()
+                if !manager.isEnabled {
+                    manager.isEnabled = true
+                    try await manager.saveToPreferences()
+                    try await manager.loadFromPreferences()
+                }
+                try manager.connection.startVPNTunnel()
+            } catch {
+                update()
+                throw WarpsignError.DeviceUnreachable(message: "WarpSign's VPN couldn't start: \(error.localizedDescription)")
+            }
+        }
+        for _ in 0..<50 where manager.connection.status != .connected {
+            try await Task.sleep(for: .milliseconds(200))
+        }
+        update()
+        if manager.connection.status != .connected {
+            throw WarpsignError.DeviceUnreachable(message: "WarpSign's VPN didn't connect.")
+        }
+    }
+
+    /// Turn the VPN off and on again: what clears a tunnel that's up but
+    /// not passing anything
+    func restart() async throws {
+        if let manager, manager.connection.status != .disconnected {
+            manager.connection.stopVPNTunnel()
+            for _ in 0..<25 where manager.connection.status != .disconnected {
+                try await Task.sleep(for: .milliseconds(200))
+            }
+        }
+        update()
+        try await connect()
     }
 
     func disconnect() {
         manager?.connection.stopVPNTunnel()
     }
 
+    /// Run work that reaches this device through the VPN: turn it on first,
+    /// and if the device can't be reached, restart it and try once more,
+    /// as a tunnel can be up but stuck (after an update, say). Without this
+    /// VPN (signed without Network Extensions), the work runs as it is, in
+    /// case LocalDevVPN is on.
+    func reachDevice<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+        if status == .unknown { await refresh() }
+        guard isAvailable else { return try await runInBackground(work) }
+        try await connect()
+        do {
+            return try await runInBackground(work)
+        } catch WarpsignError.DeviceUnreachable {
+            try await restart()
+            do {
+                return try await runInBackground(work)
+            } catch WarpsignError.DeviceUnreachable(let message) {
+                throw WarpsignError.DeviceUnreachable(
+                    message: "Couldn't reach this device through the VPN, even after restarting it (\(message)). Check the pairing file is this device's."
+                )
+            }
+        }
+    }
+
     private func configured() async throws -> NETunnelProviderManager {
-        if let manager, manager.isEnabled { return manager }
+        if let manager {
+            try await manager.loadFromPreferences()
+            if manager.isEnabled { return manager }
+        }
         guard let providerId = Self.providerBundleId else {
             throw WarpsignError.DeviceUnreachable(message: "This copy of WarpSign has no VPN extension.")
         }
@@ -147,6 +209,14 @@ final class LoopbackTunnel {
         case .connecting, .reasserting: status = .connecting
         default: status = .off
         }
+    }
+
+    /// Saving the configuration refused: no Network Extensions entitlement
+    private static func isRefusal(_ error: Error) -> Bool {
+        let error = error as NSError
+        return error.domain == NEVPNErrorDomain
+            && (error.code == NEVPNError.configurationReadWriteFailed.rawValue
+                || error.code == NEVPNError.configurationInvalid.rawValue)
     }
 
     private static func explain(_ error: Error) -> String {

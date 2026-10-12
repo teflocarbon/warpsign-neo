@@ -61,7 +61,7 @@ pub enum DeviceError {
     #[error("that isn't a pairing file ({0})")]
     InvalidPairingFile(String),
     #[error(
-        "couldn't reach the device at {0}: check LocalDevVPN is installed and connected, then try again"
+        "couldn't reach the device at {0}: check the loopback VPN (WarpSign's own, or LocalDevVPN) is connected, then try again"
     )]
     Unreachable(String),
     #[error("no iPhone or iPad is connected by USB")]
