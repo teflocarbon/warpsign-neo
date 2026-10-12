@@ -2,3 +2,14 @@
 __pycache__/
 .DS_Store
 /screenshots/
+
+# Public repo: never commit secrets or personal data (see AGENTS.md).
+# Fake test data lives under tests/data and is allowed.
+*.p12
+*.mobileprovision
+*.rppairing.plist
+*.mobiledevicepairing
+*.ipa
+session.json
+*http*.log
+!crates/*/tests/data/**
