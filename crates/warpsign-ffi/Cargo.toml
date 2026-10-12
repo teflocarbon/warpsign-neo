@@ -4,6 +4,7 @@ description = "Swift bindings (via uniffi) for warpsign-core, used by the iOS ap
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 publish.workspace = true
 
 [lib]

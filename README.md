@@ -106,3 +106,7 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
+
+## License
+
+GNU Affero General Public License v3.0 (AGPL-3.0), as Python warpsign: see [LICENSE](LICENSE). Third-party notices are in [NOTICE](NOTICE).
