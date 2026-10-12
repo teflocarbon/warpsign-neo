@@ -44,6 +44,8 @@ Settings > Automatic Updates, beyond the main switch:
 - **Notify When Apps Update** (off): one notification for what updated. Problems always notify.
 - **Skip Betas** (on): a source's pre-releases (letters after the numbers, `is_pre_release`) aren't offered unless the library's version is one; the newest release is offered instead. Applies to updates started by hand too.
 
-Per app, besides its switch: **Skip This Version** (on the app's page, or swiping its update in the library) stops offering that version; later versions are offered as usual.
+Per app, besides its switch: **Skip This Version** (on the app's page, or swiping its update in the library) stops offering that version; later versions are offered as usual. Getting an older version from a source's version history skips the update it would get straight away, so it isn't updated back overnight.
+
+The latest version is the first a source lists, as AltStore, SideStore and Feather have it; version numbers only decide whether it's newer than what the library has (compared with the version the source listed for that, when WarpSign downloaded or updated it from there).
 
 The background task identifiers are read from Info.plist (`$(PRODUCT_BUNDLE_IDENTIFIER).refresh` and `.updates`), so they match however WarpSign was signed, as for the continued-processing task.

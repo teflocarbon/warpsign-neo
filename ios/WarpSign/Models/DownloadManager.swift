@@ -38,10 +38,11 @@ final class DownloadManager {
     enum Purpose: Codable, Equatable {
         /// Added to the library once downloaded
         /// (`sourceVersion`/`sourceBuild`: the version the source listed it
-        /// as, which updates compare with)
+        /// as, which updates compare with; `olderVersion`: not the source's
+        /// latest, so the update it would get is skipped)
         case library(
             origin: String?, sourceURL: String?, sourceAppId: String?, autoUpdate: Bool?, link: String?,
-            sourceVersion: String? = nil, sourceBuild: String? = nil
+            sourceVersion: String? = nil, sourceBuild: String? = nil, olderVersion: Bool? = nil
         )
         /// Handed to the Updater for this library app
         case update(appId: UUID)
@@ -281,7 +282,7 @@ final class DownloadManager {
                 items.remove(at: index)
                 save()
             }
-        case let .library(origin, sourceURL, sourceAppId, autoUpdate, link, sourceVersion, sourceBuild):
+        case let .library(origin, sourceURL, sourceAppId, autoUpdate, link, sourceVersion, sourceBuild, olderVersion):
             items[index].state = .importing
             if let name, link != nil { items[index].name = name }
             save()
@@ -300,6 +301,12 @@ final class DownloadManager {
                     sourceBuild: sourceBuild
                 )
                 try? FileManager.default.removeItem(at: file)
+                // An older version, picked on purpose: don't update it
+                // straight back (later versions still come)
+                if let app, olderVersion == true {
+                    Updater.shared.evaluate()
+                    Updater.shared.skip(app.id)
+                }
                 guard let current = items.firstIndex(where: { $0.id == id }) else { return }
                 if app != nil {
                     items.remove(at: current)

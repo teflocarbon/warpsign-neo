@@ -123,7 +123,8 @@ final class SourcesStore {
             autoUpdate: Updater.shared.newAppsUpdate,
             link: nil,
             sourceVersion: version.version,
-            sourceBuild: version.build
+            sourceBuild: version.build,
+            olderVersion: version.downloadUrl != app.versions.first?.downloadUrl
         ))
     }
 

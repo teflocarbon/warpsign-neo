@@ -486,41 +486,51 @@ struct SourceVersionsView: View {
     let source: Source
 
     var body: some View {
-        List(Array(app.versions.enumerated()), id: \.offset) { index, version in
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Version \(version.version)")
-                        .foregroundStyle(.secondary)
-                    if index == 0 {
-                        Badge("Latest", color: .green)
-                    }
-                    Spacer()
-                    if let date = version.date.flatMap(SourceDate.parse) {
-                        Text(date, format: .relative(presentation: .named))
-                            .foregroundStyle(.secondary)
-                    }
+        List {
+            Section {
+                ForEach(Array(app.versions.enumerated()), id: \.offset) { index, version in
+                    row(index, version)
                 }
-                if let notes = version.notes {
-                    ExpandableText(notes, lines: 3, secondary: false)
-                }
-                HStack {
-                    Text([
-                        version.build.flatMap { $0 == version.version ? nil : "Build \($0)" },
-                        version.size.map { ByteCountFormatter.file($0) },
-                        version.minOs.map { "iOS \($0)+" },
-                    ].compactMap { $0 }.joined(separator: " · "))
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                    Spacer()
-                    DownloadButton(version: version, app: app, source: source)
-                }
+            } footer: {
+                Text("Getting an older version skips the update it would get, so it isn't updated straight back; later versions still update it. Its page has Don't Skip.")
             }
-            .padding(.vertical, 6)
         }
         .listStyle(.plain)
         .navigationTitle("Version History")
         .navigationBarTitleDisplayMode(.large)
         .tint(Color(hex: app.tintColor) ?? Color(hex: source.tintColor))
+    }
+
+    private func row(_ index: Int, _ version: AppVersion) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Version \(version.version)")
+                    .foregroundStyle(.secondary)
+                if index == 0 {
+                    Badge("Latest", color: .green)
+                }
+                Spacer()
+                if let date = version.date.flatMap(SourceDate.parse) {
+                    Text(date, format: .relative(presentation: .named))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let notes = version.notes {
+                ExpandableText(notes, lines: 3, secondary: false)
+            }
+            HStack {
+                Text([
+                    version.build.flatMap { $0 == version.version ? nil : "Build \($0)" },
+                    version.size.map { ByteCountFormatter.file($0) },
+                    version.minOs.map { "iOS \($0)+" },
+                ].compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                Spacer()
+                DownloadButton(version: version, app: app, source: source)
+            }
+        }
+        .padding(.vertical, 6)
     }
 }
 
