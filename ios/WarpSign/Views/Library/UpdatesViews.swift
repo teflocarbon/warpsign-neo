@@ -209,8 +209,7 @@ struct AppUpdatesSection: View {
 
             if let item = updater.available[app.id] {
                 LabeledContent("Status") {
-                    Label("\(item.version.version) Available", systemImage: "arrow.down.circle.fill")
-                        .foregroundStyle(.tint)
+                    StatusValue(text: "\(item.version.version) Available", symbol: "arrow.down.circle.fill", color: .accentColor)
                 }
                 Button {
                     Task { await updater.run([app.id], automatic: false) }
@@ -229,7 +228,7 @@ struct AppUpdatesSection: View {
                     if match.version.version == app.skippedVersion {
                         Text("Skipping \(match.version.version)").foregroundStyle(.secondary)
                     } else {
-                        Label("Up to Date", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        StatusValue(text: "Up to Date", symbol: "checkmark.circle.fill", color: .green)
                     }
                 }
                 LabeledContent("Newest in Source", value: versionText(match.version))
@@ -271,12 +270,12 @@ struct AppUpdatesSection: View {
                     }
                 }
             }
-            LabeledContent("Last Checked") {
+            LabeledContent("Sources Checked") {
                 HStack(spacing: 8) {
                     if updater.isChecking {
                         ProgressView()
                     } else if let lastCheck = updater.lastCheck {
-                        Text("\(lastCheck, style: .relative) ago")
+                        Text(lastCheck, format: .relative(presentation: .named))
                     } else {
                         Text("Never")
                     }
@@ -300,7 +299,9 @@ struct AppUpdatesSection: View {
     private func versionText(_ version: AppVersion) -> String {
         var text = version.version
         if let build = version.build, build != version.version { text += " (\(build))" }
-        if let date = version.date?.prefix(10) { text += " · \(date)" }
+        if let date = version.date.flatMap(SourceDate.parse) {
+            text += " · \(date.formatted(.dateTime.day().month()))"
+        }
         return text
     }
 
@@ -408,7 +409,7 @@ struct UpdatesSettingsView: View {
                 .disabled(updater.isChecking)
                 if let lastCheck = updater.lastCheck {
                     LabeledContent("Last Checked") {
-                        Text("\(lastCheck, style: .relative) ago")
+                        Text(lastCheck, format: .relative(presentation: .named))
                     }
                 }
                 LabeledContent("Updates Available", value: "\(updater.available.count)")
@@ -685,7 +686,7 @@ struct InstalledSection: View {
                         if device.isCheckingInstalled {
                             ProgressView()
                         } else if let checked = device.installedChecked {
-                            Text("\(checked, style: .relative) ago")
+                            Text(checked, format: .relative(presentation: .named))
                         }
                         Button("Check") { Task { await device.refreshInstalled() } }
                             .buttonStyle(.bordered)
@@ -718,5 +719,21 @@ struct InstalledSection: View {
         case let (nil, build?): build
         default: "—"
         }
+    }
+}
+
+/// An icon and text as a row's value. A Label inside LabeledContent can be
+/// laid out as a row of its own in a List, leaving a gap.
+struct StatusValue: View {
+    let text: String
+    let symbol: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol)
+            Text(text)
+        }
+        .foregroundStyle(color)
     }
 }
