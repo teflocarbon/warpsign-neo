@@ -29,6 +29,13 @@ struct StorageUsage: Sendable {
         var superseded: [URL] = []
     }
 
+    /// Do storage work off the main thread. (Called from views, where
+    /// `background` means SwiftUI's modifier.)
+    @discardableResult
+    static func run<T: Sendable>(_ work: @escaping @Sendable () -> T) async -> T? {
+        try? await background(work)
+    }
+
     /// Off the main thread: it reads every file's size
     nonisolated static func measure(_ files: Files) -> StorageUsage {
         var usage = StorageUsage()

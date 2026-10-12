@@ -126,15 +126,15 @@ struct StorageView: View {
         case .superseded:
             library.removeSupersededCopies()
         case .caches:
-            _ = try? await background { StorageUsage.clearCaches() }
+            await StorageUsage.run { StorageUsage.clearCaches() }
         case .temporary:
-            _ = try? await background { StorageUsage.clearTemporary() }
+            await StorageUsage.run { StorageUsage.clearTemporary() }
         }
         await refresh()
     }
 
     private func refresh() async {
         let files = library.storageFiles()
-        usage = try? await background { StorageUsage.measure(files) }
+        usage = await StorageUsage.run { StorageUsage.measure(files) }
     }
 }
