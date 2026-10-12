@@ -11,8 +11,17 @@ enum CompanionHandoff {
     private static var share: LoopbackShare?
     private static var stopping: Task<Void, Never>?
 
-    static func send(_ ipa: URL, name: String) async throws {
+    /// `tunnel` (WarpSign's VPN) is turned off first: iOS runs one VPN at
+    /// a time, and Companion's starts cleanly once WarpSign's is down
+    /// rather than while it's going
+    static func send(_ ipa: URL, name: String, tunnel: LoopbackTunnel?) async throws {
         stop()
+        if let tunnel, tunnel.status == .on || tunnel.status == .connecting {
+            tunnel.disconnect()
+            for _ in 0..<15 where tunnel.status == .on || tunnel.status == .connecting {
+                try? await Task.sleep(for: .milliseconds(200))
+            }
+        }
         let slot = UInt32.random(in: 0..<webInstallSlots())
         let recorder = StepRecorder { event in
             // Sent: give Companion a moment, then stop serving

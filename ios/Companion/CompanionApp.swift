@@ -177,9 +177,14 @@ struct InstallScreen: View {
     @State private var phase = Phase.installing
     @State private var started = false
 
-    private enum Phase {
+    private enum Phase: Equatable {
         case installing, installed
         case failed(String)
+    }
+
+    private var isFailed: Bool {
+        if case .failed = phase { return true }
+        return false
     }
 
     var body: some View {
@@ -198,6 +203,20 @@ struct InstallScreen: View {
                     ErrorRow(message: message)
                 }
             }
+            if isFailed {
+                Section {
+                    Button("Try Again", systemImage: "arrow.clockwise") {
+                        Task { await install() }
+                    }
+                    if store.tunnel.status != .on {
+                        Button("Turn On the VPN", systemImage: "power") {
+                            Task { try? await store.tunnel.connect() }
+                        }
+                    }
+                } footer: {
+                    Text("If the VPN won't come on, turn on Companion's in Settings → VPN, then try again. iOS runs one VPN at a time, so WarpSign's goes off.")
+                }
+            }
             Section {
                 StepListView(steps: steps)
             } footer: {
@@ -206,6 +225,14 @@ struct InstallScreen: View {
         }
         .navigationTitle("Install")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(phase == .installing)
+        .toolbar {
+            if isFailed {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Try Again") { Task { await install() } }
+                }
+            }
+        }
         .task {
             guard !started else { return }
             started = true
@@ -214,6 +241,8 @@ struct InstallScreen: View {
     }
 
     private func install() async {
+        phase = .installing
+        steps = [StepState](pending: installSteps())
         let recorder = StepRecorder { event in
             steps.apply(event)
             ContinuedWork.shared.update(steps)

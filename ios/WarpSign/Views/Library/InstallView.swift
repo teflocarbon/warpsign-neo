@@ -242,7 +242,7 @@ struct InstallButton: View {
             Button {
                 Task {
                     do {
-                        try await CompanionHandoff.send(ipa, name: name)
+                        try await CompanionHandoff.send(ipa, name: name, tunnel: device.tunnel)
                         handoffError = nil
                     } catch {
                         handoffError = error.userMessage

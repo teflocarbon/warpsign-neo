@@ -435,7 +435,7 @@ final class Updater {
                                   problem: "WarpSign \(to) is signed. Open WarpSign and tap Install with Companion on its page.")
                 }
                 status[id] = .installing
-                try await CompanionHandoff.send(library.signedURL(copy, of: updated), name: updated.displayName)
+                try await CompanionHandoff.send(library.signedURL(copy, of: updated), name: updated.displayName, tunnel: device.tunnel)
                 return finish(id, app: updated, from: from, to: to, done: "Sent to Companion",
                               problem: nil, note: "Installed with Companion")
             }
