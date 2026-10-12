@@ -500,6 +500,69 @@ pub fn device_info(target: &Target) -> Result<DeviceInfo, DeviceError> {
     })
 }
 
+/// An app installed on the device, as installation_proxy describes it
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstalledApp {
+    pub bundle_id: String,
+    pub name: Option<String>,
+    /// CFBundleShortVersionString
+    pub version: Option<String>,
+    /// CFBundleVersion
+    pub build: Option<String>,
+}
+
+/// The attributes `installed_apps` asks for, so the device doesn't send
+/// every app's whole Info.plist
+const INSTALLED_ATTRIBUTES: &[&str] = &[
+    "CFBundleIdentifier",
+    "CFBundleDisplayName",
+    "CFBundleName",
+    "CFBundleShortVersionString",
+    "CFBundleVersion",
+];
+
+/// The apps installed on the device that aren't Apple's: from the App
+/// Store, installed over the web, with a pairing file, or by any other
+/// installer
+pub fn installed_apps(target: &Target) -> Result<Vec<InstalledApp>, DeviceError> {
+    runtime()?.block_on(async {
+        let mut services = Services::connect(target).await?;
+        let mut proxy = services
+            .installer()
+            .await
+            .map_err(failed("connecting to the installer"))?;
+        let mut options = plist::Dictionary::new();
+        options.insert("ApplicationType".into(), "User".into());
+        options.insert(
+            "ReturnAttributes".into(),
+            plist::Value::Array(INSTALLED_ATTRIBUTES.iter().map(|&key| key.into()).collect()),
+        );
+        let apps = proxy
+            .browse(Some(plist::Value::Dictionary(options)))
+            .await
+            .map_err(failed("listing the installed apps"))?;
+        Ok(apps.iter().filter_map(installed_app).collect())
+    })
+}
+
+/// One app from installation_proxy's Browse
+fn installed_app(value: &plist::Value) -> Option<InstalledApp> {
+    let info = value.as_dictionary()?;
+    let text = |key: &str| {
+        info.get(key)
+            .and_then(plist::Value::as_string)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+    };
+    Some(InstalledApp {
+        bundle_id: text("CFBundleIdentifier")?,
+        name: text("CFBundleDisplayName").or_else(|| text("CFBundleName")),
+        version: text("CFBundleShortVersionString"),
+        build: text("CFBundleVersion"),
+    })
+}
+
 /// Answer the device's heartbeat, which keeps network connections alive
 async fn heartbeat(mut client: HeartbeatClient) {
     let mut interval = 15;
@@ -757,6 +820,34 @@ fn new_host_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_installed_apps() {
+        let mut info = plist::Dictionary::new();
+        info.insert("CFBundleIdentifier".into(), "com.example.app".into());
+        info.insert("CFBundleName".into(), "Example".into());
+        info.insert("CFBundleShortVersionString".into(), "3.9.0".into());
+        info.insert("CFBundleVersion".into(), "301".into());
+        assert_eq!(
+            installed_app(&plist::Value::Dictionary(info.clone())),
+            Some(InstalledApp {
+                bundle_id: "com.example.app".into(),
+                name: Some("Example".into()),
+                version: Some("3.9.0".into()),
+                build: Some("301".into()),
+            })
+        );
+        // The display name wins over the bundle name
+        info.insert("CFBundleDisplayName".into(), "Shown".into());
+        assert_eq!(
+            installed_app(&plist::Value::Dictionary(info.clone())).and_then(|app| app.name),
+            Some("Shown".into())
+        );
+        // No bundle ID: not an app it can describe
+        info.remove("CFBundleIdentifier");
+        assert_eq!(installed_app(&plist::Value::Dictionary(info)), None);
+        assert_eq!(installed_app(&plist::Value::String("x".into())), None);
+    }
 
     #[test]
     fn host_ids_are_uuids() {

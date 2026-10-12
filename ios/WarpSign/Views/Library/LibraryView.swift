@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 /// Imported IPAs, ready to sign
 struct LibraryView: View {
     @Environment(LibraryStore.self) private var library
+    @Environment(DeviceStore.self) private var device
     @State private var showingImporter = false
     @State private var showingLink = false
     @State private var linking: LibraryApp?
@@ -78,6 +79,14 @@ struct LibraryView: View {
                 }
             }
             .searchable(text: $search, prompt: "Search apps")
+            // Pulling asks the device what's installed (turning the VPN on),
+            // and the sources for updates
+            .refreshable {
+                async let installed: Void = device.refreshInstalled()
+                async let updates: Void = Updater.shared.check()
+                _ = await (installed, updates)
+            }
+            .task { await device.refreshInstalledIfDue() }
             .navigationTitle("Library")
             .navigationDestination(for: UUID.self) { id in
                 AppDetailView(appId: id)
@@ -177,6 +186,7 @@ extension LibraryView {
 
 struct LibraryRow: View {
     @Environment(LibraryStore.self) private var library
+    @Environment(DeviceStore.self) private var device
     let app: LibraryApp
 
     var body: some View {
@@ -199,7 +209,11 @@ struct LibraryRow: View {
                 if app.isEncrypted {
                     Badge("Encrypted", color: .red)
                 }
-                if !app.signedCopies.isEmpty {
+                if device.installedApp(app) != nil {
+                    Badge("Installed", color: .green)
+                } else if device.isMissing(app) {
+                    Badge("Not Installed", color: .secondary)
+                } else if !app.signedCopies.isEmpty {
                     Badge("Signed", color: .green)
                 }
             }

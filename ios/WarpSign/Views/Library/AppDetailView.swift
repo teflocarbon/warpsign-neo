@@ -41,6 +41,8 @@ struct AppDetailView: View {
                 }
             }
 
+            InstalledSection(app: app)
+
             AppUpdatesSection(app: app)
 
             if app.isEncrypted {

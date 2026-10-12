@@ -630,3 +630,87 @@ struct LinkSourceView: View {
         dismiss()
     }
 }
+
+/// Whether the app is on this iPhone, and at which version, as the device
+/// says (with a pairing file): signed but not installed, deleted, or up
+/// to date
+struct InstalledSection: View {
+    @Environment(DeviceStore.self) private var device
+    @Environment(LibraryStore.self) private var library
+    let app: LibraryApp
+
+    private var newestCopy: SignedCopy? { app.signedCopies.max(by: { $0.date < $1.date }) }
+
+    var body: some View {
+        if device.hasPairingFile {
+            Section {
+                if let installed = device.installedApp(app) {
+                    LabeledContent("Installed") {
+                        Text(Self.versionText(installed.version, installed.build))
+                    }
+                    if !matchesLibrary(installed) {
+                        if let newestCopy {
+                            Label("\(app.versionText) is signed but not installed yet.", systemImage: "arrow.down.app")
+                                .font(.callout)
+                                .foregroundStyle(.orange)
+                            InstallButton(
+                                ipa: library.signedURL(newestCopy, of: app),
+                                name: app.displayName,
+                                icon: LibraryStore.folder(of: app.id).appendingPathComponent("icon.png"),
+                                bundleId: newestCopy.bundleId
+                            )
+                        } else {
+                            Label("Sign \(app.versionText) to install it.", systemImage: "signature")
+                                .font(.callout)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                } else if device.installed != nil {
+                    Label {
+                        Text(app.signedCopies.isEmpty ? "Not installed: sign it first." : "Not installed on this iPhone.")
+                    } icon: {
+                        Image(systemName: "iphone.slash").foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("Not checked yet.").foregroundStyle(.secondary)
+                }
+                LabeledContent("Checked") {
+                    HStack(spacing: 8) {
+                        if device.isCheckingInstalled {
+                            ProgressView()
+                        } else if let checked = device.installedChecked {
+                            Text("\(checked, style: .relative) ago")
+                        }
+                        Button("Check") { Task { await device.refreshInstalled() } }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(device.isCheckingInstalled)
+                    }
+                }
+            } header: {
+                Text("On This iPhone")
+            } footer: {
+                if device.isMissing(app), app.sourceURL != nil {
+                    Text("Deleted from the Home Screen, it seems: automatic updates leave it uninstalled. Install it again to have it updated.")
+                } else {
+                    Text("As this iPhone reports it, however the app was installed. Checking turns WarpSign's VPN on.")
+                }
+            }
+        }
+    }
+
+    /// The installed app is the library's version
+    private func matchesLibrary(_ installed: InstalledApp) -> Bool {
+        guard let version = app.version else { return true }
+        return installed.version == version && (app.build == nil || installed.build == app.build)
+    }
+
+    static func versionText(_ version: String?, _ build: String?) -> String {
+        switch (version, build) {
+        case let (version?, build?) where build != version: "\(version) (\(build))"
+        case let (version?, _): version
+        case let (nil, build?): build
+        default: "—"
+        }
+    }
+}

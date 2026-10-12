@@ -43,6 +43,12 @@ final class DeviceStore {
     private(set) var isRemotePairing = false
     private(set) var connection: Connection = .unknown
     var importError: String?
+    /// What's installed on this device, by bundle ID: nil until it's been
+    /// asked, which needs a pairing file. Every app shows, however it was
+    /// installed.
+    private(set) var installed: [String: InstalledApp]?
+    private(set) var installedChecked: Date?
+    private(set) var isCheckingInstalled = false
     /// WarpSign's own loopback VPN, turned on when it's needed
     let tunnel = LoopbackTunnel()
 
@@ -144,6 +150,52 @@ final class DeviceStore {
         }
     }
 
+    /// Ask the device what's installed. With `connecting`, turns the VPN
+    /// on to ask; without, asks only if it's already on (so opening the
+    /// library doesn't start the VPN). Keeps the last answer on failure.
+    func refreshInstalled(connecting: Bool = true) async {
+        guard !Demo.isOn, hasPairingFile, !isCheckingInstalled,
+              let data = Keychain.data(for: Self.key)
+        else { return }
+        if !connecting {
+            if tunnel.status == .unknown { await tunnel.refresh() }
+            guard tunnel.status == .on else { return }
+        }
+        isCheckingInstalled = true
+        defer { isCheckingInstalled = false }
+        let port = remotePairingPortOverride
+        do {
+            let apps = try await tunnel.reachDevice {
+                try installedApps(pairingFile: data, remotePairingPort: port)
+            }
+            installed = Dictionary(apps.map { ($0.bundleId, $0) }, uniquingKeysWith: { first, _ in first })
+            installedChecked = Date()
+        } catch {
+            // The last answer stands
+        }
+    }
+
+    /// The same, unless it was asked in the last couple of minutes
+    func refreshInstalledIfDue(connecting: Bool = false) async {
+        if let installedChecked, Date().timeIntervalSince(installedChecked) < 120 { return }
+        await refreshInstalled(connecting: connecting)
+    }
+
+    /// A library app as installed on this device: any of its signed
+    /// copies' bundle IDs (newest first), or its own. Nil if it isn't, or
+    /// if that isn't known (`installed` is nil).
+    func installedApp(_ app: LibraryApp) -> InstalledApp? {
+        guard let installed else { return nil }
+        let ids = app.signedCopies.sorted { $0.date > $1.date }.map(\.bundleId) + [app.bundleId]
+        return ids.lazy.compactMap { installed[$0] }.first
+    }
+
+    /// Whether a library app that's been signed isn't on this device (it
+    /// was deleted, say): false when that isn't known
+    func isMissing(_ app: LibraryApp) -> Bool {
+        installed != nil && !app.signedCopies.isEmpty && installedApp(app) == nil
+    }
+
     /// Install a signed IPA on this device, step by step
     func install(_ ipa: URL, observer: StepRecorder) async throws {
         guard let data = Keychain.data(for: Self.key) else {
@@ -162,6 +214,8 @@ final class DeviceStore {
                 observer: observer
             )
         }
+        // What's installed changed: the VPN is up, so ask now
+        Task { await refreshInstalled(connecting: false) }
     }
 
     /// Start serving an IPA to iOS's installer; open the result's

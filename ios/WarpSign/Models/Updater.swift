@@ -244,7 +244,14 @@ final class Updater {
     func run(_ ids: [UUID], automatic: Bool) async -> [Entry] {
         let showCard = !automatic
         guard let library, !isUpdating else { return [] }
-        let ids = ids.filter { available[$0] != nil }
+        if automatic {
+            // Only what's still installed: an app deleted from the Home
+            // Screen isn't put back
+            await device?.refreshInstalled()
+        }
+        let ids = ids.filter { id in
+            available[id] != nil && (!automatic || library.app(id).map { manualReason($0) == nil } == true)
+        }
         guard !ids.isEmpty else { return [] }
         isUpdating = true
         defer { isUpdating = false }
@@ -313,6 +320,9 @@ final class Updater {
             return "Automatic updates are off for \(app.origin ?? "its source")."
         }
         if !app.updatesAutomatically { return "Automatic updates are off for this app." }
+        if device?.isMissing(app) == true {
+            return "It isn't installed on this iPhone, so it isn't updated in the background."
+        }
         return nil
     }
 

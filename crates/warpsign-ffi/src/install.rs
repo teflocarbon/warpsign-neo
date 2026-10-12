@@ -69,6 +69,40 @@ pub fn connected_device(
     })
 }
 
+/// An app installed on this device
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct InstalledApp {
+    pub bundle_id: String,
+    pub name: Option<String>,
+    pub version: Option<String>,
+    pub build: Option<String>,
+}
+
+/// Every app installed on this device that isn't Apple's, however it was
+/// installed (with a pairing file, over the web, from the App Store), by
+/// asking installation_proxy through the VPN. Blocks: call from a
+/// background thread.
+#[uniffi::export]
+pub fn installed_apps(
+    pairing_file: Vec<u8>,
+    remote_pairing_port: Option<u16>,
+) -> Result<Vec<InstalledApp>, WarpsignError> {
+    let apps = device::installed_apps(&Target::Loopback {
+        pairing_file,
+        remote_pairing_port,
+    })
+    .map_err(device_error)?;
+    Ok(apps
+        .into_iter()
+        .map(|app| InstalledApp {
+            bundle_id: app.bundle_id,
+            name: app.name,
+            version: app.version,
+            build: app.build,
+        })
+        .collect())
+}
+
 /// The steps `install_ipa` runs, in order
 #[uniffi::export]
 pub fn install_steps() -> Vec<StepInfo> {
