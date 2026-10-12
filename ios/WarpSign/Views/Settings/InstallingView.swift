@@ -205,7 +205,7 @@ struct InstallingView: View {
             Text("2. Loopback VPN")
         } footer: {
             if device.tunnel.isAvailable {
-                Text("WarpSign's own VPN lets it talk to this device's installer, as SideStore does with LocalDevVPN. It turns on by itself when installing (iOS asks to allow it the first time). Its traffic never leaves this device, and nothing else goes through it.")
+                Text("WarpSign's own VPN lets it talk to this device's installer, as SideStore does with LocalDevVPN. It turns on by itself when installing (iOS asks to allow it the first time). Its traffic never leaves this device, and nothing else goes through it. If installs get stuck, from any app, turn it off and on again.")
             } else {
                 Text("LocalDevVPN lets WarpSign talk to this device's installer, as SideStore does. Its traffic never leaves the device. Turn it on before installing.")
             }

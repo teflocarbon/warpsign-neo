@@ -154,7 +154,7 @@ final class DeviceStore {
         defer { UIApplication.shared.isIdleTimerDisabled = false }
         let port = remotePairingPortOverride
         let path = ipa.path
-        try await tunnel.reachDevice {
+        try await tunnel.reachDevice(fresh: true) {
             try installIpa(
                 pairingFile: data,
                 remotePairingPort: port,

@@ -131,7 +131,7 @@ struct ContentView: View {
         } header: {
             Text("Loopback VPN")
         } footer: {
-            Text("Turns on by itself when installing (iOS asks to allow it the first time). Its traffic never leaves this device.")
+            Text("Turns on by itself when installing (iOS asks to allow it the first time). Its traffic never leaves this device. If installs get stuck, from any app, turn it off and on again in Settings → VPN.")
         }
     }
 }

@@ -103,7 +103,7 @@ final class CompanionStore {
         UIApplication.shared.isIdleTimerDisabled = true
         defer { UIApplication.shared.isIdleTimerDisabled = false }
         let path = app.url.path
-        try await tunnel.reachDevice {
+        try await tunnel.reachDevice(fresh: true) {
             try installIpa(pairingFile: data, remotePairingPort: nil, ipaPath: path, observer: observer)
         }
     }

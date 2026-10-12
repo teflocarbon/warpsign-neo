@@ -147,10 +147,23 @@ final class LoopbackTunnel {
     /// as a tunnel can be up but stuck (after an update, say). Without this
     /// VPN (signed without Network Extensions), the work runs as it is, in
     /// case LocalDevVPN is on.
-    func reachDevice<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+    ///
+    /// `fresh` restarts a VPN that's already up first. iOS installs one app
+    /// at a time, and an install whose installer vanished mid-way (killed,
+    /// or its tunnel replaced) can hold every later install, from any app,
+    /// for as long as its connection through the VPN looks open; taking the
+    /// VPN down is what ends it.
+    func reachDevice<T: Sendable>(
+        fresh: Bool = false,
+        _ work: @escaping @Sendable () throws -> T
+    ) async throws -> T {
         if status == .unknown { await refresh() }
         guard isAvailable else { return try await runInBackground(work) }
-        try await connect()
+        if fresh, let manager, manager.connection.status == .connected {
+            try await restart()
+        } else {
+            try await connect()
+        }
         do {
             return try await runInBackground(work)
         } catch WarpsignError.DeviceUnreachable {
