@@ -44,9 +44,9 @@ final class CompanionStore {
     /// A file opened in Companion: an IPA to install, or a pairing file
     func open(_ url: URL) {
         switch url.pathExtension.lowercased() {
-        case "ipa": Task { await pick(url) }
+        case "ipa", "zip": Task { await pick(url) }
         case "mobiledevicepairing", "plist": importPairingFile(url)
-        default: error = "Companion opens .ipa files and pairing files."
+        default: error = "Companion opens .ipa files (or a .zip with one inside) and pairing files."
         }
     }
 
@@ -60,9 +60,22 @@ final class CompanionStore {
                 for old in (try? fileManager.contentsOfDirectory(at: Self.incoming, includingPropertiesForKeys: nil)) ?? [] {
                     try? fileManager.removeItem(at: old)
                 }
-                let copy = Self.incoming.appendingPathComponent(url.lastPathComponent)
+                var copy = Self.incoming.appendingPathComponent(url.lastPathComponent)
                 try withSecurityScopedAccess(to: url) {
                     try fileManager.copyItem(at: url, to: copy)
+                }
+                // A zip with the IPA inside (a GitHub artifact, say): keep the IPA
+                let unwrapped = Self.incoming.appendingPathComponent("unwrapped.ipa")
+                if try unwrapIpa(path: copy.path, output: unwrapped.path) {
+                    let ipa = copy.deletingPathExtension().appendingPathExtension("ipa")
+                    try fileManager.removeItem(at: copy)
+                    try fileManager.moveItem(at: unwrapped, to: ipa)
+                    copy = ipa
+                } else if copy.pathExtension.lowercased() != "ipa" {
+                    // Already an IPA, named .zip
+                    let ipa = copy.deletingPathExtension().appendingPathExtension("ipa")
+                    try fileManager.moveItem(at: copy, to: ipa)
+                    copy = ipa
                 }
                 let metadata = try readIpaMetadata(ipaPath: copy.path)
                 return Picked(
