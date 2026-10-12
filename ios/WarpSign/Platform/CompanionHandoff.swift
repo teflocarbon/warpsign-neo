@@ -24,9 +24,12 @@ enum CompanionHandoff {
         }
         let slot = UInt32.random(in: 0..<webInstallSlots())
         let recorder = StepRecorder { event in
-            // Sent: give Companion a moment, then stop serving
+            // Companion has all of it (one request, done): get out of the
+            // way at once. Companion is about to install over this
+            // WarpSign, and installd waits for a running app to quit; held
+            // awake serving, WarpSign kept an install waiting ~30 s.
             if case .finished(.sendToIos, _, nil) = event {
-                stop(after: 30)
+                stop()
             }
         }
         let share = try LoopbackShare.start(ipaPath: ipa.path, slot: slot, observer: recorder)
