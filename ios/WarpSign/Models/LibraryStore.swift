@@ -266,6 +266,39 @@ final class LibraryStore {
         save()
     }
 
+    /// Signed copies with a newer one of the same app and certificate,
+    /// which Settings → Storage can remove
+    var supersededCopies: [(app: LibraryApp, copy: SignedCopy)] {
+        apps.flatMap { app in
+            var seen: Set<String> = []
+            return app.signedCopies
+                .sorted { $0.date > $1.date }
+                .filter { !seen.insert($0.certificate).inserted }
+                .map { (app: app, copy: $0) }
+        }
+    }
+
+    func removeSupersededCopies() {
+        for (app, copy) in supersededCopies {
+            deleteSignedCopy(copy, of: app)
+        }
+    }
+
+    /// Where the library's files are, to measure
+    func storageFiles() -> StorageUsage.Files {
+        let superseded = Set(supersededCopies.map(\.copy.id))
+        var files = StorageUsage.Files()
+        for app in apps {
+            files.originals.append(Self.ipaURL(of: app.id))
+            for copy in app.signedCopies {
+                let folder = signedURL(copy, of: app).deletingLastPathComponent()
+                files.signedCopies.append(folder)
+                if superseded.contains(copy.id) { files.superseded.append(folder) }
+            }
+        }
+        return files
+    }
+
     private func save() {
         guard !isDemo else { return }
         do {

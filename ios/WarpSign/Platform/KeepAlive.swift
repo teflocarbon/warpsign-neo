@@ -17,6 +17,9 @@ final class KeepAlive {
     private var task: UIBackgroundTaskIdentifier = .invalid
     private var interruptions: NSObjectProtocol?
 
+    /// Whether work is under way
+    var isHolding: Bool { !reasons.isEmpty }
+
     func start(_ reason: String) {
         reasons.insert(reason)
         guard player == nil else { return }

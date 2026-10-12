@@ -86,6 +86,14 @@ struct SettingsView: View {
                     Text("Install signed apps straight onto this device.")
                 }
 
+                Section {
+                    NavigationLink {
+                        StorageView()
+                    } label: {
+                        Label("Storage", systemImage: "internaldrive")
+                    }
+                }
+
                 Section("Diagnostics") {
                     if account.isSignedIn {
                         NavigationLink {
