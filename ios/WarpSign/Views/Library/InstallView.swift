@@ -188,7 +188,7 @@ struct InstallView: View {
             let iconData = icon.flatMap { try? Data(contentsOf: $0) }
             let server = try device.startWebInstall(ipa, icon: iconData, observer: recorder)
             self.server = server
-            KeepAlive.shared.start()
+            KeepAlive.shared.start("web install")
             phase = .waitingForPrompt
             open(server)
         } catch {
@@ -205,7 +205,7 @@ struct InstallView: View {
     private func finishWeb() {
         server?.stop()
         server = nil
-        KeepAlive.shared.stop()
+        KeepAlive.shared.stop("web install")
     }
 }
 

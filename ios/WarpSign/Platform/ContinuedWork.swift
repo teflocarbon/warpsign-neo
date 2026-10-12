@@ -47,6 +47,9 @@ final class ContinuedWork {
         self.subtitle = subtitle
         fraction = 0
         wanted = true
+        // Underneath: iOS can take the time back early, and before iOS 26
+        // there's nothing else
+        KeepAlive.shared.start("job")
         guard #available(iOS 26.0, *), let identifier = Self.identifier, !refused else { return }
         if !registered {
             registered = true
@@ -81,6 +84,7 @@ final class ContinuedWork {
     /// The job is over, however it went
     func finish() {
         wanted = false
+        KeepAlive.shared.stop("job")
         Self.grant.complete()
         if #available(iOS 26.0, *), let identifier = Self.identifier {
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
