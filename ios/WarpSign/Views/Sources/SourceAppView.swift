@@ -38,28 +38,6 @@ struct SourceAppView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if isOnlyApp {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label {
-                            Text("This is the only app in \(source.name), so it opens straight here.")
-                        } icon: {
-                            Image(systemName: "lightbulb.fill").foregroundStyle(.yellow)
-                        }
-                        if let sourceURL {
-                            NavigationLink {
-                                SourceDetailView(url: sourceURL, showsSource: true)
-                            } label: {
-                                Text(source.news.isEmpty ? "About This Source" : "About This Source and Its News")
-                                    .font(.subheadline.weight(.semibold))
-                            }
-                        }
-                    }
-                    .font(.callout)
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .padding(.bottom, 16)
-                }
                 header
                 stats
                 if let download {
@@ -111,6 +89,16 @@ struct SourceAppView: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
+                if let sourceURL {
+                    NavigationLink {
+                        SourceDetailView(url: sourceURL, showsSource: true)
+                    } label: {
+                        sourceLine
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    sourceLine
+                }
                 Spacer(minLength: 8)
                 DownloadButton(version: latest, app: app, source: source, large: true)
             }
@@ -120,31 +108,89 @@ struct SourceAppView: View {
         .padding(.top, 8)
     }
 
-    /// Version, size, requirement and date, as the App Store's strip
+    /// Where it's from, quietly: the source (and that it's its only app,
+    /// when it opened straight here), to open the source itself
+    private var sourceLine: some View {
+        HStack(spacing: 5) {
+            RemoteIconView(url: source.iconUrl, size: 16)
+            Text(isOnlyApp ? "\(source.name) · only app" : source.name)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            if sourceURL != nil {
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private struct Stat {
+        let label: String
+        let value: String
+        /// The unit or context, under the value
+        let detail: String
+    }
+
+    /// Short values with their units and context underneath, as the App
+    /// Store's strip has them
+    private var statItems: [Stat] {
+        var items = [Stat(
+            label: "Version",
+            value: latest.version,
+            detail: latest.build.flatMap { $0 == latest.version ? nil : "Build \($0)" } ?? "Latest"
+        )]
+        if let size = latest.size {
+            let count = ByteCountFormatter()
+            count.countStyle = .file
+            count.includesUnit = false
+            let unit = ByteCountFormatter()
+            unit.countStyle = .file
+            unit.includesCount = false
+            items.append(Stat(
+                label: "Size",
+                value: count.string(fromByteCount: Int64(clamping: size)),
+                detail: unit.string(fromByteCount: Int64(clamping: size))
+            ))
+        }
+        if let minOs = latest.minOs {
+            let short = minOs.hasSuffix(".0") ? String(minOs.dropLast(2)) : minOs
+            items.append(Stat(label: "Requires", value: "iOS \(short)", detail: "or later"))
+        }
+        if let date = latest.date.flatMap(SourceDate.parse) {
+            items.append(Stat(
+                label: "Updated",
+                value: date.formatted(.dateTime.day().month()),
+                detail: date.formatted(.dateTime.year())
+            ))
+        }
+        return items
+    }
+
     private var stats: some View {
-        let size: (String, String)? = latest.size.map { ("Size", ByteCountFormatter.file($0)) }
-        let requires: (String, String)? = latest.minOs.map { ("Requires", "iOS \($0)") }
-        let updated: (String, String)? = latest.date.flatMap(SourceDate.parse)
-            .map { ("Updated", $0.formatted(.dateTime.day().month())) }
-        let candidates: [(String, String)?] = [("Version", latest.version), size, requires, updated]
-        let items = candidates.compactMap { $0 }
-        return VStack(spacing: 0) {
+        VStack(spacing: 0) {
             Divider().padding(.top, 20)
             HStack(spacing: 0) {
-                ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                ForEach(Array(statItems.enumerated()), id: \.offset) { index, item in
                     if index > 0 {
-                        Divider().frame(height: 36)
+                        Divider().frame(height: 40)
                     }
-                    VStack(spacing: 4) {
-                        Text(item.0.uppercased())
-                            .font(.caption2.weight(.semibold))
+                    VStack(spacing: 3) {
+                        Text(item.label.uppercased())
+                            .font(.caption2.weight(.medium))
                             .foregroundStyle(.secondary)
-                        Text(item.1)
-                            .font(.title3.weight(.semibold))
+                        Text(item.value)
+                            .font(.title3.weight(.bold))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
-                            .minimumScaleFactor(0.6)
+                            .minimumScaleFactor(0.7)
+                        Text(item.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
+                    .padding(.horizontal, 4)
                     .frame(maxWidth: .infinity)
                 }
             }
