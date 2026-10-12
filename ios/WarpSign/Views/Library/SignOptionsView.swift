@@ -178,7 +178,6 @@ struct SignOptionsView: View {
         }
     }
 
-    @ViewBuilder
     /// The bundle ID this sign gives the app, as the signer works it out
     private var previewBundleId: String? {
         guard let team = account.selectedTeam?.teamId else { return nil }
@@ -199,6 +198,7 @@ struct SignOptionsView: View {
             .bundleId
     }
 
+    @ViewBuilder
     private var originalIdWarning: some View {
         switch teamUsesPPQ {
         case .some(true):

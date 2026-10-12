@@ -98,31 +98,77 @@ final class LoopbackTunnel {
             throw WarpsignError.DeviceUnreachable(message: reason)
         }
         status = .connecting
-        do {
-            try manager.connection.startVPNTunnel()
-        } catch {
-            // Often a configuration gone stale, e.g. after WarpSign was
-            // updated underneath it: load it again and try once more
-            do {
-                try await manager.loadFromPreferences()
+        // iOS runs one VPN at a time. Just switched back from another (the
+        // other app's: WarpSign's or Companion's), a tunnel often stops
+        // before it's up, or won't start at all: load the configuration
+        // again and try again, a few times
+        var startError: Error?
+        for attempt in 0..<3 {
+            if attempt > 0 {
+                try await Task.sleep(for: .milliseconds(600))
+                try? await manager.loadFromPreferences()
                 if !manager.isEnabled {
                     manager.isEnabled = true
-                    try await manager.saveToPreferences()
-                    try await manager.loadFromPreferences()
+                    try? await manager.saveToPreferences()
+                    try? await manager.loadFromPreferences()
                 }
+            }
+            do {
                 try manager.connection.startVPNTunnel()
             } catch {
+                startError = error
+                continue
+            }
+            if try await waitUntilConnected(manager, seconds: attempt == 2 ? 10 : 6) {
                 update()
-                throw WarpsignError.DeviceUnreachable(message: "WarpSign's VPN couldn't start: \(error.localizedDescription)")
+                return
             }
         }
-        for _ in 0..<50 where manager.connection.status != .connected {
+        update()
+        let reason = await Self.lastDisconnectReason(manager) ?? startError?.localizedDescription
+        throw WarpsignError.DeviceUnreachable(
+            message: "\(Self.appName)'s VPN didn't connect\(reason.map { " (\($0))" } ?? ""). iOS runs one VPN at a time: if another was on (\(Self.otherAppName)'s, say), try again, or turn this one on in Settings → VPN."
+        )
+    }
+
+    /// Wait for the tunnel to come up. False as soon as it's given up
+    /// (back to disconnected after trying), or after `seconds`.
+    private func waitUntilConnected(_ manager: NETunnelProviderManager, seconds: Double) async throws -> Bool {
+        let start = Date()
+        var wasConnecting = false
+        while Date().timeIntervalSince(start) < seconds {
+            switch manager.connection.status {
+            case .connected:
+                return true
+            case .connecting, .reasserting:
+                wasConnecting = true
+            case .disconnected, .invalid:
+                // Stopped after trying, or never started: give up on this go
+                if wasConnecting || Date().timeIntervalSince(start) > 1.5 { return false }
+            default:
+                break
+            }
             try await Task.sleep(for: .milliseconds(200))
         }
-        update()
-        if manager.connection.status != .connected {
-            throw WarpsignError.DeviceUnreachable(message: "WarpSign's VPN didn't connect.")
+        return manager.connection.status == .connected
+    }
+
+    /// Why iOS last stopped the tunnel, if it says
+    private static func lastDisconnectReason(_ manager: NETunnelProviderManager) async -> String? {
+        await withCheckedContinuation { continuation in
+            manager.connection.fetchLastDisconnectError { error in
+                continuation.resume(returning: error?.localizedDescription)
+            }
         }
+    }
+
+    /// This app's name, and the other one's that has a VPN too
+    nonisolated static var appName: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "WarpSign"
+    }
+
+    nonisolated static var otherAppName: String {
+        appName == "Companion" ? "WarpSign" : "Companion"
     }
 
     /// Turn the VPN off and on again: what clears a tunnel that's up but
@@ -191,7 +237,8 @@ final class LoopbackTunnel {
         configuration.providerBundleIdentifier = providerId
         configuration.serverAddress = "This device"
         manager.protocolConfiguration = configuration
-        manager.localizedDescription = "WarpSign"
+        // Each app's own name, so Settings → VPN tells them apart
+        manager.localizedDescription = Self.appName
         manager.isEnabled = true
         try await manager.saveToPreferences()
         // A configuration just saved can't start until it's loaded again
