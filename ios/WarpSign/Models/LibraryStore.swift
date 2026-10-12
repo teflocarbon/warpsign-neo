@@ -113,7 +113,8 @@ final class LibraryStore {
             .appendingPathComponent(copy.fileName)
     }
 
-    /// Copy an IPA (from Files or the share sheet) into the library
+    /// Copy an IPA (from Files or the share sheet), or the IPA in a zip, into
+    /// the library
     @discardableResult
     func importFile(_ url: URL, origin: String? = nil, move: Bool = false) async -> LibraryApp? {
         let name = url.lastPathComponent
@@ -156,6 +157,12 @@ final class LibraryStore {
                 } else {
                     try fileManager.copyItem(at: url, to: destination)
                 }
+            }
+            // A zip with the IPA inside, e.g. a GitHub artifact: keep the IPA
+            let unwrapped = folder.appendingPathComponent("unwrapped.ipa")
+            if try unwrapIpa(path: destination.path, output: unwrapped.path) {
+                try fileManager.removeItem(at: destination)
+                try fileManager.moveItem(at: unwrapped, to: destination)
             }
             let metadata = try readIpaMetadata(ipaPath: destination.path)
             if let icon = metadata.icon {

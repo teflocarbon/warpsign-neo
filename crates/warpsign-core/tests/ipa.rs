@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use plist::{Dictionary, Value};
 use warpsign_core::inspect::slash_path;
-use warpsign_core::ipa::{IpaError, extract_ipa, package_ipa};
+use warpsign_core::ipa::{IpaError, extract_ipa, package_ipa, unwrap_ipa};
 use warpsign_core::signature::read_signature;
 use warpsign_core::signing::{BundleEntitlements, SigningIdentity, sign_app_bundle};
 use zip::ZipWriter;
@@ -267,4 +267,49 @@ fn ipa_in_signed_ipa_out() {
     ] {
         assert_eq!(mode(&result.join(executable)), 0o755, "{executable}");
     }
+}
+
+#[test]
+fn unwrap_pulls_the_ipa_out_of_a_zip() {
+    let dir = tempfile::tempdir().unwrap();
+    let ipa = dir.path().join("inner.ipa");
+    write_zip(&ipa, &[("Payload/Test.app/Test", b"binary", None)]);
+    let inner = std::fs::read(&ipa).unwrap();
+    let wrapper = dir.path().join("WarpSign-ipa.zip");
+    write_zip(
+        &wrapper,
+        &[
+            ("__MACOSX/._WarpSign.ipa", b"fork", None),
+            ("WarpSign.ipa", &inner, None),
+        ],
+    );
+
+    let out = dir.path().join("out.ipa");
+    assert!(unwrap_ipa(&wrapper, &out).unwrap());
+    assert_eq!(std::fs::read(&out).unwrap(), inner);
+}
+
+#[test]
+fn unwrap_leaves_an_ipa_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let ipa = dir.path().join("in.ipa");
+    write_zip(&ipa, &[("Payload/Test.app/Test", b"binary", None)]);
+    let out = dir.path().join("out.ipa");
+    assert!(!unwrap_ipa(&ipa, &out).unwrap());
+    assert!(!out.exists());
+}
+
+#[test]
+fn unwrap_needs_exactly_one_ipa() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("out.ipa");
+    let none = dir.path().join("none.zip");
+    write_zip(&none, &[("readme.txt", b"hi", None)]);
+    assert!(matches!(unwrap_ipa(&none, &out), Err(IpaError::NoIpa(_))));
+    let two = dir.path().join("two.zip");
+    write_zip(&two, &[("a.ipa", b"a", None), ("b/B.IPA", b"b", None)]);
+    assert!(matches!(
+        unwrap_ipa(&two, &out),
+        Err(IpaError::MultipleIpas(_))
+    ));
 }

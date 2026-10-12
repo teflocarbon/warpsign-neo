@@ -30,6 +30,10 @@ pub enum IpaError {
     MultipleApps(String),
     #[error("{0} is not an .app directory")]
     NotAnApp(String),
+    #[error("{0} is neither an IPA nor a zip with one inside")]
+    NoIpa(String),
+    #[error("{0} has more than one IPA inside")]
+    MultipleIpas(String),
 }
 
 fn io_error(path: &Path) -> impl FnOnce(std::io::Error) -> IpaError + '_ {
@@ -72,6 +76,41 @@ pub fn extract_ipa(ipa: &Path, dest: &Path) -> Result<PathBuf, IpaError> {
         1 => Ok(apps.remove(0)),
         _ => Err(IpaError::MultipleApps(ipa.display().to_string())),
     }
+}
+
+/// If `path` is a zip wrapping an IPA (as GitHub's artifact downloads are),
+/// write that IPA to `output` and return true. Returns false, writing
+/// nothing, when `path` is an IPA itself.
+pub fn unwrap_ipa(path: &Path, output: &Path) -> Result<bool, IpaError> {
+    let file = File::open(path).map_err(io_error(path))?;
+    let mut archive = ZipArchive::new(file).map_err(zip_error(path))?;
+    if archive
+        .file_names()
+        .any(|name| name.starts_with("Payload/"))
+    {
+        return Ok(false);
+    }
+    // Finder adds __MACOSX/._name resource forks next to each file
+    let ipas: Vec<String> = archive
+        .file_names()
+        .filter(|name| {
+            !name.starts_with("__MACOSX/")
+                && name.rsplit('/').next().is_some_and(|base| {
+                    !base.starts_with("._") && base.to_ascii_lowercase().ends_with(".ipa")
+                })
+        })
+        .map(String::from)
+        .collect();
+    let name = match ipas.as_slice() {
+        [] => return Err(IpaError::NoIpa(path.display().to_string())),
+        [name] => name,
+        _ => return Err(IpaError::MultipleIpas(path.display().to_string())),
+    };
+    let mut entry = archive.by_name(name).map_err(zip_error(path))?;
+    let mut out = BufWriter::new(File::create(output).map_err(io_error(output))?);
+    std::io::copy(&mut entry, &mut out).map_err(io_error(output))?;
+    out.flush().map_err(io_error(output))?;
+    Ok(true)
 }
 
 #[cfg(unix)]

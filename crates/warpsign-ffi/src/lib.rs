@@ -345,6 +345,17 @@ pub struct IpaMetadata {
     pub icon: Option<Vec<u8>>,
 }
 
+/// If `path` is a zip with an IPA inside (a GitHub artifact download), write
+/// that IPA to `output` and return true; false if `path` is an IPA itself
+#[uniffi::export]
+pub fn unwrap_ipa(path: String, output: String) -> Result<bool, WarpsignError> {
+    warpsign_core::ipa::unwrap_ipa(Path::new(&path), Path::new(&output)).map_err(|e| {
+        WarpsignError::Ipa {
+            message: e.to_string(),
+        }
+    })
+}
+
 /// Read an IPA's name, version and icon, without extracting it
 #[uniffi::export]
 pub fn read_ipa_metadata(ipa_path: String) -> Result<IpaMetadata, WarpsignError> {

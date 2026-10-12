@@ -81,7 +81,7 @@ This writes `<UDID>.rppairing.plist`, a RemotePairing file (iOS 17.4+). It pairs
 
 ## 7. The app
 
-Build with `tools/build_ios.sh`, set your bundle ID and team, and run it on the phone. Then:
+Build with `tools/build_ios.sh`, set your bundle ID and team, and run it on the phone. Or, without a Mac: run the **iOS IPA** workflow, download `WarpSign.ipa` from the repo's `latest` release (a plain file, unlike the artifact zip, which iOS Files can fail to open), and sign it with the CLI from step 4. Then:
 
 1. Settings → Sign In.
 2. Settings → Signing Identity → Restore from Backup, with the `.p12` from step 3. This avoids using more certificate slots.

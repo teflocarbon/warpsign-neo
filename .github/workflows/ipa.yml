@@ -5,6 +5,10 @@ name: iOS IPA
 on:
   workflow_dispatch:
 
+# To publish the IPA on the rolling "latest" release
+permissions:
+  contents: write
+
 jobs:
   ipa:
     runs-on: macos-latest
@@ -34,3 +38,17 @@ jobs:
           name: WarpSign-ipa
           path: WarpSign.ipa
           if-no-files-found: error
+      # A plain .ipa link Safari saves straight to Files: iOS can't always
+      # unzip artifact downloads ("Bad message")
+      - name: Publish to the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="Unsigned WarpSign.ipa from $GITHUB_SHA, for signing with WarpSign or the CLI."
+          if gh release view latest >/dev/null 2>&1; then
+            gh release upload latest WarpSign.ipa --clobber
+            gh release edit latest --notes "$notes"
+          else
+            gh release create latest WarpSign.ipa --prerelease \
+              --title "WarpSign (latest build)" --notes "$notes" --target "$GITHUB_SHA"
+          fi

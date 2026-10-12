@@ -72,7 +72,7 @@ struct LibraryView: View {
             }
             .fileImporter(
                 isPresented: $showingImporter,
-                allowedContentTypes: [Self.ipaType],
+                allowedContentTypes: [Self.ipaType, .zip],
                 allowsMultipleSelection: true
             ) { result in
                 guard case .success(let urls) = result else { return }
