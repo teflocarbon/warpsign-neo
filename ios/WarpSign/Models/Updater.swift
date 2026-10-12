@@ -317,12 +317,41 @@ final class Updater {
         }
         defer { if showCard { ContinuedWork.shared.finish() } }
 
+        // One job each in Activity, queued in order
+        let activity = ActivityCenter.shared
+        var jobs: [UUID: UUID] = [:]
+        for id in ids {
+            let name = library.app(id)?.displayName ?? "an app"
+            let change = available[id].map { "\(library.app(id)?.versionText ?? "") → \($0.version.version)" }
+            jobs[id] = activity.enqueue(.update, title: "Updating \(name)", detail: change, appId: id, automatic: automatic)
+        }
+
         var entries: [Entry] = []
         for (index, id) in ids.enumerated() {
+            guard let job = jobs[id] else { continue }
+            // Taken out of the queue in Activity
+            if activity.isCancelled(job) {
+                status[id] = nil
+                continue
+            }
             if showCard, let name = library.app(id)?.displayName {
                 ContinuedWork.shared.update(subtitle: name, fraction: Double(index) / Double(ids.count))
             }
-            if let entry = await update(id, automatic: automatic) {
+            let change = activity.job(job)?.detail
+            activity.begin(job)
+            let entry = await update(id, automatic: automatic, job: job)
+            switch status[id] {
+            case .failed(let message):
+                activity.finish(job, .failed, message: message, detail: change)
+            case .done(let done):
+                activity.finish(
+                    job, entry?.problem == nil ? .done : .needsYou,
+                    message: entry?.problem ?? entry?.note ?? done, detail: change
+                )
+            default:
+                activity.finish(job, .failed, message: "It's no longer available.", detail: change)
+            }
+            if let entry {
                 entries.append(entry)
                 if automatic, let problem = entry.problem {
                     Notifier.post(title: "\(entry.appName) wasn't updated", body: problem)
@@ -379,13 +408,15 @@ final class Updater {
         return nil
     }
 
-    private func update(_ id: UUID, automatic: Bool) async -> Entry? {
+    private func update(_ id: UUID, automatic: Bool, job: UUID) async -> Entry? {
+        let activity = ActivityCenter.shared
         guard let library, let account, let device,
               let update = available[id], let app = library.app(id)
         else { return nil }
         let from = app.versionText
         let to = update.version.version
         status[id] = .downloading(0)
+        activity.setDetail(job, "Downloading")
         do {
             guard let url = URL(string: update.version.downloadUrl) else {
                 throw WarpsignError.Source(message: "The source's download link isn't valid.")
@@ -400,6 +431,7 @@ final class Updater {
                     url, name: "\(app.displayName) \(to)", appId: id
                 ) { fraction in
                     if case .downloading = self.status[id] { self.status[id] = .downloading(fraction) }
+                    activity.setDetail(job, "Downloading \(Int(fraction * 100))%")
                 }
             }
             defer { try? FileManager.default.removeItem(at: file) }
@@ -414,6 +446,8 @@ final class Updater {
             }
             if account.phase == .signedOut { await account.restore() }
             status[id] = .signing
+            activity.setDetail(job, "Signing")
+            activity.addSteps(job, signSteps())
             let signLog = StepLog(signSteps())
             let (_, copy) = try await SignJob.run(
                 app: updated,
@@ -421,7 +455,10 @@ final class Updater {
                 icon: library.customIcon(of: updated),
                 account: account,
                 library: library,
-                observer: StepRecorder { event in signLog.steps.apply(event) },
+                observer: StepRecorder { event in
+                    signLog.steps.apply(event)
+                    activity.apply(job, event)
+                },
                 steps: { signLog.steps }
             )
             // The old version's signed copies: the library no longer has
@@ -435,6 +472,7 @@ final class Updater {
                                   problem: "WarpSign \(to) is signed. Open WarpSign and tap Install with Companion on its page.")
                 }
                 status[id] = .installing
+                activity.setDetail(job, "Handing it to Companion")
                 try await CompanionHandoff.send(library.signedURL(copy, of: updated), name: updated.displayName, tunnel: device.tunnel)
                 return finish(id, app: updated, from: from, to: to, done: "Sent to Companion",
                               problem: nil, note: "Installed with Companion")
@@ -466,10 +504,15 @@ final class Updater {
                               problem: nil, note: "Sent to install over the web")
             }
             status[id] = .installing
+            activity.setDetail(job, "Installing")
+            activity.addSteps(job, installSteps())
             let installLog = StepLog(installSteps())
             try await device.install(
                 library.signedURL(copy, of: updated),
-                observer: StepRecorder { event in installLog.steps.apply(event) }
+                observer: StepRecorder { event in
+                    installLog.steps.apply(event)
+                    activity.apply(job, event)
+                }
             )
             return finish(id, app: updated, from: from, to: to, done: "Updated to \(to)", problem: nil)
         } catch {

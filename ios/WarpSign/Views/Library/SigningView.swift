@@ -152,9 +152,12 @@ struct SigningView: View {
     }
 
     private func sign() async {
+        let activity = ActivityCenter.shared
+        let job = activity.start(.sign, title: "Signing \(app.displayName)", detail: app.versionText, appId: app.id, steps: signSteps())
         let recorder = StepRecorder { event in
             steps.apply(event)
             ContinuedWork.shared.update(steps)
+            activity.apply(job, event)
         }
         ContinuedWork.shared.begin(title: "Signing \(app.displayName)", subtitle: "Starting")
         defer { ContinuedWork.shared.finish() }
@@ -169,8 +172,10 @@ struct SigningView: View {
                 steps: { steps }
             )
             phase = .done(result, copy)
+            activity.finish(job, .done, message: "Signed as \(copy.bundleId)")
         } catch {
             phase = .failed(error.userMessage)
+            activity.finish(job, .failed, message: error.userMessage)
         }
     }
 }

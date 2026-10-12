@@ -26,6 +26,10 @@ Every download (from sources, from a link the user gives with + → Download fro
 
 The library shows each at the top: size, speed (smoothed) and time left, "Waiting for the network" when nothing has arrived for a few seconds, and pause, resume, cancel and retry. Failures are explained: the server's status, a link that opened a web page instead of an app, no connection, an untrusted certificate. Links are https only. An interrupted update download isn't kept: the next check starts it again.
 
+## Activity
+
+Every update, sign and install is a job in `ActivityCenter`: an update is one job (download, sign, then install or hand to Companion), with its steps live while it runs. The library's Activity button (a dot while something runs, red when something needs a look) opens Now, Downloads, Up Next (removable) and Recent (the last week, each with its steps and log, Open App and Try Again); a slim strip at the top of the library says what's running. Jobs are saved, so one running when WarpSign stopped shows as interrupted.
+
 ## When it runs
 
 - When the user taps Update or Update All: in the foreground, with the progress in the Dynamic Island (`BGContinuedProcessingTask`).

@@ -1,27 +1,5 @@
 import SwiftUI
 
-/// Downloads in progress, stopped or failed, at the top of the library
-struct DownloadsSection: View {
-    private var downloads: DownloadManager { .shared }
-
-    var body: some View {
-        if !downloads.items.isEmpty {
-            Section {
-                ForEach(downloads.items) { item in
-                    DownloadRow(item: item)
-                        .contextMenu { DownloadMenu(item: item) }
-                }
-            } header: {
-                Text("Downloads")
-            } footer: {
-                if downloads.items.contains(where: { $0.state == .downloading }) {
-                    Text("Downloads carry on while WarpSign is in the background. Force-quitting it stops them; they resume where they stopped when the server allows it.")
-                }
-            }
-        }
-    }
-}
-
 /// One download: how far it is, how fast, and what can be done with it
 struct DownloadRow: View {
     @Environment(LibraryStore.self) private var library

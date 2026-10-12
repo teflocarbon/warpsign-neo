@@ -415,26 +415,14 @@ struct UpdatesSettingsView: View {
                 LabeledContent("Updates Available", value: "\(updater.available.count)")
             }
 
-            if !updater.history.isEmpty {
-                Section("Recent Updates") {
-                    ForEach(updater.history.prefix(20)) { entry in
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Text(entry.appName).font(.headline)
-                                Spacer()
-                                Text(entry.date, format: .dateTime.day().month().hour().minute())
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Text("\(entry.from) → \(entry.to)").font(.caption).foregroundStyle(.secondary)
-                            if let problem = entry.problem {
-                                Text(problem).font(.caption).foregroundStyle(.orange)
-                            } else if let note = entry.note {
-                                Text(note).font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                    }
+            Section {
+                NavigationLink {
+                    ActivityList()
+                } label: {
+                    Label("Activity", systemImage: "clock.arrow.circlepath")
                 }
+            } footer: {
+                Text("Every update, sign and install from the last week, with each one's log.")
             }
         }
         .navigationTitle("Automatic Updates")

@@ -9,6 +9,7 @@ struct LibraryView: View {
     @State private var showingLink = false
     @State private var linking: LibraryApp?
     @State private var removing: LibraryApp?
+    @State private var showingActivity = false
     @State private var search = ""
     @AppStorage("library.filter") private var filter: LibraryFilter = .all
     @State private var path: [UUID] = Demo.isOn && Demo.screen == .appDetail ? [Demo.appIds[0]] : []
@@ -60,7 +61,12 @@ struct LibraryView: View {
                         }
                     }
                 }
-                DownloadsSection()
+                // While something's going, or needs a look: Activity has the rest
+                if ActivityStrip.isShown {
+                    Section {
+                        ActivityStrip { showingActivity = true }
+                    }
+                }
                 if let error = library.importError {
                     Section { ErrorRow(message: error) }
                 }
@@ -120,6 +126,9 @@ struct LibraryView: View {
                 AppDetailView(appId: id)
             }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    ActivityButton { showingActivity = true }
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
                         Button("Import from Files", systemImage: "folder") {
@@ -134,6 +143,11 @@ struct LibraryView: View {
                 }
             }
             .modifier(LinkDownloadAlert(isPresented: $showingLink))
+            .sheet(isPresented: $showingActivity) {
+                ActivitySheet(open: { id in path = [id] })
+                    .environment(library)
+                    .environment(device)
+            }
             .sheet(item: $linking) { app in
                 LinkSourceView(app: app)
             }

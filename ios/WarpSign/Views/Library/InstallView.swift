@@ -23,6 +23,8 @@ struct InstallView: View {
     @State private var started = false
     @State private var method = InstallMethod.web
     @State private var server: WebInstall?
+    /// This install in Activity, while it's going
+    @State private var job: UUID?
 
     init(ipa: URL, name: String, icon: URL? = nil) {
         self.ipa = ipa
@@ -158,32 +160,44 @@ struct InstallView: View {
     private func installWithPairing() async {
         phase = .installing
         steps = [StepState](pending: installSteps())
+        let activity = ActivityCenter.shared
+        let job = activity.start(.install, title: "Installing \(name)", steps: installSteps())
         let recorder = StepRecorder { event in
             steps.apply(event)
             ContinuedWork.shared.update(steps)
+            activity.apply(job, event)
         }
         ContinuedWork.shared.begin(title: "Installing \(name)", subtitle: "Starting")
         defer { ContinuedWork.shared.finish() }
         do {
             try await device.install(ipa, observer: recorder)
             phase = .installed
+            activity.finish(job, .done, message: "Installed")
         } catch WarpsignError.DeviceUnreachable(let message) {
             phase = .failed(message, unreachable: true)
+            activity.finish(job, .failed, message: message)
         } catch {
             phase = .failed(error.userMessage, unreachable: false)
+            activity.finish(job, .failed, message: error.userMessage)
         }
     }
 
     private func startWeb() {
         server?.stop()
         steps = [StepState](pending: webInstallSteps())
+        let activity = ActivityCenter.shared
+        let job = activity.start(.install, title: "Installing \(name)", detail: "Over the web", steps: webInstallSteps())
+        self.job = job
         let recorder = StepRecorder { event in
             steps.apply(event)
+            activity.apply(job, event)
             switch event {
             case .started(.sendToIos):
                 phase = .installing
             case .finished(.sendToIos, _, nil):
                 phase = .installed
+                activity.finish(job, .done, message: "Sent to iOS to install")
+                self.job = nil
                 // iOS may come back for a piece it missed: keep serving a bit
                 Task {
                     try? await Task.sleep(for: .seconds(60))
@@ -202,6 +216,8 @@ struct InstallView: View {
             open(server)
         } catch {
             phase = .failed(error.userMessage, unreachable: false)
+            activity.finish(job, .failed, message: error.userMessage)
+            self.job = nil
         }
     }
 
@@ -212,6 +228,11 @@ struct InstallView: View {
     }
 
     private func finishWeb() {
+        // Left before iOS had it
+        if let job {
+            ActivityCenter.shared.finish(job, .cancelled, message: "Stopped before iOS installed it.")
+            self.job = nil
+        }
         server?.stop()
         server = nil
         KeepAlive.shared.stop("web install")
