@@ -83,7 +83,9 @@ struct AppDetailView: View {
                 LabeledContent("Installed Size", value: ByteCountFormatter.file(app.installedSize))
                 LabeledContent("Extensions", value: "\(app.extensionCount)")
                 LabeledContent("Encryption", value: app.encryption.capitalized)
-                LabeledContent("From", value: app.origin ?? "Imported File")
+                LabeledContent("From", value: app.origin
+                               ?? app.link.flatMap { URL(string: $0)?.host() }
+                               ?? "Imported File")
                 LabeledContent("Added") {
                     Text(app.addedAt, format: .dateTime.day().month().year())
                 }

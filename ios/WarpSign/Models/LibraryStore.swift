@@ -25,6 +25,8 @@ struct LibraryApp: Codable, Identifiable, Hashable, Sendable {
     var sourceAppId: String? = nil
     /// Update by itself when its source has a newer version (nil: yes)
     var autoUpdate: Bool? = nil
+    /// The link it was downloaded from, when that was a link the user gave
+    var link: String? = nil
     /// A version of it the user chose to skip (a broken release, say): not
     /// offered as an update, though later versions are
     var skippedVersion: String? = nil
@@ -156,7 +158,8 @@ final class LibraryStore {
         move: Bool = false,
         sourceURL: String? = nil,
         sourceAppId: String? = nil,
-        autoUpdate: Bool? = nil
+        autoUpdate: Bool? = nil,
+        link: String? = nil
     ) async -> LibraryApp? {
         let name = url.lastPathComponent
         guard ["ipa", "zip"].contains(url.pathExtension.lowercased()) else {
@@ -172,6 +175,7 @@ final class LibraryStore {
             app.sourceURL = sourceURL
             app.sourceAppId = sourceAppId
             app.autoUpdate = autoUpdate
+            app.link = link
             apps.insert(app, at: 0)
             save()
             importError = nil

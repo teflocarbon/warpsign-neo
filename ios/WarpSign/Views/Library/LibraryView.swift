@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct LibraryView: View {
     @Environment(LibraryStore.self) private var library
     @State private var showingImporter = false
+    @State private var showingLink = false
     @State private var search = ""
     @State private var companionDismissed = UserDefaults.standard.bool(forKey: BundledCompanion.dismissedKey)
     @State private var path: [UUID] = Demo.isOn && Demo.screen == .appDetail ? [Demo.appIds[0]] : []
@@ -35,6 +36,7 @@ struct LibraryView: View {
                         }
                     }
                 }
+                DownloadsSection()
                 if let error = library.importError {
                     Section { ErrorRow(message: error) }
                 }
@@ -53,14 +55,15 @@ struct LibraryView: View {
                 }
             }
             .overlay {
-                if library.apps.isEmpty && library.importing.isEmpty {
+                if library.apps.isEmpty && library.importing.isEmpty && DownloadManager.shared.items.isEmpty {
                     ContentUnavailableView {
                         Label("No Apps", systemImage: "square.stack.3d.up")
                     } description: {
-                        Text("Import an IPA from Files, share one to WarpSign, or download one from a source.")
+                        Text("Import an IPA from Files, share one to WarpSign, download one from a link, or get one from a source.")
                     } actions: {
-                        Button("Import IPA") { showingImporter = true }
+                        Button("Import from Files") { showingImporter = true }
                             .buttonStyle(.borderedProminent)
+                        Button("Download from Link") { showingLink = true }
                     }
                 }
             }
@@ -71,11 +74,19 @@ struct LibraryView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    Button("Import IPA", systemImage: "plus") {
-                        showingImporter = true
+                    Menu {
+                        Button("Import from Files", systemImage: "folder") {
+                            showingImporter = true
+                        }
+                        Button("Download from Link", systemImage: "link") {
+                            showingLink = true
+                        }
+                    } label: {
+                        Label("Add App", systemImage: "plus")
                     }
                 }
             }
+            .modifier(LinkDownloadAlert(isPresented: $showingLink))
             .fileImporter(
                 isPresented: $showingImporter,
                 // Any file: the type iOS gives .ipa files depends on which installed

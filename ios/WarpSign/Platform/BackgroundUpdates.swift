@@ -151,4 +151,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         BackgroundUpdates.register()
         return true
     }
+
+    /// iOS relaunched WarpSign for downloads that finished while it wasn't
+    /// running: reconnect, and say when they're handed over
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        MainActor.assumeIsolated {
+            DownloadManager.shared.backgroundCompletion = completionHandler
+        }
+    }
 }

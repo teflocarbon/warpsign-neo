@@ -314,12 +314,12 @@ final class Updater {
             guard let url = URL(string: update.version.downloadUrl) else {
                 throw WarpsignError.Source(message: "The source's download link isn't valid.")
             }
-            let file = try await Downloader.download(url) { fraction in
-                Task { @MainActor in
-                    if case .downloading = self.status[id] { self.status[id] = .downloading(fraction) }
-                }
+            let file = try await DownloadManager.shared.downloadUpdate(
+                url, name: "\(app.displayName) \(to)", appId: id
+            ) { fraction in
+                if case .downloading = self.status[id] { self.status[id] = .downloading(fraction) }
             }
-            defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+            defer { try? FileManager.default.removeItem(at: file) }
             let updated = try await library.replaceIPA(of: app, with: file)
             available[id] = nil
 

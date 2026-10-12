@@ -8,7 +8,12 @@ struct SourceDetailView: View {
     var body: some View {
         Group {
             if let source = sources.sources[url] {
-                list(source)
+                // Nothing to choose from: straight to the app
+                if source.apps.count == 1 {
+                    SourceAppView(app: source.apps[0], source: source, isOnlyApp: true)
+                } else {
+                    list(source)
+                }
             } else if let error = sources.errors[url] {
                 List { ErrorRow(message: error) }
             } else {
@@ -98,6 +103,13 @@ struct SourceAppView: View {
     @Environment(LibraryStore.self) private var library
     let app: SourceApp
     let source: Source
+    /// Opened straight from the source, as its only app
+    var isOnlyApp = false
+
+    /// Its newest version's download, while there is one
+    private var download: DownloadManager.Item? {
+        DownloadManager.shared.items.first { $0.url.absoluteString == app.versions[0].downloadUrl }
+    }
 
     /// Library apps downloaded from this listing
     private var inLibrary: [LibraryApp] {
@@ -110,6 +122,16 @@ struct SourceAppView: View {
 
     var body: some View {
         List {
+            if isOnlyApp {
+                Section {
+                    Label {
+                        Text("This is the only app in \(source.name), so it opens straight here.")
+                    } icon: {
+                        Image(systemName: "lightbulb.fill").foregroundStyle(.yellow)
+                    }
+                    .font(.callout)
+                }
+            }
             Section {
                 HStack(spacing: 16) {
                     RemoteIconView(url: app.iconUrl, size: 84)
@@ -124,8 +146,8 @@ struct SourceAppView: View {
                 .padding(.vertical, 6)
             }
 
-            if let error = sources.downloadError {
-                Section { ErrorRow(message: error) }
+            if let download {
+                Section { DownloadRow(item: download) }
             }
 
             if !inLibrary.isEmpty {
@@ -223,14 +245,37 @@ private struct DownloadButton: View {
     let app: SourceApp
     let source: Source
 
+    /// This version's download, while there is one
+    private var item: DownloadManager.Item? {
+        DownloadManager.shared.items.first { $0.url.absoluteString == version.downloadUrl }
+    }
+
     var body: some View {
-        if let progress = sources.downloads[version.downloadUrl] {
-            ProgressView(value: progress)
-                .progressViewStyle(.circular)
-                .frame(width: 28, height: 28)
-        } else {
+        switch item?.state {
+        case .downloading:
+            if let fraction = item?.fraction {
+                ProgressView(value: fraction)
+                    .progressViewStyle(.circular)
+                    .frame(width: 28, height: 28)
+            } else {
+                ProgressView().frame(width: 28, height: 28)
+            }
+        case .importing:
+            ProgressView().frame(width: 28, height: 28)
+        case .stopped, .failed:
             Button {
-                Task { await sources.download(version, of: app, from: source, into: library) }
+                if let item { DownloadManager.shared.resume(item.id) }
+            } label: {
+                Text("Retry")
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 6)
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .tint(.orange)
+        case nil:
+            Button {
+                sources.download(version, of: app, from: source)
             } label: {
                 Text("Get")
                     .font(.subheadline.weight(.semibold))

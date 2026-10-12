@@ -128,7 +128,10 @@ struct AppUpdatesSection: View {
             }
         case .imported:
             Section("Updates") {
-                Label("Imported from a file, so there's nowhere to look for updates. Download it from a source to have WarpSign keep it up to date.", systemImage: "doc")
+                Label(app.link != nil
+                      ? "Downloaded from a link, so there's nowhere to look for updates. Download it from a source to have WarpSign keep it up to date."
+                      : "Imported from a file, so there's nowhere to look for updates. Download it from a source to have WarpSign keep it up to date.",
+                      systemImage: app.link != nil ? "link" : "doc")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -414,8 +417,13 @@ struct UpdateOriginLabel: View {
                 Label("Bundled with WarpSign", systemImage: "shippingbox")
                     .foregroundStyle(.secondary)
             case .imported:
-                Label("Imported · no updates", systemImage: "doc")
-                    .foregroundStyle(.secondary)
+                if app.link != nil {
+                    Label("From a link · no updates", systemImage: "link")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Label("Imported · no updates", systemImage: "doc")
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .font(.caption)

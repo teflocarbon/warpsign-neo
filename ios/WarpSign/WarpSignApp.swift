@@ -22,6 +22,7 @@ struct WarpSignApp: App {
         _device = State(initialValue: device)
         // Background launches update apps without any screen
         Updater.shared.attach(library: library, account: account, sources: sources, device: device)
+        DownloadManager.shared.attach(library: library)
     }
 
     enum AppTab: Hashable {

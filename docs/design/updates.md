@@ -20,6 +20,12 @@ Which apps can update is shown in the library, under each app's name (`UpdateOri
 
 WarpSign itself is never updated this way: installing over the running app locks up installd until the phone restarts. It updates through WarpSign Companion.
 
+## Downloads
+
+Every download (from sources, from a link the user gives with + → Download from Link, and updates) goes through `DownloadManager`, a background URLSession: downloads carry on while WarpSign is in the background or suspended, and if iOS ends WarpSign, it finishes them and relaunches WarpSign to hand them over (`handleEventsForBackgroundURLSession`). Force-quitting cancels them; on the next launch they're shown as interrupted, and resume where they stopped when the server allows it. The list is saved (`Application Support/Downloads/downloads.json`), so a download never just disappears.
+
+The library shows each at the top: size, speed (smoothed) and time left, "Waiting for the network" when nothing has arrived for a few seconds, and pause, resume, cancel and retry. Failures are explained: the server's status, a link that opened a web page instead of an app, no connection, an untrusted certificate. Links are https only. An interrupted update download isn't kept: the next check starts it again.
+
 ## When it runs
 
 - When the user taps Update or Update All: in the foreground, with the progress in the Dynamic Island (`BGContinuedProcessingTask`).
