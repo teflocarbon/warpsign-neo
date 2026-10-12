@@ -248,6 +248,15 @@ final class DownloadManager {
 
     fileprivate func progressed(_ id: UUID, received: Int64, total: Int64?) {
         guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        // Once its size is known: room for it, or stop now rather than at
+        // the end
+        if items[index].total == nil, let total, let available = DiskSpace.available,
+           available < total - received + DiskSpace.margin {
+            let message = DiskSpace.message(needed: total - received, available: available, for: "Downloading \(items[index].name)")
+            task(for: id) { $0?.cancel() }
+            failed(id, message: message, resumeData: nil, interrupted: false)
+            return
+        }
         let now = Date()
         let item = items[index]
         if let last = item.lastProgress, received > item.received {

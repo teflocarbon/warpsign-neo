@@ -258,7 +258,7 @@ private struct NewsCard: View {
     }
 }
 
-private struct SourceAppRow: View {
+struct SourceAppRow: View {
     let app: SourceApp
 
     var body: some View {

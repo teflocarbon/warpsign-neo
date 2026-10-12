@@ -14,6 +14,9 @@ enum SignJob {
         observer: StepRecorder,
         steps: @escaping @MainActor () -> [StepState]
     ) async throws -> (SignResult, SignedCopy) {
+        // Unpacking it and writing the signed copy: room for both, or say
+        // so before starting
+        try DiskSpace.ensure(Int64(clamping: app.installedSize &+ app.fileSize), for: "Signing \(app.displayName)")
         let (output, draft) = library.newSignedCopy(of: app)
         do {
             let result = try await account.sign(
