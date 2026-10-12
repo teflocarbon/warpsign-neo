@@ -41,8 +41,8 @@ struct ContentView: View {
                 }
                 setupSections
                 Section {
-                    LabeledContent("Companion", value: AppInfo.versionText)
-                    if let commit = AppInfo.commit {
+                    LabeledContent("Companion", value: BuildInfo.versionText)
+                    if let commit = BuildInfo.commit {
                         LabeledContent("Commit", value: commit)
                     }
                 } header: {

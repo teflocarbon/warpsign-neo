@@ -3,7 +3,7 @@ import Foundation
 /// This app's version, build and commit, to tell builds apart. CI sets the
 /// build to the IPA workflow's run number and the commit to the one built
 /// (`.github/workflows/ipa.yml`); local builds are build 1, commit "local".
-enum AppInfo {
+enum BuildInfo {
     static var version: String { string("CFBundleShortVersionString") ?? "?" }
     static var build: String { string("CFBundleVersion") ?? "?" }
     static var commit: String? { string("WarpSignCommit") }

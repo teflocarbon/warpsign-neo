@@ -147,7 +147,7 @@ targets:
     sources:
       - Companion
       # Shared with WarpSign
-      - WarpSign/Platform/AppInfo.swift
+      - WarpSign/Platform/BuildInfo.swift
       - WarpSign/Platform/Background.swift
       - WarpSign/Platform/Keychain.swift
       - WarpSign/Platform/KeepAlive.swift

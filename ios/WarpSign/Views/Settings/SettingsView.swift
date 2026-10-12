@@ -139,8 +139,8 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    LabeledContent("WarpSign", value: AppInfo.versionText)
-                    if let commit = AppInfo.commit {
+                    LabeledContent("WarpSign", value: BuildInfo.versionText)
+                    if let commit = BuildInfo.commit {
                         LabeledContent("Commit", value: commit)
                     }
                     LabeledContent("warpsign-core", value: coreVersion())
