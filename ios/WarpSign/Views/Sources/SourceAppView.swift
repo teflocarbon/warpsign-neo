@@ -418,23 +418,44 @@ private struct PermissionRow: View {
     }
 }
 
-/// Long text, cut to a few lines until "more" is tapped
-private struct ExpandableText: View {
+/// Long text, cut to a few lines until "more" is tapped. "more" shows
+/// only when the text really is cut: it's measured at full height
+/// against the height it's cut to.
+struct ExpandableText: View {
     let text: String
+    var lines = 4
+    var secondary = true
     @State private var expanded = false
+    @State private var shownHeight: CGFloat = 0
+    @State private var fullHeight: CGFloat = 0
 
-    init(_ text: String) {
+    init(_ text: String, lines: Int = 4, secondary: Bool = true) {
         self.text = text
+        self.lines = lines
+        self.secondary = secondary
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(text)
-                .foregroundStyle(.secondary)
-                .lineLimit(expanded ? nil : 4)
-            if !expanded && (text.count > 220 || text.filter { $0 == "\n" }.count > 3) {
-                Button("more") { expanded = true }
-                    .font(.subheadline.weight(.semibold))
+                .foregroundStyle(secondary ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                .lineLimit(expanded ? nil : lines)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shownHeight = $0 }
+                .background(alignment: .top) {
+                    // The whole text, unseen, at the same width
+                    Text(text)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .hidden()
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
+                }
+            if !expanded && fullHeight > shownHeight + 1 {
+                Button("more") {
+                    withAnimation(.easeInOut(duration: 0.2)) { expanded = true }
+                }
+                .font(.subheadline.weight(.semibold))
+                .buttonStyle(.borderless)
             }
         }
     }
@@ -458,36 +479,47 @@ private struct HeaderVisibility: ViewModifier {
     }
 }
 
-/// Every version a source lists, newest first, each to download
+/// Every version a source lists, in its order (newest first), each cut
+/// to a few lines until opened, and each to download
 struct SourceVersionsView: View {
     let app: SourceApp
     let source: Source
 
     var body: some View {
-        List(app.versions, id: \.downloadUrl) { version in
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(version.version).font(.headline)
-                        Text([
-                            version.date.flatMap(SourceDate.parse)?.formatted(.dateTime.day().month().year()),
-                            version.size.map { ByteCountFormatter.file($0) },
-                            version.minOs.map { "iOS \($0)+" },
-                        ].compactMap { $0 }.joined(separator: " · "))
-                            .font(.caption)
+        List(Array(app.versions.enumerated()), id: \.offset) { index, version in
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Version \(version.version)")
+                        .foregroundStyle(.secondary)
+                    if index == 0 {
+                        Badge("Latest", color: .green)
+                    }
+                    Spacer()
+                    if let date = version.date.flatMap(SourceDate.parse) {
+                        Text(date, format: .relative(presentation: .named))
                             .foregroundStyle(.secondary)
                     }
+                }
+                if let notes = version.notes {
+                    ExpandableText(notes, lines: 3, secondary: false)
+                }
+                HStack {
+                    Text([
+                        version.build.flatMap { $0 == version.version ? nil : "Build \($0)" },
+                        version.size.map { ByteCountFormatter.file($0) },
+                        version.minOs.map { "iOS \($0)+" },
+                    ].compactMap { $0 }.joined(separator: " · "))
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                     Spacer()
                     DownloadButton(version: version, app: app, source: source)
                 }
-                if let notes = version.notes {
-                    Text(notes).font(.callout).foregroundStyle(.secondary)
-                }
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, 6)
         }
+        .listStyle(.plain)
         .navigationTitle("Version History")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
         .tint(Color(hex: app.tintColor) ?? Color(hex: source.tintColor))
     }
 }
