@@ -42,6 +42,10 @@ struct SignedCopy: Codable, Identifiable, Hashable, Sendable {
     var certificate: String
     var ppqCheck: Bool
     var profileExpires: Date?
+    /// The signing certificate's serial (uppercase hex), so moving to a
+    /// new certificate knows which apps to sign again. nil for copies
+    /// signed before it was recorded.
+    var certificateSerial: String?
 }
 
 /// The imported IPAs, kept in Application Support/Library:

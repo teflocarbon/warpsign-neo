@@ -37,9 +37,6 @@ struct LibraryView: View {
                 if let error = library.importError {
                     Section { ErrorRow(message: error) }
                 }
-                if search.isEmpty {
-                    ExpiringSection()
-                }
                 ForEach(apps) { app in
                     NavigationLink(value: app.id) {
                         LibraryRow(app: app)
@@ -120,67 +117,5 @@ struct LibraryRow: View {
             }
         }
         .padding(.vertical, 2)
-    }
-}
-
-/// Apps whose newest signed copy stops opening soon. A profile never
-/// outlives its certificate, so its expiry covers the certificate's too.
-struct ExpiringSection: View {
-    @Environment(LibraryStore.self) private var library
-
-    /// How far ahead to warn
-    static let window: TimeInterval = 30 * 24 * 60 * 60
-
-    struct Item: Identifiable {
-        let app: LibraryApp
-        let expires: Date
-        var id: UUID { app.id }
-    }
-
-    private var expiring: [Item] {
-        let limit = Date().addingTimeInterval(Self.window)
-        return library.apps
-            .compactMap { app -> Item? in
-                guard let newest = app.signedCopies.max(by: { $0.date < $1.date }),
-                      let expires = newest.profileExpires, expires < limit
-                else { return nil }
-                return Item(app: app, expires: expires)
-            }
-            .sorted { $0.expires < $1.expires }
-    }
-
-    var body: some View {
-        let expiring = expiring
-        if !expiring.isEmpty {
-            Section {
-                ForEach(expiring) { item in
-                    NavigationLink(value: item.app.id) {
-                        HStack(spacing: 12) {
-                            AppIconView(image: library.icon(for: item.app.id))
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(item.app.displayName).font(.headline).lineLimit(1)
-                                Text(Self.describe(item.expires))
-                                    .font(.subheadline)
-                                    .foregroundStyle(item.expires < Date() ? .red : .orange)
-                            }
-                        }
-                    }
-                }
-            } header: {
-                Text("Expiring Soon")
-            } footer: {
-                Text("Sign these again before they expire, or they stop opening. Their newest signed copy's profile, or its certificate, runs out.")
-            }
-        }
-    }
-
-    static func describe(_ expires: Date) -> String {
-        let days = Int((expires.timeIntervalSinceNow / 86_400).rounded(.down))
-        switch days {
-        case ..<0: return "Expired \(expires.formatted(date: .abbreviated, time: .omitted))"
-        case 0: return "Expires today"
-        case 1: return "Expires tomorrow"
-        default: return "Expires in \(days) days"
-        }
     }
 }

@@ -170,6 +170,7 @@ struct SigningView: View {
             copy.bundleId = result.bundleId
             copy.teamId = account.selectedTeam?.teamId ?? ""
             copy.certificate = options.certificate == .development ? "Development" : "Ad Hoc"
+            copy.certificateSerial = account.info(options.certificate.type)?.serialNumber
             copy.ppqCheck = result.profiles.contains { $0.ppqCheck }
             copy.profileExpires = result.profiles
                 .compactMap { $0.expiresAt.map(Date.init(unixTime:)) }
