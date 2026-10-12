@@ -158,7 +158,8 @@ targets:
       - WarpSign/Views/Shared/Components.swift
       - WarpSign/Generated/warpsign_ffi.swift
       - WarpSign/Resources/silence.wav
-      - WarpSign/Assets.xcassets
+      # Its own Assets.xcassets (in Companion/): a teal icon, from
+      # tools/companion_icon.py
     dependencies:
       - framework: Frameworks/WarpsignFFI.xcframework
         embed: false
