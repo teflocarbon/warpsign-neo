@@ -79,12 +79,13 @@ struct InstallingView: View {
     private var remotePairingPortSection: some View {
         @Bindable var device = device
         return Section {
-            TextField("\(defaultRemotePairingPort())", text: $device.remotePairingPort)
+            // Not localized: a port has no thousands separator
+            TextField(String(defaultRemotePairingPort()), text: $device.remotePairingPort)
                 .keyboardType(.numberPad)
         } header: {
             Text("RemotePairing Port")
         } footer: {
-            Text("Where this device listens for RemotePairing. Usually \(defaultRemotePairingPort()); leave empty unless Test Connection says it can't connect, then try the port your device advertises as _remotepairing._tcp.")
+            Text("Where this device listens for RemotePairing. Usually \(String(defaultRemotePairingPort())); leave empty unless Test Connection says it can't connect, then try the port your device advertises as _remotepairing._tcp.")
         }
     }
 
@@ -190,7 +191,11 @@ struct InstallingView: View {
                 LabeledContent("WarpSign VPN") { ProgressView() }
             case .on:
                 LabeledContent("WarpSign VPN") {
-                    Label("On", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                        Text("On")
+                    }
+                    .foregroundStyle(.green)
                 }
                 Button("Turn Off", systemImage: "power") { device.tunnel.disconnect() }
             }
