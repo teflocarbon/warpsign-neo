@@ -168,7 +168,7 @@ struct AppUpdatesSection: View {
             }
         case .bundled:
             Section("Updates") {
-                Label("Comes with WarpSign, and updates when WarpSign does: set it up again from the library after updating WarpSign.", systemImage: "shippingbox")
+                Label("Comes with WarpSign: when an update to WarpSign brings a newer Companion, it's updated like any other app.", systemImage: "shippingbox")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

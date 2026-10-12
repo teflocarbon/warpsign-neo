@@ -13,7 +13,13 @@ struct CompanionApp: App {
         WindowGroup {
             ContentView()
                 .environment(store)
-                .onOpenURL { url in store.open(url) }
+                .onOpenURL { url in
+                    if url.scheme == "warpsign-companion" {
+                        Task { await store.receive(url) }
+                    } else {
+                        store.open(url)
+                    }
+                }
         }
     }
 }
@@ -21,6 +27,8 @@ struct CompanionApp: App {
 struct ContentView: View {
     @Environment(CompanionStore.self) private var store
     @State private var importing: Kind?
+    /// Sent by WarpSign: straight to installing it
+    @State private var installingHandoff = false
 
     private enum Kind {
         case ipa, pairing
@@ -35,6 +43,14 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             List {
+                if store.isReceiving {
+                    Section {
+                        HStack(spacing: 12) {
+                            ProgressView()
+                            Text("Receiving from WarpSign…").foregroundStyle(.secondary)
+                        }
+                    }
+                }
                 appSection
                 if let error = store.error {
                     Section { ErrorRow(message: error) }
@@ -50,6 +66,16 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("Companion")
+            .navigationDestination(isPresented: $installingHandoff) {
+                if let app = store.picked {
+                    InstallScreen(app: app)
+                }
+            }
+            .onChange(of: store.handoffReady) { _, ready in
+                guard ready else { return }
+                store.handoffReady = false
+                if store.picked != nil, store.hasPairingFile { installingHandoff = true }
+            }
             .fileImporter(
                 isPresented: Binding(get: { importing != nil }, set: { if !$0 { importing = nil } }),
                 // Any file, checked after: types depend on which apps declared them

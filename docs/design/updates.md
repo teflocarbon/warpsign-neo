@@ -18,7 +18,7 @@ Agreed October 2026. Apps downloaded from a source update by themselves, the way
 
 Which apps can update is shown in the library, under each app's name (`UpdateOriginLabel`): its source, "updates off", a source WarpSign hasn't found in Sources, bundled with WarpSign (Companion), or imported from a file, which can't update. The app's page has an Updates section saying the same, with a link to its listing in the source, the newest version there, whether it's up to date, and when sources were last checked; the source's listing has an In Your Library section going the other way.
 
-WarpSign itself is never updated this way: installing over the running app locks up installd until the phone restarts. It updates through WarpSign Companion.
+WarpSign updates itself through a source of its own: each build of `.github/workflows/ipa.yml` publishes `source.json` beside the IPAs on the `latest` release (`tools/warpsign_source.py`, from the IPA's own Info.plist, with the commit subjects since the last build as notes). WarpSign adds that source once (it can be removed), and links the WarpSign in the library to it. Installing over the running app locks up installd until the phone restarts, so a signed WarpSign is handed to WarpSign Companion instead: WarpSign serves it on loopback (`LoopbackShare`) and opens `warpsign-companion://install?url=http://127.0.0.1:…`; Companion fetches it (from 127.0.0.1 only) and goes straight to installing it, while WarpSign keeps serving in the background. Overnight, a WarpSign update stops at signed and notifies, as installing it needs Companion open. The Companion bundled in WarpSign is an update like any other once it's newer than the library's, copied from the bundle rather than downloaded.
 
 ## Downloads
 

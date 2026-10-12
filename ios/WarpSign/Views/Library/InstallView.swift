@@ -224,7 +224,7 @@ extension InstallView {
         bundleId == Bundle.main.bundleIdentifier
     }
 
-    static let selfInstallMessage = "This is the WarpSign you're using, and it can't install over itself: iOS has to stop it partway through, which leaves iOS unable to install anything until the device restarts. Install it with WarpSign Companion (Share Signed IPA → Companion), from a computer with `warpsign install`, or with another installer."
+    static let selfInstallMessage = "This is the WarpSign you're using, and it can't install over itself: iOS has to stop it partway through, which leaves iOS unable to install anything until the device restarts. WarpSign Companion installs it instead (or a computer, with `warpsign install`)."
 }
 
 /// Install, or explain how to set installing up
@@ -233,16 +233,28 @@ struct InstallButton: View {
     let ipa: URL
     let name: String
     var icon: URL?
-    /// The signed copy's bundle ID, to refuse installing over this WarpSign
+    /// The signed copy's bundle ID: this WarpSign is handed to Companion
     var bundleId: String?
+    @State private var handoffError: String?
 
     var body: some View {
         if let bundleId, InstallView.isThisApp(bundleId) {
-            Label("Can't Install Over Itself", systemImage: "nosign")
-                .foregroundStyle(.secondary)
-            Text(InstallView.selfInstallMessage)
+            Button {
+                Task {
+                    do {
+                        try await CompanionHandoff.send(ipa, name: name)
+                        handoffError = nil
+                    } catch {
+                        handoffError = error.userMessage
+                    }
+                }
+            } label: {
+                Label("Install with Companion", systemImage: "arrow.triangle.2.circlepath.circle")
+                    .font(.headline)
+            }
+            Text(handoffError ?? "WarpSign can't install over itself, so WarpSign Companion installs it: it opens and fetches this copy from WarpSign.")
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(handoffError == nil ? Color.secondary : Color.red)
         } else if device.isReady {
             NavigationLink {
                 InstallView(ipa: ipa, name: name, icon: icon)

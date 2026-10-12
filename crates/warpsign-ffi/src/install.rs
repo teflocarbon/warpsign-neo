@@ -190,6 +190,53 @@ impl WebInstall {
     }
 }
 
+/// Serves a signed IPA on loopback for WarpSign Companion to fetch: how
+/// WarpSign hands over its own updates, as it can't install over itself.
+/// Nothing but this device can reach it.
+#[derive(uniffi::Object)]
+pub struct LoopbackShare {
+    server: Mutex<Option<InstallServer>>,
+    url: String,
+}
+
+#[uniffi::export]
+impl LoopbackShare {
+    /// Start serving `ipa_path` for `slot`, reporting to `observer` (the
+    /// install server's steps: waiting, then sending)
+    #[uniffi::constructor]
+    pub fn start(
+        ipa_path: String,
+        slot: u32,
+        observer: Arc<dyn StepObserver>,
+    ) -> Result<Arc<Self>, WarpsignError> {
+        let failed = |message: String| WarpsignError::Device { message };
+        let slot = slot % SLOTS;
+        let server = InstallServer::start(
+            Path::new(&ipa_path),
+            None,
+            slot,
+            Box::new(ObserverBridge(observer)),
+        )
+        .map_err(|e| failed(e.to_string()))?;
+        let url = format!("http://127.0.0.1:{}/app{slot}.ipa", server.port());
+        Ok(Arc::new(Self {
+            server: Mutex::new(Some(server)),
+            url,
+        }))
+    }
+
+    /// Where Companion fetches it
+    pub fn url(&self) -> String {
+        self.url.clone()
+    }
+
+    /// Stop serving (also happens when released)
+    pub fn stop(&self) {
+        let mut server = self.server.lock().unwrap_or_else(|e| e.into_inner());
+        server.take();
+    }
+}
+
 /// The manifest server WarpSign uses unless Settings says otherwise
 #[uniffi::export]
 pub fn default_manifest_server() -> String {

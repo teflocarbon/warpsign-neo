@@ -201,6 +201,15 @@ targets:
           - processing
         BGTaskSchedulerPermittedIdentifiers:
           - $(PRODUCT_BUNDLE_IDENTIFIER).continued.*
+        # WarpSign hands over its own updates: warpsign-companion://install
+        # ?url=http://127.0.0.1:…, served by WarpSign on loopback
+        CFBundleURLTypes:
+          - CFBundleURLName: WarpSign Handoff
+            CFBundleTypeRole: Viewer
+            CFBundleURLSchemes:
+              - warpsign-companion
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         LSSupportsOpeningDocumentsInPlace: false
         CFBundleDocumentTypes:
           - CFBundleTypeName: iOS App

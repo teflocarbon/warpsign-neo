@@ -19,12 +19,25 @@ final class SourcesStore {
 
     private static let key = "sources"
     private static let manualKey = "sources.manualUpdates"
+    private static let addedOwnKey = "sources.addedWarpSign"
+
+    /// WarpSign's own builds, published by CI with each release: added
+    /// once, so WarpSign can update itself (through Companion). It can be
+    /// removed like any other.
+    static let warpSignSource = "https://github.com/teflocarbon/warpsign-neo/releases/download/latest/source.json"
     /// Screenshots: sample sources, never fetched
     @ObservationIgnored private var isDemo = false
 
     init() {
         urls = UserDefaults.standard.stringArray(forKey: Self.key) ?? []
         manualUpdates = Set(UserDefaults.standard.stringArray(forKey: Self.manualKey) ?? [])
+        if !UserDefaults.standard.bool(forKey: Self.addedOwnKey) {
+            UserDefaults.standard.set(true, forKey: Self.addedOwnKey)
+            if !urls.contains(Self.warpSignSource) {
+                urls.insert(Self.warpSignSource, at: 0)
+                save()
+            }
+        }
     }
 
     init(demoSources: [String: Source]) {

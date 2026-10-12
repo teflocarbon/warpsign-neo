@@ -34,6 +34,10 @@ final class CompanionStore {
     private(set) var udid: String?
     private(set) var picked: Picked?
     var error: String?
+    /// Fetching an IPA WarpSign is serving
+    private(set) var isReceiving = false
+    /// WarpSign's IPA is picked: show installing it
+    var handoffReady = false
     /// The VPN that lets Companion reach this device's installer
     let tunnel = LoopbackTunnel()
 
@@ -58,6 +62,38 @@ final class CompanionStore {
         case "ipa", "zip": Task { await pick(url) }
         case "mobiledevicepairing", "plist": importPairingFile(url)
         default: error = "Companion opens .ipa files (or a .zip with one inside) and pairing files."
+        }
+    }
+
+    /// WarpSign handing over an IPA (its own update):
+    /// warpsign-companion://install?url=http://127.0.0.1:PORT/appN.ipa.
+    /// Only ever fetched from this device.
+    func receive(_ link: URL) async {
+        guard let components = URLComponents(url: link, resolvingAgainstBaseURL: false),
+              components.host == "install",
+              let source = components.queryItems?.first(where: { $0.name == "url" })?.value.flatMap(URL.init(string:)),
+              source.scheme == "http", source.host() == "127.0.0.1"
+        else {
+            error = "That link from WarpSign isn't one Companion understands."
+            return
+        }
+        error = nil
+        isReceiving = true
+        defer { isReceiving = false }
+        do {
+            let (file, response) = try await URLSession.shared.download(from: source)
+            if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                throw WarpsignError.Device(message: "WarpSign answered \(http.statusCode). Try again from WarpSign.")
+            }
+            // Named so it's picked as an IPA
+            let named = file.deletingLastPathComponent().appendingPathComponent(source.lastPathComponent)
+            try? FileManager.default.removeItem(at: named)
+            try FileManager.default.moveItem(at: file, to: named)
+            await pick(named)
+            try? FileManager.default.removeItem(at: named)
+            handoffReady = picked != nil
+        } catch {
+            self.error = "Couldn't get the app from WarpSign: \(error.userMessage) Open WarpSign and try again."
         }
     }
 

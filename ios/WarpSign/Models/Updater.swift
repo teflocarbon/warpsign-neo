@@ -136,7 +136,20 @@ final class Updater {
         self.account = account
         self.sources = sources
         self.device = device
+        // The Companion inside this WarpSign: newer than the library's is
+        // an update, like any other
+        if !Demo.isOn, let url = BundledCompanion.url {
+            let path = url.path
+            Task {
+                guard let metadata = try? await background({ try readIpaMetadata(ipaPath: path) }) else { return }
+                bundledCompanion = (metadata.version, metadata.build, metadata.fileSize)
+                evaluate()
+            }
+        }
     }
+
+    /// The bundled Companion's version, build and size, once read
+    @ObservationIgnored private var bundledCompanion: (version: String?, build: String?, size: UInt64)?
 
     // MARK: Checking
 
@@ -177,6 +190,29 @@ final class Updater {
                   )
             else { continue }
             found[app.id] = Available(appId: app.id, sourceName: match.source.name, version: match.version)
+        }
+        if let bundled = bundledCompanion, let url = BundledCompanion.url,
+           let companion = library.apps.first(where: { $0.updateOrigin == .bundled }),
+           isNewerVersion(
+               candidate: bundled.version ?? "",
+               candidateBuild: bundled.build,
+               current: companion.version ?? "",
+               currentBuild: companion.build
+           ) {
+            found[companion.id] = Available(
+                appId: companion.id,
+                sourceName: "WarpSign",
+                version: AppVersion(
+                    version: bundled.version ?? "?",
+                    build: bundled.build,
+                    date: nil,
+                    notes: "The WarpSign Companion that comes with this WarpSign.",
+                    downloadUrl: url.absoluteString,
+                    size: bundled.size,
+                    minOs: nil,
+                    maxOs: nil
+                )
+            )
         }
         available = found
     }
@@ -220,9 +256,16 @@ final class Updater {
     }
 
     /// Apps downloaded before sources were remembered: matched by source
-    /// name and bundle ID
+    /// name and bundle ID. And WarpSign itself, however it got into the
+    /// library: it follows WarpSign's own source.
     private func linkEarlierDownloads() {
         guard let library, let sources else { return }
+        let own = SourcesStore.warpSignSource
+        if let source = sources.sources[own], let warpSign = source.apps.first {
+            for app in library.apps where app.sourceURL == nil && app.bundleId == warpSign.bundleId {
+                library.link(app, sourceURL: own, sourceAppId: warpSign.bundleId, autoUpdate: true, sourceName: source.name)
+            }
+        }
         for app in library.apps where app.sourceURL == nil {
             guard let origin = app.origin,
                   let url = sources.urls.first(where: { url in
@@ -334,16 +377,20 @@ final class Updater {
         let to = update.version.version
         status[id] = .downloading(0)
         do {
-            if app.signedCopies.contains(where: { InstallView.isThisApp($0.bundleId) }) {
-                throw WarpsignError.Device(message: "WarpSign updates itself through WarpSign Companion: sign it, then Share Signed IPA → Companion.")
-            }
             guard let url = URL(string: update.version.downloadUrl) else {
                 throw WarpsignError.Source(message: "The source's download link isn't valid.")
             }
-            let file = try await DownloadManager.shared.downloadUpdate(
-                url, name: "\(app.displayName) \(to)", appId: id
-            ) { fraction in
-                if case .downloading = self.status[id] { self.status[id] = .downloading(fraction) }
+            let file: URL
+            if url.isFileURL {
+                // The bundled Companion: copied, not downloaded
+                file = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).ipa")
+                try FileManager.default.copyItem(at: url, to: file)
+            } else {
+                file = try await DownloadManager.shared.downloadUpdate(
+                    url, name: "\(app.displayName) \(to)", appId: id
+                ) { fraction in
+                    if case .downloading = self.status[id] { self.status[id] = .downloading(fraction) }
+                }
             }
             defer { try? FileManager.default.removeItem(at: file) }
             var updated = try await library.replaceIPA(of: app, with: file)
@@ -370,6 +417,18 @@ final class Updater {
             // The old version's signed copies: the library no longer has
             // that version, and each is a whole IPA
             library.removeSignedCopies(of: updated, except: copy)
+            // WarpSign itself: Companion installs it, as WarpSign can't
+            // install over itself. In the background, that waits for the user.
+            if InstallView.isThisApp(copy.bundleId) {
+                if automatic {
+                    return finish(id, app: updated, from: from, to: to, done: "Signed: install with Companion",
+                                  problem: "WarpSign \(to) is signed. Open WarpSign and tap Install with Companion on its page.")
+                }
+                status[id] = .installing
+                try await CompanionHandoff.send(library.signedURL(copy, of: updated), name: updated.displayName)
+                return finish(id, app: updated, from: from, to: to, done: "Sent to Companion",
+                              problem: nil, note: "Installed with Companion")
+            }
             // Automatic updates install only with the pairing file (iOS asks
             // before each web install), and only with Install Updates on
             if automatic && !installsAutomatically {
