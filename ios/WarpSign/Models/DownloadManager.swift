@@ -37,7 +37,12 @@ final class DownloadManager {
 
     enum Purpose: Codable, Equatable {
         /// Added to the library once downloaded
-        case library(origin: String?, sourceURL: String?, sourceAppId: String?, autoUpdate: Bool?, link: String?)
+        /// (`sourceVersion`/`sourceBuild`: the version the source listed it
+        /// as, which updates compare with)
+        case library(
+            origin: String?, sourceURL: String?, sourceAppId: String?, autoUpdate: Bool?, link: String?,
+            sourceVersion: String? = nil, sourceBuild: String? = nil
+        )
         /// Handed to the Updater for this library app
         case update(appId: UUID)
     }
@@ -276,9 +281,9 @@ final class DownloadManager {
                 items.remove(at: index)
                 save()
             }
-        case let .library(origin, sourceURL, sourceAppId, autoUpdate, link):
+        case let .library(origin, sourceURL, sourceAppId, autoUpdate, link, sourceVersion, sourceBuild):
             items[index].state = .importing
-            if let name, case .library(_, _, _, _, .some) = item.purpose { items[index].name = name }
+            if let name, link != nil { items[index].name = name }
             save()
             Task {
                 guard let library else { return }
@@ -290,7 +295,9 @@ final class DownloadManager {
                     sourceURL: sourceURL,
                     sourceAppId: sourceAppId,
                     autoUpdate: autoUpdate,
-                    link: link
+                    link: link,
+                    sourceVersion: sourceVersion,
+                    sourceBuild: sourceBuild
                 )
                 try? FileManager.default.removeItem(at: file)
                 guard let current = items.firstIndex(where: { $0.id == id }) else { return }

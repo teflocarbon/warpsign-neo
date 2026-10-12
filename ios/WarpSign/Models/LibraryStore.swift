@@ -27,6 +27,11 @@ struct LibraryApp: Codable, Identifiable, Hashable, Sendable {
     var autoUpdate: Bool? = nil
     /// The link it was downloaded from, when that was a link the user gave
     var link: String? = nil
+    /// The version (and build) its source listed it as when it was
+    /// downloaded or updated: what updates compare with, so a source whose
+    /// versions don't match its IPAs' can't update it over and over
+    var sourceVersion: String? = nil
+    var sourceBuild: String? = nil
     /// A version of it the user chose to skip (a broken release, say): not
     /// offered as an update, though later versions are
     var skippedVersion: String? = nil
@@ -159,7 +164,9 @@ final class LibraryStore {
         sourceURL: String? = nil,
         sourceAppId: String? = nil,
         autoUpdate: Bool? = nil,
-        link: String? = nil
+        link: String? = nil,
+        sourceVersion: String? = nil,
+        sourceBuild: String? = nil
     ) async -> LibraryApp? {
         let name = url.lastPathComponent
         guard ["ipa", "zip"].contains(url.pathExtension.lowercased()) else {
@@ -176,6 +183,8 @@ final class LibraryStore {
             app.sourceAppId = sourceAppId
             app.autoUpdate = autoUpdate
             app.link = link
+            app.sourceVersion = sourceVersion
+            app.sourceBuild = sourceBuild
             apps.insert(app, at: 0)
             save()
             importError = nil
@@ -316,6 +325,17 @@ final class LibraryStore {
         if let sourceName { apps[index].origin = sourceName }
         if apps[index].autoUpdate == nil { apps[index].autoUpdate = autoUpdate }
         apps[index].skippedVersion = nil
+        // Not known for this listing: compare with the app's own version
+        apps[index].sourceVersion = nil
+        apps[index].sourceBuild = nil
+        save()
+    }
+
+    /// The version its source listed for what it now has
+    func setSourceVersion(_ version: String?, build: String?, for app: LibraryApp) {
+        guard let index = apps.firstIndex(where: { $0.id == app.id }) else { return }
+        apps[index].sourceVersion = version
+        apps[index].sourceBuild = build
         save()
     }
 

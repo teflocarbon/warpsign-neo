@@ -171,8 +171,9 @@ final class Updater {
                   isNewerVersion(
                       candidate: match.version.version,
                       candidateBuild: match.version.build,
-                      current: app.version ?? "",
-                      currentBuild: app.build
+                      // What the source called the version we have, if known
+                      current: app.sourceVersion ?? app.version ?? "",
+                      currentBuild: app.sourceVersion != nil ? app.sourceBuild : app.build
                   )
             else { continue }
             found[app.id] = Available(appId: app.id, sourceName: match.source.name, version: match.version)
@@ -200,7 +201,7 @@ final class Updater {
     /// first), or with Skip Betas its newest release, unless the library
     /// already has a pre-release
     private func newest(of versions: [AppVersion], for app: LibraryApp) -> AppVersion? {
-        guard skipBetas, !isPreRelease(version: app.version ?? "") else { return versions.first }
+        guard skipBetas, !isPreRelease(version: app.sourceVersion ?? app.version ?? "") else { return versions.first }
         return versions.first { !isPreRelease(version: $0.version) }
     }
 
@@ -320,7 +321,9 @@ final class Updater {
                 if case .downloading = self.status[id] { self.status[id] = .downloading(fraction) }
             }
             defer { try? FileManager.default.removeItem(at: file) }
-            let updated = try await library.replaceIPA(of: app, with: file)
+            var updated = try await library.replaceIPA(of: app, with: file)
+            library.setSourceVersion(update.version.version, build: update.version.build, for: updated)
+            updated = library.app(id) ?? updated
             available[id] = nil
 
             guard let options = library.lastSigningOptions(of: updated) else {

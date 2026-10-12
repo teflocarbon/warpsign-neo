@@ -121,7 +121,9 @@ final class SourcesStore {
             sourceURL: sourceURL,
             sourceAppId: app.bundleId,
             autoUpdate: Updater.shared.newAppsUpdate,
-            link: nil
+            link: nil,
+            sourceVersion: version.version,
+            sourceBuild: version.build
         ))
     }
 

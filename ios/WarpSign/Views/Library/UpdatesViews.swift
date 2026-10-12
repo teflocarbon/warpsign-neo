@@ -171,7 +171,7 @@ struct AppUpdatesSection: View {
         Section {
             if let source, let sourceApp {
                 NavigationLink {
-                    SourceAppView(app: sourceApp, source: source)
+                    SourceAppView(app: sourceApp, source: source, sourceURL: url)
                 } label: {
                     LabeledContent("Source", value: source.name)
                 }

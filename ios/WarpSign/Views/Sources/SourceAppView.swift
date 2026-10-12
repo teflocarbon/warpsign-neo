@@ -10,6 +10,8 @@ struct SourceAppView: View {
     @Environment(AccountStore.self) private var account
     let app: SourceApp
     let source: Source
+    /// The source's address, to show the source itself
+    var sourceURL: String? = nil
     /// Opened straight from the source, as its only app
     var isOnlyApp = false
 
@@ -37,10 +39,20 @@ struct SourceAppView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 if isOnlyApp {
-                    Label {
-                        Text("This is the only app in \(source.name), so it opens straight here.")
-                    } icon: {
-                        Image(systemName: "lightbulb.fill").foregroundStyle(.yellow)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label {
+                            Text("This is the only app in \(source.name), so it opens straight here.")
+                        } icon: {
+                            Image(systemName: "lightbulb.fill").foregroundStyle(.yellow)
+                        }
+                        if let sourceURL {
+                            NavigationLink {
+                                SourceDetailView(url: sourceURL, showsSource: true)
+                            } label: {
+                                Text(source.news.isEmpty ? "About This Source" : "About This Source and Its News")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                        }
                     }
                     .font(.callout)
                     .padding(12)
@@ -251,7 +263,23 @@ struct SourceAppView: View {
                 if let developer = app.developerName {
                     InfoRow("Developer", developer)
                 }
-                InfoRow("Source", source.name)
+                if let sourceURL {
+                    NavigationLink {
+                        SourceDetailView(url: sourceURL, showsSource: true)
+                    } label: {
+                        HStack {
+                            Text("Source").foregroundStyle(.secondary)
+                            Spacer()
+                            Text(source.name).foregroundStyle(.tint)
+                            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                        }
+                        .padding(.vertical, 12)
+                    }
+                    .buttonStyle(.plain)
+                    Divider()
+                } else {
+                    InfoRow("Source", source.name)
+                }
                 if let website = source.website, let url = URL(string: website) {
                     HStack {
                         Text("Website").foregroundStyle(.secondary)
