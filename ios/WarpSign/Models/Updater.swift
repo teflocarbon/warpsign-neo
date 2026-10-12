@@ -58,6 +58,8 @@ final class Updater {
     private(set) var lastCheck: Date?
     private(set) var isChecking = false
     private(set) var isUpdating = false
+    /// The run's place in the Dynamic Island card: this app's index, of how many
+    @ObservationIgnored private var cardPosition: (index: Int, count: Int)?
 
     /// Update apps by themselves, overnight while charging
     var automatic: Bool {
@@ -335,6 +337,7 @@ final class Updater {
                 continue
             }
             if showCard, let name = library.app(id)?.displayName {
+                cardPosition = (index, ids.count)
                 ContinuedWork.shared.update(subtitle: name, fraction: Double(index) / Double(ids.count))
             }
             let change = activity.job(job)?.detail
@@ -358,10 +361,25 @@ final class Updater {
                 }
             }
         }
+        cardPosition = nil
         if automatic && notifySuccess {
             notifyUpdated(entries.filter { $0.problem == nil })
         }
         return entries
+    }
+
+    /// Where this app's update is, on the Dynamic Island card (updates the
+    /// user started): what it's doing, and how far, from `start` to `end`
+    /// of its share of the run
+    private func card(_ name: String, _ doing: String, _ within: Double, upTo end: Double) {
+        guard let position = cardPosition else { return }
+        let share = 1 / Double(position.count)
+        let base = Double(position.index) * share
+        ContinuedWork.shared.update(
+            subtitle: "\(name) · \(doing)",
+            fraction: base + within * share,
+            ceiling: base + end * share
+        )
     }
 
     /// One notification for everything that updated
@@ -432,12 +450,15 @@ final class Updater {
                 ) { fraction in
                     if case .downloading = self.status[id] { self.status[id] = .downloading(fraction) }
                     activity.setDetail(job, "Downloading \(Int(fraction * 100))%")
+                    self.card(app.displayName, "Downloading \(Int(fraction * 100))%", fraction * 0.3, upTo: 0.3)
                 }
             }
             defer { try? FileManager.default.removeItem(at: file) }
             var updated = try await library.replaceIPA(of: app, with: file)
             library.setSourceVersion(update.version.version, build: update.version.build, for: updated)
             updated = library.app(id) ?? updated
+            // For the card, from the step callbacks (which can't capture a var)
+            let name = updated.displayName
             available[id] = nil
 
             guard let options = library.lastSigningOptions(of: updated) else {
@@ -458,6 +479,12 @@ final class Updater {
                 observer: StepRecorder { event in
                     signLog.steps.apply(event)
                     activity.apply(job, event)
+                    let steps = signLog.steps
+                    self.card(
+                        name, steps.runningTitle ?? "Signing",
+                        0.3 + steps.fractionDone * 0.5,
+                        upTo: 0.3 + min(steps.fractionDone + 1 / Double(max(steps.count, 1)), 1) * 0.5
+                    )
                 },
                 steps: { signLog.steps }
             )
@@ -473,6 +500,7 @@ final class Updater {
                 }
                 status[id] = .installing
                 activity.setDetail(job, "Handing it to Companion")
+                card(updated.displayName, "Handing it to Companion", 0.85, upTo: 1)
                 try await CompanionHandoff.send(library.signedURL(copy, of: updated), name: updated.displayName, tunnel: device.tunnel)
                 return finish(id, app: updated, from: from, to: to, done: "Sent to Companion",
                               problem: nil, note: "Installed with Companion")
@@ -512,6 +540,12 @@ final class Updater {
                 observer: StepRecorder { event in
                     installLog.steps.apply(event)
                     activity.apply(job, event)
+                    let steps = installLog.steps
+                    self.card(
+                        name, steps.runningTitle ?? "Installing",
+                        0.8 + steps.fractionDone * 0.2,
+                        upTo: 0.8 + min(steps.fractionDone + 1 / Double(max(steps.count, 1)), 1) * 0.2
+                    )
                 }
             )
             return finish(id, app: updated, from: from, to: to, done: "Updated to \(to)", problem: nil)

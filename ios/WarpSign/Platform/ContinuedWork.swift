@@ -34,6 +34,11 @@ final class ContinuedWork {
     private var title = ""
     private var subtitle = ""
     private var fraction = 0.0
+    /// Where the running part ends: the heartbeat creeps toward it
+    private var ceiling = 0.0
+    /// What the card shows, never going back
+    private var shown = 0.0
+    private var heartbeat: Task<Void, Never>?
 
     /// Whether leaving WarpSign mid-job is fine
     var isAvailable: Bool {
@@ -46,7 +51,10 @@ final class ContinuedWork {
         self.title = title
         self.subtitle = subtitle
         fraction = 0
+        shown = 0
+        ceiling = 0.05
         wanted = true
+        startHeartbeat()
         // Underneath: iOS can take the time back early, and before iOS 26
         // there's nothing else
         KeepAlive.shared.start("job")
@@ -77,21 +85,51 @@ final class ContinuedWork {
     func update(_ steps: [StepState]) {
         guard wanted else { return }
         if let running = steps.runningTitle { subtitle = running }
-        fraction = steps.fractionDone
-        Self.grant.show(title: title, subtitle: subtitle, fraction: fraction)
+        let done = steps.fractionDone
+        // The running step ends a step's worth on
+        update(subtitle: subtitle, fraction: done, ceiling: steps.isEmpty ? done : done + 1 / Double(steps.count))
     }
 
-    /// Show a step of a job made of several (updates), and how far it is
-    func update(subtitle: String, fraction: Double) {
+    /// Show a step of a job made of several (updates), and how far it is;
+    /// `ceiling` is where the running part ends
+    func update(subtitle: String, fraction: Double, ceiling: Double? = nil) {
         guard wanted else { return }
         self.subtitle = subtitle
         self.fraction = fraction
-        Self.grant.show(title: title, subtitle: subtitle, fraction: fraction)
+        self.ceiling = min(max(ceiling ?? fraction + 0.05, fraction), 1)
+        shown = max(shown, fraction)
+        Self.grant.show(title: title, subtitle: subtitle, fraction: shown)
+    }
+
+    /// iOS takes the time back from a task that stops reporting progress,
+    /// and shows its card as failed, though the job carries on: a long step
+    /// that reports nothing (installing over a running app can take half a
+    /// minute) looked stalled. So while a job runs, creep toward the end of
+    /// the running part, never reaching it.
+    private func startHeartbeat() {
+        heartbeat?.cancel()
+        heartbeat = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                self?.tick()
+            }
+        }
+    }
+
+    private func tick() {
+        guard wanted else { return }
+        let target = ceiling - 0.01
+        guard target > shown else { return }
+        shown += max((target - shown) * 0.15, 0.002)
+        shown = min(shown, target)
+        Self.grant.show(title: title, subtitle: subtitle, fraction: shown)
     }
 
     /// The job is over, however it went
     func finish() {
         wanted = false
+        heartbeat?.cancel()
+        heartbeat = nil
         KeepAlive.shared.stop("job")
         Self.grant.complete()
         if #available(iOS 26.0, *), let identifier = Self.identifier {
@@ -114,7 +152,7 @@ final class ContinuedWork {
 
     private func adopt() {
         if wanted {
-            Self.grant.show(title: title, subtitle: subtitle, fraction: fraction)
+            Self.grant.show(title: title, subtitle: subtitle, fraction: shown)
         } else {
             Self.grant.complete()
         }
@@ -135,8 +173,9 @@ private final class Grant: @unchecked Sendable {
         lock.withLock {
             guard #available(iOS 26.0, *), let task = task as? BGContinuedProcessingTask else { return }
             task.updateTitle(title, subtitle: subtitle)
-            task.progress.totalUnitCount = 100
-            task.progress.completedUnitCount = Int64((min(max(fraction, 0), 1) * 100).rounded())
+            // Fine-grained, so the heartbeat's small steps count as progress
+            task.progress.totalUnitCount = 1000
+            task.progress.completedUnitCount = Int64((min(max(fraction, 0), 1) * 1000).rounded())
         }
     }
 
