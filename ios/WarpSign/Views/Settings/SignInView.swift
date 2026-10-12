@@ -7,6 +7,7 @@ struct SignInView: View {
 
     @State private var appleId = ""
     @State private var password = ""
+    @State private var remember = true
     @State private var challenge: TwoFactorInfo?
     @State private var code = ""
     /// Set once a code was sent by text message
@@ -55,7 +56,10 @@ struct SignInView: View {
             }
             .interactiveDismissDisabled(working)
         }
-        .onAppear { appleId = account.appleId ?? "" }
+        .onAppear {
+            appleId = account.appleId ?? ""
+            remember = account.rememberPassword
+        }
     }
 
     private var credentialsSection: some View {
@@ -68,8 +72,13 @@ struct SignInView: View {
             SecureField("Password", text: $password)
                 .textContentType(.password)
                 .onSubmit { signIn() }
+            Toggle("Remember Password", isOn: $remember)
         } footer: {
-            Text("Your password goes only to Apple, and isn't stored. WarpSign keeps the signed-in session in this device's Keychain.")
+            if remember {
+                Text("Your password goes only to Apple. It's kept in this device's Keychain, with the session, so WarpSign can sign in again by itself when Apple ends the session, without a verification code while Apple trusts this device.")
+            } else {
+                Text("Your password goes only to Apple, and isn't stored. WarpSign keeps the signed-in session in this device's Keychain; when Apple ends it, you'll sign in again.")
+            }
         }
     }
 
@@ -112,7 +121,7 @@ struct SignInView: View {
         Task {
             defer { working = false }
             do {
-                if let challenge = try await account.signIn(appleId: appleId, password: password) {
+                if let challenge = try await account.signIn(appleId: appleId, password: password, remember: remember) {
                     self.challenge = challenge
                     smsPhone = challenge.smsSentTo
                 } else {

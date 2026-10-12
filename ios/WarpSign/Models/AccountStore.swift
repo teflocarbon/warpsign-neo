@@ -39,6 +39,10 @@ final class AccountStore {
     private(set) var portalStatus: [String: Bool] = [:]
 
     @ObservationIgnored private var account: AppleAccount?
+    /// The password from the sign-in under way, kept if it's remembered
+    @ObservationIgnored private var pendingPassword: String?
+    /// A silent sign-in under way, which concurrent calls wait for
+    @ObservationIgnored private var reauthentication: Task<Bool, Never>?
     /// Screenshots: certificate details without real certificates
     @ObservationIgnored private var demoInfos: [CertificateType: IdentityInfo] = [:]
     @ObservationIgnored private let transport = URLSessionTransport()
@@ -48,6 +52,8 @@ final class AccountStore {
         static let appleId = "account.appleId"
         static let team = "account.team"
         static let session = "session"
+        static let password = "account.password"
+        static let rememberPassword = "account.rememberPassword"
         static func identity(_ kind: CertificateType) -> String {
             kind == .development ? "identity.development" : "identity.distribution"
         }
@@ -83,6 +89,12 @@ final class AccountStore {
 
     var isSignedIn: Bool { phase == .signedIn && selectedTeam != nil }
 
+    /// Whether to keep the password in the Keychain, to sign in again by
+    /// itself when Apple ends the session
+    var rememberPassword: Bool {
+        defaults.object(forKey: Keys.rememberPassword) as? Bool ?? true
+    }
+
     /// Whether the team's profiles have PPQ checking, once a sign has told us
     func teamUsesPPQ(_ teamId: String) -> Bool? {
         defaults.object(forKey: Keys.ppq(teamId)) as? Bool
@@ -106,15 +118,19 @@ final class AccountStore {
             let teams = try await background { try account.checkSession() }
             signedIn(account, teams: teams)
         } catch {
+            if Self.isExpired(error), await reauthenticate() { return }
             phase = .signedOut
-            sessionProblem = error.userMessage
+            sessionProblem = sessionProblem ?? error.userMessage
         }
     }
 
     /// Start signing in. Returns the two-factor challenge if a code is needed.
-    func signIn(appleId: String, password: String) async throws -> TwoFactorInfo? {
-        let account = AppleAccount(transport: transport)
+    func signIn(appleId: String, password: String, remember: Bool) async throws -> TwoFactorInfo? {
+        // The last session's two-factor trust, so Apple needn't ask for a code
+        let account = AppleAccount.newTrusted(transport: transport, sessionJson: savedSessionJson())
         let id = appleId.trimmingCharacters(in: .whitespaces)
+        defaults.set(remember, forKey: Keys.rememberPassword)
+        pendingPassword = password
         let result = try await background { try account.signIn(account: id, password: password) }
         self.account = account
         self.appleId = id
@@ -155,6 +171,80 @@ final class AccountStore {
         phase = .signedIn
         sessionProblem = nil
         saveSession()
+        if let password = pendingPassword {
+            pendingPassword = nil
+            try? Keychain.set(rememberPassword ? Data(password.utf8) : nil, for: Keys.password)
+        }
+    }
+
+    private func savedSessionJson() -> String? {
+        Keychain.data(for: Keys.session).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    nonisolated private static func isExpired(_ error: Error) -> Bool {
+        if case WarpsignError.SessionExpired = error { return true }
+        return false
+    }
+
+    /// Sign in again with the remembered password once Apple has ended the
+    /// session. Apple doesn't ask for a code while it trusts this device
+    /// (for about a month after the last code), so this needs nothing from
+    /// the user. False if it couldn't.
+    private func reauthenticate() async -> Bool {
+        if let running = reauthentication { return await running.value }
+        let task = Task { await signInAgain() }
+        reauthentication = task
+        defer { reauthentication = nil }
+        return await task.value
+    }
+
+    private func signInAgain() async -> Bool {
+        guard let appleId,
+              let data = Keychain.data(for: Keys.password),
+              let password = String(data: data, encoding: .utf8)
+        else { return false }
+        let account = AppleAccount.newTrusted(transport: transport, sessionJson: savedSessionJson())
+        do {
+            let result = try await background { try account.signIn(account: appleId, password: password) }
+            guard case .signedIn(let teams) = result else {
+                sessionProblem = "Apple asked for a verification code again: sign in to continue."
+                return false
+            }
+            signedIn(account, teams: teams)
+            return true
+        } catch {
+            // A changed password, or Apple refusing: never retry by itself,
+            // as repeated attempts can lock the Apple ID
+            if case WarpsignError.Auth = error {
+                try? Keychain.set(nil, for: Keys.password)
+            }
+            sessionProblem = error.userMessage
+            return false
+        }
+    }
+
+    /// Run a portal call. If Apple has ended the session and the password
+    /// is remembered, sign in again and run it once more.
+    private func portalCall<T: Sendable>(
+        _ work: @escaping @Sendable (AppleAccount) throws -> T
+    ) async throws -> T {
+        guard let account else { throw WarpsignError.Portal(message: "Sign in first.") }
+        do {
+            let result = try await background { try work(account) }
+            saveSession()
+            return result
+        } catch {
+            guard Self.isExpired(error), await reauthenticate(), let account = self.account else {
+                throw handle(error)
+            }
+            do {
+                let result = try await background { try work(account) }
+                saveSession()
+                return result
+            } catch {
+                throw handle(error)
+            }
+        }
     }
 
     /// Keep the session's latest cookies and tokens
@@ -163,18 +253,26 @@ final class AccountStore {
         try? Keychain.set(Data(account.sessionJson().utf8), for: Keys.session)
     }
 
+    /// Forget the session, its two-factor trust and the password
     func signOut() {
+        endSession()
+        try? Keychain.set(nil, for: Keys.session)
+        try? Keychain.set(nil, for: Keys.password)
+    }
+
+    private func endSession() {
         account = nil
         teams = []
         phase = .signedOut
         portalStatus = [:]
-        try? Keychain.set(nil, for: Keys.session)
     }
 
     private func handle(_ error: Error) -> Error {
         if case WarpsignError.SessionExpired(let message) = error {
-            signOut()
-            sessionProblem = message
+            // The saved session stays: its two-factor trust lets the next
+            // sign-in skip the code
+            endSession()
+            sessionProblem = sessionProblem ?? message
         }
         return error
     }
@@ -262,21 +360,16 @@ final class AccountStore {
 
     /// Ask the portal which identities' certificates still exist
     func checkIdentities() async {
-        guard let account, let team = selectedTeam, !identities.isEmpty else { return }
+        guard account != nil, let team = selectedTeam, !identities.isEmpty else { return }
         let all = Array(identities.values.map(\.data))
         let teamId = team.teamId
-        do {
-            let found = try await background {
-                try account.identitiesOnPortal(teamId: teamId, identities: all)
+        guard let found = try? await portalCall({
+            try $0.identitiesOnPortal(teamId: teamId, identities: all)
+        }) else { return }
+        for kind in identities.keys {
+            if let serial = info(kind)?.serialNumber {
+                portalStatus[serial] = found.contains(serial)
             }
-            for kind in identities.keys {
-                if let serial = info(kind)?.serialNumber {
-                    portalStatus[serial] = found.contains(serial)
-                }
-            }
-            saveSession()
-        } catch {
-            _ = handle(error)
         }
     }
 
@@ -290,32 +383,18 @@ final class AccountStore {
 
     /// The team's iPhones and iPads, which signed apps install on
     func devices() async throws -> [DeviceInfo] {
-        guard let account, let team = selectedTeam else { return [] }
+        guard account != nil, let team = selectedTeam else { return [] }
         let teamId = team.teamId
-        do {
-            let devices = try await background { try account.devices(teamId: teamId) }
-            saveSession()
-            return devices
-        } catch {
-            throw handle(error)
-        }
+        return try await portalCall { try $0.devices(teamId: teamId) }
     }
 
     /// Register a device (e.g. this iPhone, from its pairing file's UDID)
     func registerDevice(name: String, udid: String) async throws -> DeviceInfo {
-        guard let account, let team = selectedTeam else {
+        guard account != nil, let team = selectedTeam else {
             throw WarpsignError.Portal(message: "Sign in first.")
         }
         let teamId = team.teamId
-        do {
-            let device = try await background {
-                try account.registerDevice(teamId: teamId, name: name, udid: udid)
-            }
-            saveSession()
-            return device
-        } catch {
-            throw handle(error)
-        }
+        return try await portalCall { try $0.registerDevice(teamId: teamId, name: name, udid: udid) }
     }
 
     /// Provisioning profiles kept between signs (see profile_reuse.rs), so
@@ -334,15 +413,11 @@ final class AccountStore {
     /// capabilities have names.
     func entitlementNames() async -> EntitlementNames {
         var json: String?
-        if let account, let team = selectedTeam {
+        if account != nil, let team = selectedTeam {
             let teamId = team.teamId
-            do {
-                let fetched = try await background { try account.capabilities(teamId: teamId) }
+            if let fetched = try? await portalCall({ try $0.capabilities(teamId: teamId) }) {
                 CapabilitiesCache.save(fetched, team: teamId)
-                saveSession()
                 json = fetched
-            } catch {
-                _ = handle(error)
             }
         }
         if json == nil, let teamId = selectedTeamId {
@@ -377,7 +452,7 @@ final class AccountStore {
         settings: SignSettings,
         observer: StepRecorder
     ) async throws -> SignResult {
-        guard let account, let team = selectedTeam, let identity = identities[kind]?.data else {
+        guard account != nil, let team = selectedTeam, let identity = identities[kind]?.data else {
             throw WarpsignError.Signing(message: signingBlocker(for: kind) ?? "Not ready to sign.")
         }
         let teamId = team.teamId
@@ -385,28 +460,26 @@ final class AccountStore {
         let workDir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: workDir) }
-        do {
-            let result = try await background {
-                try account.signIpa(
-                    teamId: teamId,
-                    identity: identity,
-                    ipaPath: ipa.path,
-                    outputPath: output.path,
-                    workDir: workDir.path,
-                    settings: settings,
-                    profileCacheDir: profileCacheDir,
-                    observer: observer
-                )
-            }
-            if !result.profiles.isEmpty {
-                recordPPQ(result.profiles.contains { $0.ppqCheck }, team: teamId)
-            }
-            // The capabilities it fetched name entitlements: keep them
-            CapabilitiesCache.save(result.capabilitiesJson, team: teamId)
-            saveSession()
-            return result
-        } catch {
-            throw handle(error)
+        // Signed in again part way through, it starts over: the steps
+        // clear their logs when they start again
+        let result = try await portalCall { account in
+            try? FileManager.default.removeItem(at: workDir)
+            return try account.signIpa(
+                teamId: teamId,
+                identity: identity,
+                ipaPath: ipa.path,
+                outputPath: output.path,
+                workDir: workDir.path,
+                settings: settings,
+                profileCacheDir: profileCacheDir,
+                observer: observer
+            )
         }
+        if !result.profiles.isEmpty {
+            recordPPQ(result.profiles.contains { $0.ppqCheck }, team: teamId)
+        }
+        // The capabilities it fetched name entitlements: keep them
+        CapabilitiesCache.save(result.capabilitiesJson, team: teamId)
+        return result
     }
 }

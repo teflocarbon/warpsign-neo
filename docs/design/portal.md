@@ -10,6 +10,8 @@ Decisions and known pitfalls for porting Python warpsign's portal client. Agreed
 - **409 just means 2FA is required.** Support trusted-device codes, and add SMS as a fallback.
 - **Fetch the CSRF tokens after 2FA too.** Python warpsign only worked because it logged in twice, and the second login (from the saved session) is what fetched them.
 - **Reject free accounts at login**, with a clear message. They aren't supported (see README).
+- **Keep the two-factor trust across sign-ins.** After a code, `2sv/trust` sets a `DES…` cookie (about a month). Sent at sign-in, it lets Apple skip the code. It's quoted (`DES…="…"`) and only accepted back with its quotes, as browsers, Python's cookiejar and fastlane send it. A new sign-in starts from the last session's trust cookies (`SessionState::trust`), even when that session has expired; only signing out forgets them.
+- **Portal sessions can be short** (one ended within a day in October 2026), unlike the trust. With Remember Password on, the app signs in again by itself when a portal call says the session has ended, and runs that call once more; with the trust cookie, that needs no code. A refused or failed silent sign-in forgets the password and is never retried by itself.
 
 ## API
 

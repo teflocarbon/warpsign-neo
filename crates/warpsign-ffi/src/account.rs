@@ -540,6 +540,23 @@ impl AppleAccount {
         })
     }
 
+    /// Start signing in, sending the two-factor trust from an earlier
+    /// session's `session_json()` (even an expired one), so Apple needn't
+    /// ask for a code again
+    #[uniffi::constructor]
+    pub fn new_trusted(
+        transport: Arc<dyn HttpTransport>,
+        session_json: Option<String>,
+    ) -> Arc<Self> {
+        let trust = session_json
+            .and_then(|json| serde_json::from_str::<SessionState>(&json).ok())
+            .map(|session| session.trust())
+            .unwrap_or_default();
+        Arc::new(Self {
+            auth: Authenticator::with_session(Arc::new(TransportBridge(transport)), trust),
+        })
+    }
+
     /// Resume from `session_json()`. Check it with `check_session`.
     #[uniffi::constructor]
     pub fn restore(

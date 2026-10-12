@@ -80,7 +80,11 @@ extension Array where Element == StepState {
     mutating func apply(_ event: StepRecorder.Event) {
         switch event {
         case .started(let step):
-            update(step) { $0.status = .running }
+            // Started again (signing restarts after signing in again)
+            update(step) {
+                $0.status = .running
+                $0.log = []
+            }
         case .log(let step, let message):
             update(step) { $0.log.append(message) }
         case .progress(let step, let fraction):

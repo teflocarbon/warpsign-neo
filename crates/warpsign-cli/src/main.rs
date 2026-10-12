@@ -290,7 +290,12 @@ fn login(store: &Store, apple_id: Option<String>, team: Option<String>) -> Resul
     };
     let password = rpassword::prompt_password(format!("Password for {apple_id}: "))?;
 
-    let auth = Authenticator::new(transport()?);
+    // The last session's two-factor trust, so Apple needn't ask for a code
+    let trust = store
+        .session()
+        .map(|session| session.trust())
+        .unwrap_or_default();
+    let auth = Authenticator::with_session(transport()?, trust);
     let outcome = auth.sign_in(&apple_id, &password);
     if let Err(AuthError::Refused(_)) = &outcome {
         eprintln!("Don't retry straight away: repeated attempts can lock your Apple ID.");

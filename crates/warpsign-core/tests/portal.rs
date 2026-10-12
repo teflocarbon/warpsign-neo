@@ -76,6 +76,17 @@ fn script_sign_in(
     + Send
     + 'static,
 ) {
+    script_sign_in_sending(mock, "aasp=first-visit", complete);
+}
+
+/// [`script_sign_in`], checking the sign-in sends exactly `cookies`
+fn script_sign_in_sending(
+    mock: &MockApple,
+    cookies: &'static str,
+    complete: impl Fn(&warpsign_core::portal::Request) -> warpsign_core::portal::Response
+    + Send
+    + 'static,
+) {
     let case = srp_case();
     script_widget_key(mock);
     mock.expect(&format!("{AUTH}/signin?widgetKey=widget-key"), |request| {
@@ -95,7 +106,7 @@ fn script_sign_in(
         assert_eq!(request.method, Method::Post);
         assert_eq!(header(request, "X-Apple-Widget-Key"), "widget-key");
         assert_eq!(header(request, "Content-Type"), "application/json");
-        assert_eq!(header(request, "Cookie"), "aasp=first-visit");
+        assert_eq!(header(request, "Cookie"), cookies);
         let body = request.json_body().unwrap();
         let a = BASE64.decode(body["a"].as_str().unwrap()).unwrap();
         assert_eq!(a, unhex(init_case["expected"]["A"].as_str().unwrap()));
@@ -128,6 +139,7 @@ fn script_sign_in(
             assert_eq!(body["c"], "challenge-c");
             assert_eq!(body["accountName"], case["email"]);
             assert_eq!(body["rememberMe"], true);
+            assert_eq!(header(request, "Cookie"), cookies);
 
             // A solved hashcash for the challenge
             let hashcash = header(request, "X-Apple-HC");
@@ -215,6 +227,47 @@ fn signs_in_without_two_factor() {
         serde_json::from_str::<SessionState>(&saved).unwrap(),
         session
     );
+}
+
+#[test]
+fn signs_in_again_with_the_last_sessions_trust() {
+    // An expired session: only its two-factor trust cookie goes along,
+    // quoted as Apple set it
+    let cookie = |name: &str, value: &str, domain: &str| warpsign_core::portal::http::Cookie {
+        name: name.into(),
+        value: value.into(),
+        domain: domain.into(),
+        host_only: false,
+        path: "/".into(),
+        expires: None,
+    };
+    let expired = SessionState {
+        cookies: vec![
+            cookie("myacinfo", "stale", "apple.com"),
+            cookie("DES58b0eba5", "\"HSARMTKN==SRVT\"", "idmsa.apple.com"),
+        ],
+        scnt: Some("stale".into()),
+        csrf: Some("stale".into()),
+        ..SessionState::default()
+    };
+    let mock = MockApple::new();
+    script_sign_in_sending(
+        &mock,
+        "DES58b0eba5=\"HSARMTKN==SRVT\"; aasp=first-visit",
+        |_| signed_in(),
+    );
+    script_portal(&mock, one_team());
+
+    let auth = Authenticator::with_session(mock.clone(), expired.trust())
+        .with_srp_secret(&unhex(srp_case()["a"].as_str().unwrap()));
+    let outcome = auth
+        .sign_in("someone@example.com", "correct horse battery staple")
+        .unwrap();
+    assert!(
+        matches!(outcome, SignInOutcome::SignedIn { .. }),
+        "{outcome:?}"
+    );
+    mock.assert_done();
 }
 
 #[test]

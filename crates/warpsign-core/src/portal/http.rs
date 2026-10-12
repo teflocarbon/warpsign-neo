@@ -187,6 +187,30 @@ impl SessionState {
             .map(|cookie| cookie.value.as_str())
     }
 
+    /// Only what a new sign-in should start from: Apple's two-factor trust
+    /// cookies (`DES…`, from `2sv/trust`, kept about a month). Sent at
+    /// sign-in, they let Apple skip asking for a code, as a browser that
+    /// was told to trust itself does.
+    pub fn trust(&self) -> SessionState {
+        let cookies = self
+            .cookies
+            .iter()
+            .filter(|cookie| cookie.name.starts_with("DES"))
+            .cloned()
+            .map(|mut cookie| {
+                // Sessions saved before quotes were kept lost them
+                if !cookie.value.starts_with('"') {
+                    cookie.value = format!("\"{}\"", cookie.value);
+                }
+                cookie
+            })
+            .collect();
+        SessionState {
+            cookies,
+            ..SessionState::default()
+        }
+    }
+
     fn store_cookie(&mut self, cookie: Cookie, now: u64) {
         self.cookies.retain(|existing| {
             !(existing.name == cookie.name
@@ -420,7 +444,10 @@ fn parse_set_cookie(line: &str, url: &Url, now: u64) -> Option<Cookie> {
     }
     let mut cookie = Cookie {
         name: name.to_string(),
-        value: value.trim().trim_matches('"').to_string(),
+        // Verbatim, quotes included, as browsers and Python's cookiejar
+        // keep it: Apple's two-factor trust cookie (DES…) is quoted, and is
+        // only accepted back with its quotes (fastlane re-adds them too)
+        value: value.trim().to_string(),
         domain: url.host.clone(),
         host_only: true,
         path: default_path(&url.path),
@@ -654,5 +681,47 @@ mod tests {
         let delete = parse_set_cookie("aasp=; Max-Age=0; Path=/", &idmsa, now).unwrap();
         state.store_cookie(delete, now);
         assert_eq!(state.cookie("aasp"), None);
+    }
+
+    #[test]
+    fn keeps_quoted_values_as_they_are() {
+        let now = 1_000;
+        let mut state = SessionState::default();
+        let idmsa = url("https://idmsa.apple.com/appleauth/auth/2sv/trust");
+        let line = "DES58b0eba5=\"HSARMTKN/x+y==SRVT\"; Max-Age=2592000; Path=/; Domain=.idmsa.apple.com; Secure; HttpOnly";
+        state.store_cookie(parse_set_cookie(line, &idmsa, now).unwrap(), now);
+        assert_eq!(
+            state
+                .cookie_header("idmsa.apple.com", "/appleauth/auth/signin/complete", now)
+                .as_deref(),
+            Some("DES58b0eba5=\"HSARMTKN/x+y==SRVT\"")
+        );
+    }
+
+    #[test]
+    fn trust_keeps_only_the_two_factor_cookies() {
+        let now = 1_000;
+        let mut state = SessionState {
+            scnt: Some("scnt".into()),
+            csrf: Some("csrf".into()),
+            ..SessionState::default()
+        };
+        let idmsa = url("https://idmsa.apple.com/appleauth/auth/2sv/trust");
+        for line in [
+            "myacinfo=secret; Domain=.apple.com; Path=/",
+            "DESa=\"quoted\"; Max-Age=2592000; Path=/",
+            "DESb=unquoted; Max-Age=2592000; Path=/",
+        ] {
+            state.store_cookie(parse_set_cookie(line, &idmsa, now).unwrap(), now);
+        }
+        let trust = state.trust();
+        assert_eq!(trust.scnt, None);
+        assert_eq!(trust.csrf, None);
+        assert_eq!(
+            trust
+                .cookie_header("idmsa.apple.com", "/appleauth/auth/signin/init", now)
+                .as_deref(),
+            Some("DESa=\"quoted\"; DESb=\"unquoted\"")
+        );
     }
 }
