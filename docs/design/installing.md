@@ -21,12 +21,21 @@ No setup. Found by static analysis of ESign 5.0.2, which you described as the mo
 
 In the Cloudflare dashboard: Workers & Pages > Create > Worker, name it, then Edit code, replace it with `worker/src/index.js` and Deploy. Or `npx wrangler deploy` in `worker/`. Check it with `https://<name>.<account>.workers.dev/manifest?slot=1&port=14310&id=com.example.app&title=Example&version=1.0`.
 
-## Through LocalDevVPN: SideStore's way
+## With a pairing file: SideStore's way
 
-- A pairing file, made once on a computer with `warpsign pair`, plus LocalDevVPN, which loops `10.7.0.1` back to the device itself.
+- A pairing file, made once on a computer with `warpsign pair`, plus a loopback VPN that loops `10.7.0.1` back to the device itself: WarpSign's own (below), or LocalDevVPN.
 - **Since iOS 26.6, lockdownd resets connections that arrive through the VPN** (first `QueryType`/`StartSession` gets "connection reset" or "broken pipe"; seen on a device in October 2026, and by SideStore and AirCard users). So `warpsign pair` makes a **RemotePairing** file by default (iOS 17.4+): idevice_pair's format, paired promptlessly over USB through `com.apple.dt.remotepairingdeviced.lockdown`, plus a `UDID` key other tools ignore. On the device, WarpSign pair-verifies on the remote pairing port (usually 49152; overridable in Settings, as some devices advertise another as `_remotepairing._tcp`), opens the TLS-PSK tunnel, runs idevice's userspace TCP stack through it, and reaches AFC and installation_proxy as RSD shim services. It only ever verifies: it never starts a pair-setup from the device. `warpsign pair --lockdown` still makes the old kind for earlier iOS.
 - WarpSign copies the IPA into `PublicStaging` over AFC and asks `installation_proxy` to install it (`device.rs`, using the `idevice` crate). Lockdown connections keep a heartbeat.
 - Clearer errors and real progress, straight from installd. The pairing file also gives WarpSign the device's UDID, so it can check, and fix, the device's registration on the team.
-- Costs: a computer once, and a VPN app.
+- Costs: a computer once.
+
+### WarpSign's own loopback VPN
+
+`WarpSignTunnel.appex` is a packet tunnel doing what LocalDevVPN does, following SideStore's StosVPN (MIT). It claims `10.7.0.0/24` and only that (no default route), and rewrites each IPv4 packet so one sent from the tunnel's address `10.7.0.0` to `10.7.0.1` arrives from `10.7.0.1` at `10.7.0.0`, and back. iOS takes that for a connection from another machine, which lockdownd and RemotePairing answer. The rewrite swaps values between the two address fields, so checksums stay correct. Nothing leaves the device.
+
+- Installing and Test Connection turn it on (`LoopbackTunnel.connect`), adding the configuration first; iOS asks to allow that once. If it can't (WarpSign signed without Network Extensions, e.g. by another signer with a wildcard profile), LocalDevVPN still works, and the app says which.
+- It needs the Network Extensions capability (`packet-tunnel-provider`), which paid teams have and free accounts don't, which is why SideStore needs a separate VPN app. CI ad-hoc signs the IPA with the app's and extension's entitlements so that signing WarpSign with WarpSign sees them and maps them like any other app's (`NETWORK_EXTENSIONS`, not the macOS `…_DIRECT_DISTRIBUTION`, which grants the same key).
+- The app finds the extension's bundle ID in its PlugIns rather than assuming it, as signing changes it.
+- Next: installing from the extension itself. It lives as long as the VPN is up, whatever happens to the app, so it could finish an install the app was suspended in. Its own sockets bypass its tunnel, so it would reach the device by writing packets into it from a third address (`10.7.0.2`) through idevice's userspace TCP stack (jktcp handles IPv4), within the extension's 50 MB.
 
 The CLI uses the same code over USB: `warpsign install` and `warpsign sign --install`.

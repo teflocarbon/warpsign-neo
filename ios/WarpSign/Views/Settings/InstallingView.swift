@@ -3,7 +3,7 @@ import UIKit
 import UniformTypeIdentifiers
 
 /// How apps get installed on this device: over the web (no setup), or
-/// through LocalDevVPN with a pairing file
+/// through a loopback VPN with a pairing file
 struct InstallingView: View {
     @Environment(DeviceStore.self) private var device
     @Environment(AccountStore.self) private var account
@@ -34,7 +34,7 @@ struct InstallingView: View {
                 case .web:
                     Text("No setup. WarpSign hands the app to iOS's own installer, as ESign does: iOS asks you to confirm, then installs it. Needs an internet connection to start each install.")
                 case .pairing:
-                    Text("WarpSign talks to this device's installer directly, as SideStore does, with clearer errors. Needs a pairing file made once on a computer, and LocalDevVPN.")
+                    Text("WarpSign talks to this device's installer directly, as SideStore does, with clearer errors. Needs a pairing file made once on a computer.")
                 }
             }
 
@@ -54,7 +54,7 @@ struct InstallingView: View {
         .confirmationDialog("Remove the pairing file?", isPresented: $confirmingRemove, titleVisibility: .visible) {
             Button("Remove", role: .destructive) { device.removePairingFile() }
         } message: {
-            Text("WarpSign won't be able to install through LocalDevVPN until you add one again.")
+            Text("WarpSign won't be able to install with a pairing file until you add one again.")
         }
     }
 
@@ -121,15 +121,7 @@ struct InstallingView: View {
                 Text("Made once on a computer: connect this device by USB and run `warpsign pair`, then get the .rppairing.plist file here (AirDrop, iCloud Drive or Files). Pairing files from idevice_pair work too. It lets apps on this device install apps, so keep it private.")
             }
 
-            Section {
-                Link(destination: DeviceStore.localDevVPN) {
-                    Label("Get LocalDevVPN", systemImage: "network.badge.shield.half.filled")
-                }
-            } header: {
-                Text("2. Loopback VPN")
-            } footer: {
-                Text("LocalDevVPN lets WarpSign talk to this device's installer, as SideStore does. Its traffic never leaves the device. Turn it on before installing.")
-            }
+            tunnelSection
 
             if device.isRemotePairing {
                 remotePairingPortSection
@@ -177,6 +169,41 @@ struct InstallingView: View {
                 }
                 .task(id: udid) { await checkRegistration(udid) }
             }
+    }
+
+    private var tunnelSection: some View {
+        Section {
+            switch device.tunnel.status {
+            case .unknown:
+                ProgressView()
+            case .unavailable(let reason):
+                Text(reason).font(.footnote).foregroundStyle(.secondary)
+                Link(destination: DeviceStore.localDevVPN) {
+                    Label("Get LocalDevVPN", systemImage: "network.badge.shield.half.filled")
+                }
+            case .off:
+                LabeledContent("WarpSign VPN", value: "Off")
+                Button("Turn On", systemImage: "power") {
+                    Task { try? await device.tunnel.connect() }
+                }
+            case .connecting:
+                LabeledContent("WarpSign VPN") { ProgressView() }
+            case .on:
+                LabeledContent("WarpSign VPN") {
+                    Label("On", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                }
+                Button("Turn Off", systemImage: "power") { device.tunnel.disconnect() }
+            }
+        } header: {
+            Text("2. Loopback VPN")
+        } footer: {
+            if device.tunnel.isAvailable {
+                Text("WarpSign's own VPN lets it talk to this device's installer, as SideStore does with LocalDevVPN. It turns on by itself when installing (iOS asks to allow it the first time). Its traffic never leaves this device, and nothing else goes through it.")
+            } else {
+                Text("LocalDevVPN lets WarpSign talk to this device's installer, as SideStore does. Its traffic never leaves the device. Turn it on before installing.")
+            }
+        }
+        .task { await device.tunnel.refresh() }
     }
 
     @ViewBuilder

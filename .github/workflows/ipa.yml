@@ -31,6 +31,13 @@ jobs:
         run: |
           mkdir -p ipa/Payload
           cp -R build/Build/Products/Release-iphoneos/WarpSign.app ipa/Payload/
+          # Ad-hoc signed with its entitlements, so signing WarpSign with
+          # WarpSign knows the VPN extension needs Network Extensions
+          app=ipa/Payload/WarpSign.app
+          codesign --force --sign - --entitlements ios/WarpSignTunnel/WarpSignTunnel.entitlements \
+            "$app/PlugIns/WarpSignTunnel.appex"
+          codesign --force --sign - --entitlements ios/WarpSign/WarpSign.entitlements "$app"
+          codesign -d --entitlements - "$app/PlugIns/WarpSignTunnel.appex"
           (cd ipa && zip -qry ../WarpSign.ipa Payload)
           unzip -l WarpSign.ipa | tail -1
       - uses: actions/upload-artifact@v4

@@ -76,7 +76,7 @@ struct SettingsView: View {
                             Label("Installing", systemImage: "arrow.down.app")
                             Spacer()
                             if device.isReady {
-                                Badge(device.method == .web ? "Over the Web" : "LocalDevVPN", color: .green)
+                                Badge(device.method == .web ? "Over the Web" : "Pairing File", color: .green)
                             } else {
                                 Badge("Not Set Up", color: .secondary)
                             }

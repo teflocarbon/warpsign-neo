@@ -51,7 +51,7 @@ struct InstallView: View {
                     Text("iOS asks before installing. If you dismissed it, show it again.")
                 }
             }
-            if case .failed(_, true) = phase {
+            if case .failed(_, true) = phase, !device.tunnel.isAvailable {
                 Section {
                     Link(destination: DeviceStore.localDevVPN) {
                         Label("Get LocalDevVPN", systemImage: "network.badge.shield.half.filled")

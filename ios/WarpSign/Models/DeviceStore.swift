@@ -6,7 +6,8 @@ import UIKit
 enum InstallMethod: String, CaseIterable, Identifiable {
     /// iOS's own installer, fed from a loopback server (ESign's way)
     case web
-    /// installation_proxy through LocalDevVPN with a pairing file (SideStore's way)
+    /// installation_proxy through a loopback VPN with a pairing file
+    /// (SideStore's way): WarpSign's own, or LocalDevVPN
     case pairing
 
     var id: Self { self }
@@ -14,13 +15,13 @@ enum InstallMethod: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .web: "Over the Web"
-        case .pairing: "Through LocalDevVPN"
+        case .pairing: "With a Pairing File"
         }
     }
 }
 
 /// Installing on this device: over the web through iOS's installer, or
-/// through LocalDevVPN with a pairing file (made once on a computer with
+/// through a loopback VPN with a pairing file (made once on a computer with
 /// `warpsign pair`)
 @MainActor
 @Observable
@@ -42,6 +43,8 @@ final class DeviceStore {
     private(set) var isRemotePairing = false
     private(set) var connection: Connection = .unknown
     var importError: String?
+    /// WarpSign's own loopback VPN, turned on when it's needed
+    let tunnel = LoopbackTunnel()
 
     static let localDevVPN = URL(string: "https://apps.apple.com/app/localdevvpn/id6755608044")!
 
@@ -123,10 +126,30 @@ final class DeviceStore {
         connection = .unknown
     }
 
+    /// Turn on WarpSign's own VPN if it has one. LocalDevVPN may be on
+    /// instead, so failing isn't final: returns why, for if the device
+    /// can't be reached.
+    private func prepareTunnel() async -> String? {
+        if tunnel.status == .unknown { await tunnel.refresh() }
+        guard tunnel.isAvailable else { return nil }
+        do {
+            try await tunnel.connect()
+            return nil
+        } catch {
+            return error.userMessage
+        }
+    }
+
+    private static func unreachable(_ message: String, tunnelProblem: String?) -> String {
+        guard let tunnelProblem else { return message }
+        return "\(tunnelProblem) (\(message))"
+    }
+
     /// Check the VPN and pairing file work
     func check() async {
         guard let data = Keychain.data(for: Self.key) else { return }
         connection = .checking
+        let tunnelProblem = await prepareTunnel()
         let port = remotePairingPortOverride
         do {
             let device = try await background {
@@ -135,7 +158,7 @@ final class DeviceStore {
             if udid == nil { udid = device.udid }
             connection = .connected(name: device.name, iosVersion: device.iosVersion)
         } catch WarpsignError.DeviceUnreachable(let message) {
-            connection = .unreachable(message)
+            connection = .unreachable(Self.unreachable(message, tunnelProblem: tunnelProblem))
         } catch {
             connection = .failed(error.userMessage)
         }
@@ -149,13 +172,20 @@ final class DeviceStore {
         // Copying a big app takes a while: don't let the screen lock
         UIApplication.shared.isIdleTimerDisabled = true
         defer { UIApplication.shared.isIdleTimerDisabled = false }
+        let tunnelProblem = await prepareTunnel()
         let port = remotePairingPortOverride
-        try await background {
-            try installIpa(
-                pairingFile: data,
-                remotePairingPort: port,
-                ipaPath: ipa.path,
-                observer: observer
+        do {
+            try await background {
+                try installIpa(
+                    pairingFile: data,
+                    remotePairingPort: port,
+                    ipaPath: ipa.path,
+                    observer: observer
+                )
+            }
+        } catch WarpsignError.DeviceUnreachable(let message) {
+            throw WarpsignError.DeviceUnreachable(
+                message: Self.unreachable(message, tunnelProblem: tunnelProblem)
             )
         }
     }

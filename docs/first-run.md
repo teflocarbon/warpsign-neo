@@ -85,9 +85,9 @@ Build with `tools/build_ios.sh`, set your bundle ID and team, and run it on the 
 
 1. Settings → Sign In.
 2. Settings → Signing Identity → Restore from Backup, with the `.p12` from step 3. This avoids using more certificate slots.
-3. Settings → Installing: get the pairing file to the phone (AirDrop from a Mac; from Windows, iCloud Drive or anything that lands it in Files) and open it in WarpSign, install LocalDevVPN and connect it, then Test Connection. The Team section should say this phone is registered.
+3. Settings → Installing: get the pairing file to the phone (AirDrop from a Mac; from Windows, iCloud Drive or anything that lands it in Files) and open it in WarpSign, then Test Connection, which turns on WarpSign's own VPN (allow it when iOS asks). LocalDevVPN works too, if WarpSign was signed some other way. The Team section should say this phone is registered.
 4. Library → import an IPA → Sign → Install on This Device.
 
-Installing goes through LocalDevVPN to the phone's own installer, as SideStore does. If Test Connection can't connect, check the VPN is on. If it says the pairing file was refused, make a new one.
+Installing goes through a loopback VPN to the phone's own installer, as SideStore does. If Test Connection can't connect, check the VPN is on. If it says the pairing file was refused, make a new one.
 
 If something fails, Settings → Diagnostics → Network Log shows what Apple said, and each signing step's log can be copied.

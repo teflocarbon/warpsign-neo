@@ -20,6 +20,14 @@ targets:
       # Built by tools/build_ios.sh from crates/warpsign-ffi
       - framework: Frameworks/WarpsignFFI.xcframework
         embed: false
+      - target: WarpSignTunnel
+    # Managing its own loopback VPN (Platform/LoopbackTunnel.swift). CI
+    # ad-hoc signs with these, so signing WarpSign with WarpSign sees them.
+    entitlements:
+      path: WarpSign/WarpSign.entitlements
+      properties:
+        com.apple.developer.networking.networkextension:
+          - packet-tunnel-provider
     settings:
       base:
         # Change to your own; the app re-provisions itself once installed
@@ -88,3 +96,27 @@ targets:
             UTTypeTagSpecification:
               public.filename-extension:
                 - mobiledevicepairing
+  # The loopback VPN (WarpSignTunnel/PacketTunnelProvider.swift), so
+  # installing needs no LocalDevVPN
+  WarpSignTunnel:
+    type: app-extension
+    platform: iOS
+    sources:
+      - WarpSignTunnel
+    entitlements:
+      path: WarpSignTunnel/WarpSignTunnel.entitlements
+      properties:
+        com.apple.developer.networking.networkextension:
+          - packet-tunnel-provider
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.warpsign.Tunnel
+        "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
+        TARGETED_DEVICE_FAMILY: "1,2"
+    info:
+      path: WarpSignTunnel/Info.plist
+      properties:
+        CFBundleDisplayName: WarpSign VPN
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider
