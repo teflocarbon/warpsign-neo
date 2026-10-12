@@ -428,6 +428,8 @@ fn auth_error(error: AuthError) -> WarpsignError {
     match error {
         AuthError::IncorrectCode(_) => WarpsignError::IncorrectCode { message },
         AuthError::SessionExpired => WarpsignError::SessionExpired { message },
+        AuthError::InvalidCredentials(_) => WarpsignError::WrongPassword { message },
+        AuthError::Transport(_) => WarpsignError::Offline { message },
         _ => WarpsignError::Auth { message },
     }
 }

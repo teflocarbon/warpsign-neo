@@ -37,6 +37,12 @@ pub enum WarpsignError {
     /// Signing in failed
     #[error("{message}")]
     Auth { message: String },
+    /// Apple said the Apple ID or password is wrong
+    #[error("{message}")]
+    WrongPassword { message: String },
+    /// Apple couldn't be reached while signing in: worth trying again later
+    #[error("{message}")]
+    Offline { message: String },
     /// The two-factor code was wrong: ask again
     #[error("{message}")]
     IncorrectCode { message: String },

@@ -59,6 +59,10 @@ struct SignInView: View {
         .onAppear {
             appleId = account.appleId ?? ""
             remember = account.rememberPassword
+            // Signing in again: the remembered password, so it's one tap
+            if password.isEmpty, let saved = account.savedPassword {
+                password = saved
+            }
         }
     }
 

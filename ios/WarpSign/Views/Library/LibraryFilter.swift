@@ -44,7 +44,7 @@ enum LibraryFilter: String, CaseIterable, Identifiable {
         case .all:
             return true
         case .updates:
-            return updater.available[app.id] != nil
+            return updater.canUpdate(app.id)
         case .installed:
             return device.installedApp(app) != nil
         case .notInstalled:

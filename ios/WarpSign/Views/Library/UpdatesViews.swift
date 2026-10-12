@@ -223,6 +223,16 @@ struct AppUpdatesSection: View {
                     Label("Skip This Version", systemImage: "forward")
                 }
                 .disabled(updater.isUpdating)
+            } else if updater.canResume(app) {
+                LabeledContent("Status") {
+                    StatusValue(text: "\(app.versionText) Not Signed Yet", symbol: "exclamationmark.circle.fill", color: .orange)
+                }
+                Button {
+                    Task { await updater.run([app.id], automatic: false) }
+                } label: {
+                    Label("Finish Updating", systemImage: "signature")
+                }
+                .disabled(updater.isUpdating)
             } else if let match = updater.sourceVersion(of: app) {
                 LabeledContent("Status") {
                     if match.version.version == app.skippedVersion {
@@ -630,7 +640,7 @@ struct InstalledSection: View {
     @Environment(LibraryStore.self) private var library
     let app: LibraryApp
 
-    private var newestCopy: SignedCopy? { app.signedCopies.max(by: { $0.date < $1.date }) }
+    private var newestCopy: SignedCopy? { app.currentCopy }
 
     var body: some View {
         if device.hasPairingFile {
@@ -662,7 +672,7 @@ struct InstalledSection: View {
                     }
                 } else if device.installed != nil {
                     Label {
-                        Text(app.signedCopies.isEmpty ? "Not installed: sign it first." : "Not installed on this iPhone.")
+                        Text(app.currentCopy == nil ? "Not installed: sign it first." : "Not installed on this iPhone.")
                     } icon: {
                         Image(systemName: "iphone.slash").foregroundStyle(.secondary)
                     }

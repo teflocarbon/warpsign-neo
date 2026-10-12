@@ -47,6 +47,8 @@ final class AccountStore {
     @ObservationIgnored private var account: AppleAccount?
     /// The password from the sign-in under way, kept if it's remembered
     @ObservationIgnored private var pendingPassword: String?
+    /// Told after every sign-in: updates waiting on one carry on
+    @ObservationIgnored var onSignIn: (@MainActor () -> Void)?
     /// A silent sign-in under way, which concurrent calls wait for
     @ObservationIgnored private var reauthentication: Task<Bool, Never>?
     /// Screenshots: certificate details without real certificates
@@ -60,6 +62,7 @@ final class AccountStore {
         static let session = "session"
         static let password = "account.password"
         static let rememberPassword = "account.rememberPassword"
+        static let silentSignInPaused = "account.silentSignInPaused"
         static func identity(_ kind: CertificateType) -> String {
             kind == .development ? "identity.development" : "identity.distribution"
         }
@@ -109,6 +112,20 @@ final class AccountStore {
         defaults.object(forKey: Keys.rememberPassword) as? Bool ?? true
     }
 
+    /// The remembered password, to fill in when signing in again by hand
+    var savedPassword: String? {
+        Keychain.data(for: Keys.password).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    /// Set when signing in again by itself didn't work in a way that trying
+    /// again wouldn't fix (Apple refused, or wants a code): it waits for
+    /// the user to sign in, as repeated attempts can lock the Apple ID or
+    /// send a code to their devices each time
+    private var silentSignInPaused: Bool {
+        get { defaults.bool(forKey: Keys.silentSignInPaused) }
+        set { defaults.set(newValue, forKey: Keys.silentSignInPaused) }
+    }
+
     /// Whether the team's profiles have PPQ checking, once a sign has told us
     func teamUsesPPQ(_ teamId: String) -> Bool? {
         defaults.object(forKey: Keys.ppq(teamId)) as? Bool
@@ -144,6 +161,7 @@ final class AccountStore {
         let account = AppleAccount.newTrusted(transport: transport, sessionJson: savedSessionJson())
         let id = appleId.trimmingCharacters(in: .whitespaces)
         defaults.set(remember, forKey: Keys.rememberPassword)
+        silentSignInPaused = false
         pendingPassword = password
         let result = try await background { try account.signIn(account: id, password: password) }
         self.account = account
@@ -189,6 +207,7 @@ final class AccountStore {
             pendingPassword = nil
             try? Keychain.set(rememberPassword ? Data(password.utf8) : nil, for: Keys.password)
         }
+        onSignIn?()
     }
 
     private func savedSessionJson() -> String? {
@@ -213,24 +232,29 @@ final class AccountStore {
     }
 
     private func signInAgain() async -> Bool {
-        guard let appleId,
-              let data = Keychain.data(for: Keys.password),
-              let password = String(data: data, encoding: .utf8)
-        else { return false }
+        guard !silentSignInPaused, let appleId, let password = savedPassword else { return false }
         let account = AppleAccount.newTrusted(transport: transport, sessionJson: savedSessionJson())
         do {
             let result = try await background { try account.signIn(account: appleId, password: password) }
             guard case .signedIn(let teams) = result else {
+                silentSignInPaused = true
                 sessionProblem = "Apple asked for a verification code again: sign in to continue."
                 return false
             }
             signedIn(account, teams: teams)
             return true
         } catch {
-            // A changed password, or Apple refusing: never retry by itself,
-            // as repeated attempts can lock the Apple ID
-            if case WarpsignError.Auth = error {
+            switch error {
+            case WarpsignError.Offline:
+                // Apple couldn't be reached: the next try can try again
+                break
+            case WarpsignError.WrongPassword:
+                // Changed since it was saved: it's no use any more
                 try? Keychain.set(nil, for: Keys.password)
+            default:
+                // Apple refusing, or wanting something done on the web:
+                // the password's kept, for the user to sign in with
+                silentSignInPaused = true
             }
             sessionProblem = error.userMessage
             return false

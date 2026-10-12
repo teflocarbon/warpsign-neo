@@ -51,6 +51,9 @@ final class Updater {
     }
 
     private(set) var available: [UUID: Available] = [:]
+    /// Updates that stopped at signing because the Apple ID was signed
+    /// out: run again once it's signed in
+    @ObservationIgnored private var waitingForSignIn: Set<UUID> = []
     /// Web installs from updates the user started, shown one at a time
     var pendingInstalls: [PendingInstall] = []
     private(set) var status: [UUID: Status] = [:]
@@ -138,6 +141,11 @@ final class Updater {
         self.account = account
         self.sources = sources
         self.device = device
+        // Updates that stopped for want of a sign-in carry on after one
+        account.onSignIn = { @MainActor [weak self] in
+            guard let self, !self.waitingForSignIn.isEmpty else { return }
+            Task { await self.run(Array(self.waitingForSignIn), automatic: false) }
+        }
         // The Companion inside this WarpSign: newer than the library's is
         // an update, like any other
         if !Demo.isOn, let url = BundledCompanion.url {
@@ -305,7 +313,7 @@ final class Updater {
             await device?.refreshInstalled()
         }
         let ids = ids.filter { id in
-            available[id] != nil && (!automatic || library.app(id).map { manualReason($0) == nil } == true)
+            canUpdate(id) && (!automatic || library.app(id).map { manualReason($0) == nil } == true)
         }
         guard !ids.isEmpty else { return [] }
         isUpdating = true
@@ -325,6 +333,7 @@ final class Updater {
         for id in ids {
             let name = library.app(id)?.displayName ?? "an app"
             let change = available[id].map { "\(library.app(id)?.versionText ?? "") → \($0.version.version)" }
+                ?? library.app(id).map { "Signing \($0.versionText)" }
             jobs[id] = activity.enqueue(.update, title: "Updating \(name)", detail: change, appId: id, automatic: automatic)
         }
 
@@ -405,7 +414,8 @@ final class Updater {
     /// Every app with an update that's set to update by itself
     var automaticIds: [UUID] {
         guard let library else { return [] }
-        return available.keys.filter { id in
+        let resumable = library.apps.filter(canResume).map(\.id)
+        return Set(available.keys).union(resumable).filter { id in
             library.app(id).map { manualReason($0) == nil } ?? false
         }
     }
@@ -428,38 +438,45 @@ final class Updater {
 
     private func update(_ id: UUID, automatic: Bool, job: UUID) async -> Entry? {
         let activity = ActivityCenter.shared
-        guard let library, let account, let device,
-              let update = available[id], let app = library.app(id)
+        guard let library, let account, let device, let app = library.app(id),
+              available[id] != nil || canResume(app)
         else { return nil }
-        let from = app.versionText
-        let to = update.version.version
-        status[id] = .downloading(0)
-        activity.setDetail(job, "Downloading")
+        waitingForSignIn.remove(id)
+        // Downloaded already, with signing left to do: what's installed is
+        // what it's updating from
+        let installed = device.installedApp(app).map { InstalledSection.versionText($0.version, $0.build) }
+        let from = available[id] == nil ? installed ?? "the version before" : app.versionText
+        let to = available[id]?.version.version ?? app.version ?? app.versionText
         do {
-            guard let url = URL(string: update.version.downloadUrl) else {
-                throw WarpsignError.Source(message: "The source's download link isn't valid.")
-            }
-            let file: URL
-            if url.isFileURL {
-                // The bundled Companion: copied, not downloaded
-                file = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).ipa")
-                try FileManager.default.copyItem(at: url, to: file)
-            } else {
-                file = try await DownloadManager.shared.downloadUpdate(
-                    url, name: "\(app.displayName) \(to)", appId: id
-                ) { fraction in
-                    if case .downloading = self.status[id] { self.status[id] = .downloading(fraction) }
-                    activity.setDetail(job, "Downloading \(Int(fraction * 100))%")
-                    self.card(app.displayName, "Downloading \(Int(fraction * 100))%", fraction * 0.3, upTo: 0.3)
+            var updated = app
+            if let update = available[id] {
+                status[id] = .downloading(0)
+                activity.setDetail(job, "Downloading")
+                guard let url = URL(string: update.version.downloadUrl) else {
+                    throw WarpsignError.Source(message: "The source's download link isn't valid.")
                 }
+                let file: URL
+                if url.isFileURL {
+                    // The bundled Companion: copied, not downloaded
+                    file = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).ipa")
+                    try FileManager.default.copyItem(at: url, to: file)
+                } else {
+                    file = try await DownloadManager.shared.downloadUpdate(
+                        url, name: "\(app.displayName) \(to)", appId: id
+                    ) { fraction in
+                        if case .downloading = self.status[id] { self.status[id] = .downloading(fraction) }
+                        activity.setDetail(job, "Downloading \(Int(fraction * 100))%")
+                        self.card(app.displayName, "Downloading \(Int(fraction * 100))%", fraction * 0.3, upTo: 0.3)
+                    }
+                }
+                defer { try? FileManager.default.removeItem(at: file) }
+                updated = try await library.replaceIPA(of: app, with: file)
+                library.setSourceVersion(update.version.version, build: update.version.build, for: updated)
+                updated = library.app(id) ?? updated
+                available[id] = nil
             }
-            defer { try? FileManager.default.removeItem(at: file) }
-            var updated = try await library.replaceIPA(of: app, with: file)
-            library.setSourceVersion(update.version.version, build: update.version.build, for: updated)
-            updated = library.app(id) ?? updated
             // For the card, from the step callbacks (which can't capture a var)
             let name = updated.displayName
-            available[id] = nil
 
             guard let options = library.lastSigningOptions(of: updated) else {
                 return finish(id, app: updated, from: from, to: to, done: "Downloaded",
@@ -550,9 +567,28 @@ final class Updater {
             )
             return finish(id, app: updated, from: from, to: to, done: "Updated to \(to)", problem: nil)
         } catch {
-            status[id] = .failed(error.userMessage)
-            return record(Entry(appName: app.displayName, from: from, to: to, date: Date(), problem: error.userMessage))
+            var message = error.userMessage
+            // Apple ended the session and it couldn't sign in again by
+            // itself: downloaded, it waits, and carries on after a sign-in
+            if !account.isSignedIn, library.app(id).map(canResume) == true {
+                waitingForSignIn.insert(id)
+                message = "Signed out of your Apple ID. Sign in again in Settings, and the update carries on by itself."
+            }
+            status[id] = .failed(message)
+            return record(Entry(appName: app.displayName, from: from, to: to, date: Date(), problem: message))
         }
+    }
+
+    /// Updated, all but signing: the IPA was replaced by an update, and
+    /// signing it failed (signed out, say). It's signed with its last
+    /// options, without downloading again.
+    func canResume(_ app: LibraryApp) -> Bool {
+        app.needsSigning == true && library?.lastSigningOptions(of: app) != nil
+    }
+
+    /// Whether Update (or Finish Updating) has something to do
+    func canUpdate(_ id: UUID) -> Bool {
+        available[id] != nil || library?.app(id).map(canResume) == true
     }
 
     private func finish(

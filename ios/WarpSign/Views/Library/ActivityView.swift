@@ -111,7 +111,7 @@ struct ActivityList: View {
         if let appId = job.appId, library.app(appId) != nil, let open {
             Button("Open App", systemImage: "arrow.up.right.square") { open(appId) }
         }
-        if let appId = job.appId, job.kind == .update, Updater.shared.available[appId] != nil {
+        if let appId = job.appId, job.kind == .update, Updater.shared.canUpdate(appId) {
             Button("Try Again", systemImage: "arrow.clockwise") {
                 Task { await Updater.shared.run([appId], automatic: false) }
             }
@@ -245,7 +245,7 @@ private struct JobDetailView: View {
                     if let appId = job.appId, library.app(appId) != nil, let open {
                         Button("Open App", systemImage: "arrow.up.right.square") { open(appId) }
                     }
-                    if let appId = job.appId, job.kind == .update, Updater.shared.available[appId] != nil {
+                    if let appId = job.appId, job.kind == .update, Updater.shared.canUpdate(appId) {
                         Button("Try Again", systemImage: "arrow.clockwise") {
                             Task { await Updater.shared.run([appId], automatic: false) }
                         }

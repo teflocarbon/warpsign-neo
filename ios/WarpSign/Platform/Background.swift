@@ -27,7 +27,8 @@ extension Error {
         if let error = self as? WarpsignError {
             switch error {
             case .Ipa(let message), .Inspect(let message), .Profile(let message),
-                 .Source(let message), .Auth(let message), .IncorrectCode(let message),
+                 .Source(let message), .Auth(let message), .WrongPassword(let message),
+                 .Offline(let message), .IncorrectCode(let message),
                  .SessionExpired(let message), .Portal(let message),
                  .Identity(let message), .Signing(let message),
                  .DeviceUnreachable(let message), .Device(let message):

@@ -19,6 +19,9 @@ struct LibraryApp: Codable, Identifiable, Hashable, Sendable {
     /// Where it came from: a source's name, or nil if imported from a file
     var origin: String?
     var signedCopies: [SignedCopy] = []
+    /// An update replaced the IPA and it hasn't been signed since: the
+    /// signed copies are of the version before (nil: no)
+    var needsSigning: Bool? = nil
     /// The source it was downloaded from, and its bundle ID there, to look
     /// for updates
     var sourceURL: String? = nil
@@ -58,6 +61,12 @@ struct LibraryApp: Codable, Identifiable, Hashable, Sendable {
     }
 
     var isEncrypted: Bool { encryption == "encrypted" }
+
+    /// The newest signed copy of the version in the library: none while an
+    /// update waits to be signed, as the copies are of the version before
+    var currentCopy: SignedCopy? {
+        needsSigning == true ? nil : signedCopies.max(by: { $0.date < $1.date })
+    }
 
     var versionText: String {
         switch (version, build) {
@@ -299,6 +308,8 @@ final class LibraryStore {
         apps[index].installedSize = metadata.installedSize
         apps[index].extensionCount = metadata.extensionCount
         apps[index].encryption = Self.encryptionName(metadata.encryption)
+        // Its signed copies are of the version before, until it's signed
+        if !apps[index].signedCopies.isEmpty { apps[index].needsSigning = true }
         icons[id] = nil
         save()
         return apps[index]
@@ -455,6 +466,7 @@ final class LibraryStore {
             }
         }
         apps[index].signedCopies.insert(copy, at: 0)
+        apps[index].needsSigning = nil
         save()
     }
 

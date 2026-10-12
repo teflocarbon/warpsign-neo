@@ -219,12 +219,18 @@ struct LibraryRow: View {
                 case .same:
                     Badge("Installed", color: .green)
                 case .libraryNewer:
-                    Badge("Not Installed Yet", color: .orange)
+                    if app.currentCopy == nil {
+                        Badge("Not Signed Yet", color: .orange)
+                    } else {
+                        Badge("Not Installed Yet", color: .orange)
+                    }
                 case .installedNewer:
                     Badge("Newer Installed", color: .secondary)
                 case nil:
                     if device.isMissing(app) {
                         Badge("Not Installed", color: .secondary)
+                    } else if app.needsSigning == true {
+                        Badge("Not Signed Yet", color: .orange)
                     } else if !app.signedCopies.isEmpty {
                         Badge("Signed", color: .green)
                     }

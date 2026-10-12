@@ -79,14 +79,14 @@ struct CompanionView: View {
     @ViewBuilder
     private func actionsSection(_ companion: LibraryApp) -> some View {
         Section {
-            if updater.available[companion.id] != nil {
-                Button("Update Now", systemImage: "arrow.down.circle") {
+            if updater.canUpdate(companion.id) {
+                Button(updater.available[companion.id] == nil ? "Finish Updating" : "Update Now", systemImage: "arrow.down.circle") {
                     Task { await updater.run([companion.id], automatic: false) }
                 }
                 .disabled(updater.isUpdating)
             } else if companion.signedCopies.isEmpty {
                 Button("Sign and Install…", systemImage: "signature") { signing = companion }
-            } else if device.isMissing(companion), let newest = companion.signedCopies.max(by: { $0.date < $1.date }) {
+            } else if device.isMissing(companion), let newest = companion.currentCopy {
                 InstallButton(
                     ipa: library.signedURL(newest, of: companion),
                     name: companion.displayName,

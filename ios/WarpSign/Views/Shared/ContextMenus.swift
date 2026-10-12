@@ -27,6 +27,11 @@ struct LibraryAppMenu: View {
                     updater.skip(app.id)
                 }
             }
+        } else if updater.canResume(app) {
+            Button("Finish Updating to \(app.versionText)", systemImage: "signature") {
+                Task { await updater.run([app.id], automatic: false) }
+            }
+            .disabled(updater.isUpdating)
         }
 
         Section {

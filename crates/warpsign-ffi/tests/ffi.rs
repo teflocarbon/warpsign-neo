@@ -417,7 +417,7 @@ mod account {
             .sign_in("someone@example.com".into(), "wrong".into())
             .unwrap_err();
         match error {
-            WarpsignError::Auth { message } => {
+            WarpsignError::WrongPassword { message } => {
                 assert_eq!(message, "Your Apple ID or password was incorrect. (-20101)")
             }
             other => panic!("{other:?}"),
@@ -440,7 +440,7 @@ mod account {
         let account =
             AppleAccount::restore(Arc::new(FakeTransport::default()), "{}".into()).unwrap();
         match account.check_session().unwrap_err() {
-            WarpsignError::Auth { message } => assert!(message.contains("offline"), "{message}"),
+            WarpsignError::Offline { message } => assert!(message.contains("offline"), "{message}"),
             other => panic!("{other:?}"),
         }
         assert!(matches!(
