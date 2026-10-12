@@ -10,6 +10,7 @@ struct LibraryView: View {
     @State private var linking: LibraryApp?
     @State private var removing: LibraryApp?
     @State private var search = ""
+    @AppStorage("library.filter") private var filter: LibraryFilter = .all
     @State private var path: [UUID] = Demo.isOn && Demo.screen == .appDetail ? [Demo.appIds[0]] : []
 
     static let ipaType = UTType("com.apple.itunes.ipa")
@@ -17,8 +18,19 @@ struct LibraryView: View {
         ?? .data
 
     /// The library's apps; WarpSign Companion lives in Settings instead
+    private var allApps: [LibraryApp] {
+        library.apps.filter { $0.updateOrigin != .bundled }
+    }
+
+    /// The filter in force: one that can't be answered now (installed,
+    /// before the device is asked) shows everything
+    private var activeFilter: LibraryFilter {
+        filter.isAvailable(device: device) ? filter : .all
+    }
+
+    /// What's shown: filtered, then searched
     private var apps: [LibraryApp] {
-        let apps = library.apps.filter { $0.updateOrigin != .bundled }
+        let apps = allApps.filter { activeFilter.includes($0, device: device) }
         guard !search.isEmpty else { return apps }
         return apps.filter {
             $0.displayName.localizedCaseInsensitiveContains(search)
@@ -29,6 +41,14 @@ struct LibraryView: View {
     var body: some View {
         NavigationStack(path: $path) {
             List {
+                if !allApps.isEmpty {
+                    Section {
+                        LibraryFilterBar(selection: $filter, apps: allApps)
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
+                    }
+                    .listSectionSpacing(.compact)
+                }
                 if !library.importing.isEmpty {
                     Section {
                         ForEach(library.importing, id: \.self) { name in
@@ -44,7 +64,7 @@ struct LibraryView: View {
                 if let error = library.importError {
                     Section { ErrorRow(message: error) }
                 }
-                if search.isEmpty {
+                if search.isEmpty && activeFilter == .all {
                     MigrationBanner()
                     UpdatesSection()
                 }
@@ -66,7 +86,15 @@ struct LibraryView: View {
                 }
             }
             .overlay {
-                if library.apps.isEmpty && library.importing.isEmpty && DownloadManager.shared.items.isEmpty {
+                if apps.isEmpty && !allApps.isEmpty && activeFilter != .all && search.isEmpty {
+                    ContentUnavailableView {
+                        Label("Nothing Here", systemImage: activeFilter.symbol)
+                    } description: {
+                        Text("No apps are \(activeFilter.title.lowercased()) right now.")
+                    } actions: {
+                        Button("Show All") { withAnimation(.snappy) { filter = .all } }
+                    }
+                } else if library.apps.isEmpty && library.importing.isEmpty && DownloadManager.shared.items.isEmpty {
                     ContentUnavailableView {
                         Label("No Apps", systemImage: "square.stack.3d.up")
                     } description: {
