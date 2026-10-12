@@ -98,57 +98,157 @@ struct UpdateStatusText: View {
     }
 }
 
-/// An app's source and updates, on its page
+/// Where an app's updates come from, whether it's up to date, and its
+/// update settings, on its page. Apps that can't be updated say why.
 struct AppUpdatesSection: View {
     @Environment(LibraryStore.self) private var library
+    @Environment(SourcesStore.self) private var sources
+    @Environment(DeviceStore.self) private var device
     let app: LibraryApp
     private var updater: Updater { .shared }
 
     var body: some View {
-        if app.sourceURL != nil {
-            Section {
-                if let item = updater.available[app.id] {
-                    Button {
-                        Task { await updater.run([app.id], automatic: false) }
-                    } label: {
-                        Label("Update to \(item.version.version)", systemImage: "arrow.down.circle")
-                    }
-                    .disabled(updater.isUpdating)
-                    Button {
-                        updater.skip(app.id)
-                    } label: {
-                        Label("Skip This Version", systemImage: "forward")
-                    }
-                    .disabled(updater.isUpdating)
+        switch app.updateOrigin {
+        case .source(let url):
+            sourceSection(url)
+        case .unlinked(let name):
+            Section("Updates") {
+                Label {
+                    Text("Downloaded from \(name), which WarpSign hasn't found in your sources. Add it again in Sources to get updates for this app.")
+                } icon: {
+                    Image(systemName: "exclamationmark.arrow.triangle.2.circlepath").foregroundStyle(.orange)
                 }
-                if let skipped = app.skippedVersion {
-                    LabeledContent {
-                        Button("Don't Skip") { updater.stopSkipping(app.id) }
-                    } label: {
-                        Label("Skipping \(skipped)", systemImage: "forward")
-                    }
-                }
-                UpdateStatusText(status: updater.status[app.id])
-                Toggle("Update Automatically", isOn: Binding(
-                    get: { app.updatesAutomatically },
-                    set: { library.setAutoUpdate($0, for: app) }
-                ))
-            } header: {
-                Text("From \(app.origin ?? "a source")")
-            } footer: {
-                if app.signedCopies.isEmpty {
-                    Text("Updates are downloaded and signed with the options this app was last signed with, then installed. Sign it once first.")
-                } else {
-                    Text("Updates are downloaded and signed with the options this app was last signed with, then installed.")
-                }
+                .font(.callout)
+            }
+        case .bundled:
+            Section("Updates") {
+                Label("Comes with WarpSign, and updates when WarpSign does: set it up again from the library after updating WarpSign.", systemImage: "shippingbox")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+        case .imported:
+            Section("Updates") {
+                Label("Imported from a file, so there's nowhere to look for updates. Download it from a source to have WarpSign keep it up to date.", systemImage: "doc")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
         }
+    }
+
+    @ViewBuilder
+    private func sourceSection(_ url: String) -> some View {
+        let source = sources.sources[url]
+        let sourceApp = source?.apps.first { $0.bundleId == (app.sourceAppId ?? app.bundleId) }
+        Section {
+            if let source, let sourceApp {
+                NavigationLink {
+                    SourceAppView(app: sourceApp, source: source)
+                } label: {
+                    LabeledContent("Source", value: source.name)
+                }
+            } else {
+                LabeledContent("Source", value: source?.name ?? app.origin ?? URL(string: url)?.host() ?? url)
+                if source != nil {
+                    Text("The source no longer lists this app.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+
+            if let item = updater.available[app.id] {
+                LabeledContent("Status") {
+                    Label("\(item.version.version) Available", systemImage: "arrow.down.circle.fill")
+                        .foregroundStyle(.tint)
+                }
+                Button {
+                    Task { await updater.run([app.id], automatic: false) }
+                } label: {
+                    Label("Update to \(item.version.version)", systemImage: "arrow.down.circle")
+                }
+                .disabled(updater.isUpdating)
+                Button {
+                    updater.skip(app.id)
+                } label: {
+                    Label("Skip This Version", systemImage: "forward")
+                }
+                .disabled(updater.isUpdating)
+            } else if let match = updater.sourceVersion(of: app) {
+                LabeledContent("Status") {
+                    if match.version.version == app.skippedVersion {
+                        Text("Skipping \(match.version.version)").foregroundStyle(.secondary)
+                    } else {
+                        Label("Up to Date", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    }
+                }
+                LabeledContent("Newest in Source", value: versionText(match.version))
+            }
+            if let skipped = app.skippedVersion {
+                LabeledContent {
+                    Button("Don't Skip") { updater.stopSkipping(app.id) }
+                } label: {
+                    Label("Skipping \(skipped)", systemImage: "forward")
+                }
+            }
+            UpdateStatusText(status: updater.status[app.id])
+
+            Toggle("Update Automatically", isOn: Binding(
+                get: { app.updatesAutomatically },
+                set: { library.setAutoUpdate($0, for: app) }
+            ))
+            LabeledContent("Last Checked") {
+                HStack(spacing: 8) {
+                    if updater.isChecking {
+                        ProgressView()
+                    } else if let lastCheck = updater.lastCheck {
+                        Text("\(lastCheck, style: .relative) ago")
+                    } else {
+                        Text("Never")
+                    }
+                    Button("Check") { Task { await updater.check() } }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(updater.isChecking)
+                }
+            }
+        } header: {
+            Text("Updates")
+        } footer: {
+            Text(footer)
+        }
+    }
+
+    private func versionText(_ version: AppVersion) -> String {
+        var text = version.version
+        if let build = version.build, build != version.version { text += " (\(build))" }
+        if let date = version.date?.prefix(10) { text += " · \(date)" }
+        return text
+    }
+
+    private var footer: String {
+        guard let newest = app.signedCopies.max(by: { $0.date < $1.date }) else {
+            return "Sign it once: updates are signed with the options of its last signed copy."
+        }
+        let date = newest.date.formatted(.dateTime.day().month())
+        var text = "Updates are signed as its last signed copy was (\(newest.certificate), \(date)), and replace its older signed copies. "
+        switch device.method {
+        case .pairing:
+            text += Updater.shared.installUpdates
+                ? "Then they install with your pairing file."
+                : "Install Updates is off, so automatic updates wait in the library for you."
+        case .web:
+            text += "Installing over the web, iOS asks before each install: automatic updates wait in the library, and Update shows iOS's prompt."
+        }
+        return text
     }
 }
 
 /// Settings → Automatic Updates
 struct UpdatesSettingsView: View {
+    @Environment(DeviceStore.self) private var device
     private var updater: Updater { .shared }
+
+    /// Over the web, iOS asks before every install
+    private var overWeb: Bool { device.method == .web }
 
     var body: some View {
         @Bindable var updater = updater
@@ -159,7 +259,7 @@ struct UpdatesSettingsView: View {
                         if on { Task { await Notifier.requestPermission() } }
                     }
             } footer: {
-                Text("Apps from your sources update in the background, the way the App Store does: downloaded, signed as they were last signed, and installed with your pairing file. You're notified when one needs you. iOS decides exactly when, and skips it if WarpSign was force-quit or Background App Refresh is off.")
+                Text("Apps from your sources update in the background, the way the App Store does: downloaded, signed as they were last signed, and installed with your pairing file. You're notified when one needs you. iOS decides exactly when, and skips it if WarpSign was force-quit or Background App Refresh is off. Apps imported from files can't update.")
             }
 
             Section {
@@ -174,8 +274,27 @@ struct UpdatesSettingsView: View {
             }
             .disabled(!updater.automatic)
 
+            if overWeb {
+                Section {
+                    NavigationLink {
+                        InstallingView()
+                    } label: {
+                        Label("Set Up a Pairing File…", systemImage: "cable.connector")
+                    }
+                } header: {
+                    Text("Installing Over the Web")
+                } footer: {
+                    Text("iOS asks before every install over the web, so updates can't install themselves: they're downloaded and signed, then wait in the library, and tapping Update shows iOS's prompt. With a pairing file, they install on their own.")
+                }
+            }
+
             Section {
-                Toggle("Install Updates", isOn: $updater.installUpdates)
+                if overWeb {
+                    Toggle("Install Updates", isOn: .constant(false))
+                        .disabled(true)
+                } else {
+                    Toggle("Install Updates", isOn: $updater.installUpdates)
+                }
                 Toggle("New Apps Update Automatically", isOn: $updater.newAppsUpdate)
                 Toggle("Notify When Apps Update", isOn: $updater.notifySuccess)
                     .onChange(of: updater.notifySuccess) { _, on in
@@ -184,7 +303,7 @@ struct UpdatesSettingsView: View {
             } header: {
                 Text("Updating")
             } footer: {
-                Text(updater.installUpdates
+                Text(updater.installsAutomatically
                      ? "New Apps applies to apps downloaded from now on; each app has its own switch on its page."
                      : "Updates are downloaded and signed, then wait in the library for you to install them. New Apps applies to apps downloaded from now on; each app has its own switch on its page.")
             }
@@ -238,5 +357,79 @@ struct UpdatesSettingsView: View {
             }
         }
         .navigationTitle("Automatic Updates")
+    }
+}
+
+/// Updates the user started, signed and waiting for iOS's prompt to
+/// install over the web: the install screen, one at a time
+struct PendingInstallSheet: ViewModifier {
+    @Environment(DeviceStore.self) private var device
+    @Environment(LibraryStore.self) private var library
+    private var updater: Updater { .shared }
+
+    func body(content: Content) -> some View {
+        content.sheet(item: Binding(
+            get: { updater.pendingInstalls.first },
+            set: { if $0 == nil { next() } }
+        )) { pending in
+            NavigationStack {
+                InstallView(ipa: pending.ipa, name: pending.name, icon: pending.icon)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button(updater.pendingInstalls.count > 1 ? "Next" : "Done") { next() }
+                        }
+                    }
+            }
+            .environment(device)
+            .environment(library)
+            .interactiveDismissDisabled()
+        }
+    }
+
+    private func next() {
+        if !updater.pendingInstalls.isEmpty { updater.pendingInstalls.removeFirst() }
+    }
+}
+
+/// Where an app in the library updates from, in a word or two: so apps
+/// that won't update (imported from files) stand out
+struct UpdateOriginLabel: View {
+    let app: LibraryApp
+
+    var body: some View {
+        Group {
+            switch app.updateOrigin {
+            case .source:
+                if app.updatesAutomatically {
+                    Label(app.origin ?? "Source", systemImage: "arrow.triangle.2.circlepath")
+                        .foregroundStyle(.tint)
+                } else {
+                    Label("\(app.origin ?? "Source") · updates off", systemImage: "arrow.triangle.2.circlepath")
+                        .foregroundStyle(.secondary)
+                }
+            case .unlinked(let name):
+                Label("\(name) · not in your sources", systemImage: "exclamationmark.arrow.triangle.2.circlepath")
+                    .foregroundStyle(.orange)
+            case .bundled:
+                Label("Bundled with WarpSign", systemImage: "shippingbox")
+                    .foregroundStyle(.secondary)
+            case .imported:
+                Label("Imported · no updates", systemImage: "doc")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.caption)
+        .labelStyle(OriginLabelStyle())
+        .lineLimit(1)
+    }
+
+    /// A small icon close to its text
+    private struct OriginLabelStyle: LabelStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            HStack(spacing: 4) {
+                configuration.icon.imageScale(.small)
+                configuration.title
+            }
+        }
     }
 }

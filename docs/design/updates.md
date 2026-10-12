@@ -13,8 +13,10 @@ Agreed October 2026. Apps downloaded from a source update by themselves, the way
 `Updater.update` does what you'd do by hand:
 
 1. Download the new IPA and replace the library's copy of it (`replaceIPA`). The library entry, its signed copies, its custom icon and its history stay; a different bundle ID is refused.
-2. Sign it with the options the app's newest signed copy was made with, and its custom icon (`SignJob`, shared with the Signing screen). An app that has never been signed stops here: it's downloaded, and the user is told to sign it once.
-3. Install it with the pairing file. With over-the-web installs, iOS asks the user to confirm, so the update stops at signed and says so.
+2. Sign it with the options the app's newest signed copy was made with, and its custom icon (`SignJob`, shared with the Signing screen). An app that has never been signed stops here: it's downloaded, and the user is told to sign it once. The app's older signed copies are removed: they're of a version the library no longer has, and each is a whole IPA.
+3. Install it with the pairing file. Over the web, iOS asks before every install, so it depends who started the update: an automatic one stops at signed and waits in the library (as with Install Updates off, and not as a problem); one the user started shows the install screen (`PendingInstallSheet`, one app at a time for Update All) with iOS's prompt.
+
+Which apps can update is shown in the library, under each app's name (`UpdateOriginLabel`): its source, "updates off", a source WarpSign hasn't found in Sources, bundled with WarpSign (Companion), or imported from a file, which can't update. The app's page has an Updates section saying the same, with a link to its listing in the source, the newest version there, whether it's up to date, and when sources were last checked; the source's listing has an In Your Library section going the other way.
 
 WarpSign itself is never updated this way: installing over the running app locks up installd until the phone restarts. It updates through WarpSign Companion.
 
@@ -31,7 +33,7 @@ Settings > Automatic Updates, beyond the main switch:
 
 - **Only While Charging** (on): the processing task's `requiresExternalPower`. Off, iOS runs it whenever it likes, which can close an app you're using while it installs.
 - **Wi-Fi Only** (on): iOS can require a network but not Wi-Fi, so an automatic run checks first (`NWPathMonitor`) and waits for another chance on cellular or a network iOS counts as expensive. Low Data Mode always holds automatic updates back.
-- **Install Updates** (on): off, automatic updates stop at signed and wait in the library. Updates started by hand always install.
+- **Install Updates** (on): off, automatic updates stop at signed and wait in the library. Updates started by hand always install. Over the web it's off and greyed out, with a link to set up a pairing file.
 - **New Apps Update Automatically** (on): the per-app switch's starting value for apps downloaded (or linked to their source) from now on.
 - **Notify When Apps Update** (off): one notification for what updated. Problems always notify.
 - **Skip Betas** (on): a source's pre-releases (letters after the numbers, `is_pre_release`) aren't offered unless the library's version is one; the newest release is offered instead. Applies to updates started by hand too.

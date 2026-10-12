@@ -155,14 +155,13 @@ struct LibraryRow: View {
                 Text("\(app.versionText) · \(ByteCountFormatter.file(app.fileSize))")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                Text(app.bundleId)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                UpdateOriginLabel(app: app)
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 4) {
+                if Updater.shared.available[app.id] != nil {
+                    Badge("Update", color: .blue)
+                }
                 if app.isEncrypted {
                     Badge("Encrypted", color: .red)
                 }

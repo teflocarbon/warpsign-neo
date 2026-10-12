@@ -83,9 +83,7 @@ struct AppDetailView: View {
                 LabeledContent("Installed Size", value: ByteCountFormatter.file(app.installedSize))
                 LabeledContent("Extensions", value: "\(app.extensionCount)")
                 LabeledContent("Encryption", value: app.encryption.capitalized)
-                if let origin = app.origin {
-                    LabeledContent("From", value: origin)
-                }
+                LabeledContent("From", value: app.origin ?? "Imported File")
                 LabeledContent("Added") {
                     Text(app.addedAt, format: .dateTime.day().month().year())
                 }

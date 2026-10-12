@@ -95,8 +95,18 @@ private struct SourceAppRow: View {
 
 struct SourceAppView: View {
     @Environment(SourcesStore.self) private var sources
+    @Environment(LibraryStore.self) private var library
     let app: SourceApp
     let source: Source
+
+    /// Library apps downloaded from this listing
+    private var inLibrary: [LibraryApp] {
+        library.apps.filter { libraryApp in
+            guard let url = libraryApp.sourceURL else { return false }
+            return sources.sources[url]?.name == source.name
+                && (libraryApp.sourceAppId ?? libraryApp.bundleId) == app.bundleId
+        }
+    }
 
     var body: some View {
         List {
@@ -116,6 +126,27 @@ struct SourceAppView: View {
 
             if let error = sources.downloadError {
                 Section { ErrorRow(message: error) }
+            }
+
+            if !inLibrary.isEmpty {
+                Section("In Your Library") {
+                    ForEach(inLibrary) { libraryApp in
+                        NavigationLink {
+                            AppDetailView(appId: libraryApp.id)
+                        } label: {
+                            LabeledContent(libraryApp.versionText) {
+                                if let update = Updater.shared.available[libraryApp.id] {
+                                    Text("\(update.version.version) available").foregroundStyle(.tint)
+                                } else if libraryApp.skippedVersion != nil
+                                            && libraryApp.skippedVersion == Updater.shared.sourceVersion(of: libraryApp)?.version.version {
+                                    Text("Skipping \(libraryApp.skippedVersion ?? "")")
+                                } else {
+                                    Text("Up to date").foregroundStyle(.green)
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             if !app.screenshotUrls.isEmpty {

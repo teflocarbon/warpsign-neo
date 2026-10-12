@@ -42,6 +42,7 @@ struct WarpSignApp: App {
                     .tag(AppTab.settings)
                     .badge(account.needsBackup ? Text("!") : nil)
             }
+            .modifier(PendingInstallSheet())
             .environment(library)
             .environment(account)
             .environment(sources)

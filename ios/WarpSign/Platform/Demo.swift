@@ -93,6 +93,9 @@ enum Demo {
                 addedAt: Date(timeIntervalSinceNow: -86_400 * Double(index + 1)),
                 origin: sample.name == "Arcade 64" ? "Example Repo" : nil
             )
+            if app.origin != nil {
+                app.sourceURL = sourceURL
+            }
             if sample.signed {
                 let copy = signedCopy(for: sample)
                 app.signedCopies = [copy]

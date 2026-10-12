@@ -41,7 +41,18 @@ final class Updater {
         var note: String? = nil
     }
 
+    /// A signed update to install over the web, which iOS asks the user to
+    /// confirm: shown by the app as the install screen
+    struct PendingInstall: Identifiable {
+        let id = UUID()
+        let ipa: URL
+        let name: String
+        let icon: URL
+    }
+
     private(set) var available: [UUID: Available] = [:]
+    /// Web installs from updates the user started, shown one at a time
+    var pendingInstalls: [PendingInstall] = []
     private(set) var status: [UUID: Status] = [:]
     private(set) var history: [Entry] = []
     private(set) var lastCheck: Date?
@@ -155,21 +166,34 @@ final class Updater {
         guard let library, let sources else { return }
         var found: [UUID: Available] = [:]
         for app in library.apps {
-            guard let url = app.sourceURL,
-                  let source = sources.sources[url],
-                  let sourceApp = source.apps.first(where: { $0.bundleId == (app.sourceAppId ?? app.bundleId) }),
-                  let version = newest(of: sourceApp.versions, for: app),
-                  version.version != app.skippedVersion,
+            guard let match = sourceVersion(of: app, in: sources),
+                  match.version.version != app.skippedVersion,
                   isNewerVersion(
-                      candidate: version.version,
-                      candidateBuild: version.build,
+                      candidate: match.version.version,
+                      candidateBuild: match.version.build,
                       current: app.version ?? "",
                       currentBuild: app.build
                   )
             else { continue }
-            found[app.id] = Available(appId: app.id, sourceName: source.name, version: version)
+            found[app.id] = Available(appId: app.id, sourceName: match.source.name, version: match.version)
         }
         available = found
+    }
+
+    /// The app's source, and the version of it there that updates would
+    /// offer (skipped or not), as last downloaded
+    func sourceVersion(of app: LibraryApp) -> (source: Source, version: AppVersion)? {
+        guard let sources else { return nil }
+        return sourceVersion(of: app, in: sources)
+    }
+
+    private func sourceVersion(of app: LibraryApp, in sources: SourcesStore) -> (source: Source, version: AppVersion)? {
+        guard let url = app.sourceURL,
+              let source = sources.sources[url],
+              let sourceApp = source.apps.first(where: { $0.bundleId == (app.sourceAppId ?? app.bundleId) }),
+              let version = newest(of: sourceApp.versions, for: app)
+        else { return nil }
+        return (source, version)
     }
 
     /// The version to offer: the source's newest (sources list newest
@@ -237,7 +261,7 @@ final class Updater {
             if showCard, let name = library.app(id)?.displayName {
                 ContinuedWork.shared.update(subtitle: name, fraction: Double(index) / Double(ids.count))
             }
-            if let entry = await update(id, install: !automatic || installUpdates) {
+            if let entry = await update(id, automatic: automatic) {
                 entries.append(entry)
                 if automatic, let problem = entry.problem {
                     Notifier.post(title: "\(entry.appName) wasn't updated", body: problem)
@@ -264,13 +288,19 @@ final class Updater {
         )
     }
 
+    /// Whether automatic updates install, rather than stopping at signed:
+    /// installing over the web needs the user to confirm each install
+    var installsAutomatically: Bool {
+        installUpdates && device?.method == .pairing
+    }
+
     /// Every app with an update that's set to update by itself
     var automaticIds: [UUID] {
         guard let library else { return [] }
         return available.keys.filter { library.app($0)?.updatesAutomatically ?? false }
     }
 
-    private func update(_ id: UUID, install: Bool) async -> Entry? {
+    private func update(_ id: UUID, automatic: Bool) async -> Entry? {
         guard let library, let account, let device,
               let update = available[id], let app = library.app(id)
         else { return nil }
@@ -309,13 +339,28 @@ final class Updater {
                 observer: StepRecorder { event in signLog.steps.apply(event) },
                 steps: { signLog.steps }
             )
-            guard install else {
+            // The old version's signed copies: the library no longer has
+            // that version, and each is a whole IPA
+            library.removeSignedCopies(of: updated, except: copy)
+            // Automatic updates install only with the pairing file (iOS asks
+            // before each web install), and only with Install Updates on
+            if automatic && !installsAutomatically {
                 return finish(id, app: updated, from: from, to: to, done: "Signed: ready to install",
                               problem: nil, note: "Signed, not installed")
             }
-            guard device.method == .pairing, device.isReady else {
+            guard device.isReady else {
                 return finish(id, app: updated, from: from, to: to, done: "Signed",
-                              problem: "Signed \(to). Install it from the Library: installing over the web needs you to confirm.")
+                              problem: "Signed \(to). Set up installing in Settings, then install it from the Library.")
+            }
+            if device.method == .web {
+                // Started by the user, who's there to confirm iOS's prompt
+                pendingInstalls.append(PendingInstall(
+                    ipa: library.signedURL(copy, of: updated),
+                    name: updated.displayName,
+                    icon: LibraryStore.folder(of: updated.id).appendingPathComponent("icon.png")
+                ))
+                return finish(id, app: updated, from: from, to: to, done: "Signed: confirm the install",
+                              problem: nil, note: "Sent to install over the web")
             }
             status[id] = .installing
             let installLog = StepLog(installSteps())

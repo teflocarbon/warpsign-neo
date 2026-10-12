@@ -31,6 +31,25 @@ struct LibraryApp: Codable, Identifiable, Hashable, Sendable {
 
     var updatesAutomatically: Bool { autoUpdate ?? true }
 
+    /// Where updates for it can come from
+    enum UpdateOrigin: Equatable {
+        /// A source in Sources (its URL)
+        case source(String)
+        /// Downloaded from a source (its name) WarpSign hasn't matched to
+        /// one in Sources: removed since, or not checked yet
+        case unlinked(String)
+        /// WarpSign Companion, which updates with WarpSign
+        case bundled
+        /// Imported from a file: nowhere to look for updates
+        case imported
+    }
+
+    var updateOrigin: UpdateOrigin {
+        if let sourceURL { return .source(sourceURL) }
+        guard let origin else { return .imported }
+        return origin == BundledCompanion.origin ? .bundled : .unlinked(origin)
+    }
+
     var isEncrypted: Bool { encryption == "encrypted" }
 
     var versionText: String {
@@ -390,6 +409,16 @@ final class LibraryStore {
         records[copy.id] = nil
         try? FileManager.default.removeItem(at: signedURL(copy, of: app).deletingLastPathComponent())
         save()
+    }
+
+    /// Remove every signed copy of `app` but `keep`: what an update does
+    /// once the new version is signed, as the old ones are of a version
+    /// the library no longer has
+    func removeSignedCopies(of app: LibraryApp, except keep: SignedCopy) {
+        guard let app = self.app(app.id) else { return }
+        for copy in app.signedCopies where copy.id != keep.id {
+            deleteSignedCopy(copy, of: app)
+        }
     }
 
     /// Signed copies with a newer one of the same app and certificate,
