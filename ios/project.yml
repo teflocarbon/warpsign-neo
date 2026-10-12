@@ -46,6 +46,12 @@ targets:
         # audio, as ESign does): see Platform/KeepAlive.swift
         UIBackgroundModes:
           - audio
+          - processing
+        # iOS 26's continued processing (Platform/ContinuedWork.swift): signing
+        # and installing carry on in the Dynamic Island. Re-signing remaps the
+        # bundle ID here as everywhere else in Info.plist.
+        BGTaskSchedulerPermittedIdentifiers:
+          - $(PRODUCT_BUNDLE_IDENTIFIER).continued.*
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft

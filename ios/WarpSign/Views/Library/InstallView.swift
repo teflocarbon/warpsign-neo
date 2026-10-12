@@ -151,7 +151,10 @@ struct InstallView: View {
         steps = [StepState](pending: installSteps())
         let recorder = StepRecorder { event in
             steps.apply(event)
+            ContinuedWork.shared.update(steps)
         }
+        ContinuedWork.shared.begin(title: "Installing \(name)", subtitle: "Starting")
+        defer { ContinuedWork.shared.finish() }
         do {
             try await device.install(ipa, observer: recorder)
             phase = .installed

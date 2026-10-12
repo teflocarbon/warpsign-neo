@@ -39,3 +39,9 @@ In the Cloudflare dashboard: Workers & Pages > Create > Worker, name it, then Ed
 - Next: installing from the extension itself. It lives as long as the VPN is up, whatever happens to the app, so it could finish an install the app was suspended in. Its own sockets bypass its tunnel, so it would reach the device by writing packets into it from a third address (`10.7.0.2`) through idevice's userspace TCP stack (jktcp handles IPv4), within the extension's 50 MB.
 
 The CLI uses the same code over USB: `warpsign install` and `warpsign sign --install`.
+
+## Leaving WarpSign mid-job
+
+On iOS 26 and later, signing and installing with a pairing file run as a continued processing task (`Platform/ContinuedWork.swift`): iOS keeps them going after WarpSign is left, and shows its own progress card in the Dynamic Island and on the Lock Screen, fed by the step events. The request is submitted with the `fail` strategy (now or not at all) and the task is always completed as successful, so iOS never draws its own failure card; the job's outcome is WarpSign's to show.
+
+The identifier comes from Info.plist (`<bundle ID>.continued.*`, read back at runtime) rather than from the bundle ID, so the two agree however WarpSign was signed. Re-signing remaps it with the bundle ID when Patch IDs is on, as Python warpsign's Info.plist byte replacement already does for every mapped ID (pinned in `info_plist_patching.json`). Web installs keep the silent-audio hold (`KeepAlive.swift`), since iOS's installer does that work.

@@ -67,6 +67,12 @@
         {
           "expected": {
             "AppIdentifierPrefix": "ZZZZZ99999.",
+            "BGTaskSchedulerPermittedIdentifiers": [
+              "4no.qv4clrx.xja.refresh",
+              "4no.qv4clrx.xja.userTask.*",
+              "4no.qv4clrx.xjalication.task",
+              "com.vendor.sdk.sync"
+            ],
             "CFBundleDisplayName": "Example",
             "CFBundleExecutable": "App",
             "CFBundleIdentifier": "4no.qv4clrx.xja",
@@ -107,6 +113,12 @@
           },
           "info_plist": {
             "AppIdentifierPrefix": "ABCDE12345.",
+            "BGTaskSchedulerPermittedIdentifiers": [
+              "com.example.app.refresh",
+              "com.example.app.userTask.*",
+              "com.example.application.task",
+              "com.vendor.sdk.sync"
+            ],
             "CFBundleDisplayName": "Example",
             "CFBundleExecutable": "App",
             "CFBundleIdentifier": "com.example.app",
@@ -285,6 +297,12 @@
         {
           "expected": {
             "AppIdentifierPrefix": "ZZZZZ99999.",
+            "BGTaskSchedulerPermittedIdentifiers": [
+              "4no.qv4clrx.xja.refresh",
+              "4no.qv4clrx.xja.userTask.*",
+              "4no.qv4clrx.xjalication.task",
+              "com.vendor.sdk.sync"
+            ],
             "CADisableMinimumFrameDurationOnPhone": true,
             "CAHighFrameRateDisplay": true,
             "CFBundleDisplayName": "My App",
@@ -336,6 +354,12 @@
           },
           "info_plist": {
             "AppIdentifierPrefix": "ABCDE12345.",
+            "BGTaskSchedulerPermittedIdentifiers": [
+              "com.example.app.refresh",
+              "com.example.app.userTask.*",
+              "com.example.application.task",
+              "com.vendor.sdk.sync"
+            ],
             "CFBundleDisplayName": "Example",
             "CFBundleExecutable": "App",
             "CFBundleIdentifier": "com.example.app",
@@ -525,6 +549,12 @@
         {
           "expected": {
             "AppIdentifierPrefix": "ZZZZZ99999.",
+            "BGTaskSchedulerPermittedIdentifiers": [
+              "4no.qv4clrx.xja.refresh",
+              "4no.qv4clrx.xja.userTask.*",
+              "4no.qv4clrx.xjalication.task",
+              "com.vendor.sdk.sync"
+            ],
             "CFBundleDisplayName": "Example",
             "CFBundleExecutable": "App",
             "CFBundleIdentifier": "4no.qv4clrx.xja",
@@ -566,6 +596,12 @@
           },
           "info_plist": {
             "AppIdentifierPrefix": "ABCDE12345.",
+            "BGTaskSchedulerPermittedIdentifiers": [
+              "com.example.app.refresh",
+              "com.example.app.userTask.*",
+              "com.example.application.task",
+              "com.vendor.sdk.sync"
+            ],
             "CFBundleDisplayName": "Example",
             "CFBundleExecutable": "App",
             "CFBundleIdentifier": "com.example.app",
@@ -747,6 +783,12 @@
         {
           "expected": {
             "AppIdentifierPrefix": "ZZZZZ99999.",
+            "BGTaskSchedulerPermittedIdentifiers": [
+              "4no.qv4clrx.xja.refresh",
+              "4no.qv4clrx.xja.userTask.*",
+              "4no.qv4clrx.xjalication.task",
+              "com.vendor.sdk.sync"
+            ],
             "CFBundleDisplayName": "Example",
             "CFBundleExecutable": "App",
             "CFBundleIdentifier": "4no.qv4clrx.xja",
@@ -787,6 +829,12 @@
           },
           "info_plist": {
             "AppIdentifierPrefix": "ABCDE12345.",
+            "BGTaskSchedulerPermittedIdentifiers": [
+              "com.example.app.refresh",
+              "com.example.app.userTask.*",
+              "com.example.application.task",
+              "com.vendor.sdk.sync"
+            ],
             "CFBundleDisplayName": "Example",
             "CFBundleExecutable": "App",
             "CFBundleIdentifier": "com.example.app",
@@ -967,6 +1015,12 @@
         {
           "expected": {
             "AppIdentifierPrefix": "ZZZZZ99999.",
+            "BGTaskSchedulerPermittedIdentifiers": [
+              "com.example.app.refresh",
+              "com.example.app.userTask.*",
+              "com.example.application.task",
+              "com.vendor.sdk.sync"
+            ],
             "CFBundleDisplayName": "Example",
             "CFBundleExecutable": "App",
             "CFBundleIdentifier": "com.example.app",
@@ -1007,6 +1061,12 @@
           },
           "info_plist": {
             "AppIdentifierPrefix": "ABCDE12345.",
+            "BGTaskSchedulerPermittedIdentifiers": [
+              "com.example.app.refresh",
+              "com.example.app.userTask.*",
+              "com.example.application.task",
+              "com.vendor.sdk.sync"
+            ],
             "CFBundleDisplayName": "Example",
             "CFBundleExecutable": "App",
             "CFBundleIdentifier": "com.example.app",
@@ -1187,6 +1247,12 @@
         {
           "expected": {
             "AppIdentifierPrefix": "ABCDE12345.",
+            "BGTaskSchedulerPermittedIdentifiers": [
+              "com.example.app.refresh",
+              "com.example.app.userTask.*",
+              "com.example.application.task",
+              "com.vendor.sdk.sync"
+            ],
             "CFBundleDisplayName": "Example",
             "CFBundleExecutable": "App",
             "CFBundleIdentifier": "4no.qv4clrx.xja",
@@ -1227,6 +1293,12 @@
           },
           "info_plist": {
             "AppIdentifierPrefix": "ABCDE12345.",
+            "BGTaskSchedulerPermittedIdentifiers": [
+              "com.example.app.refresh",
+              "com.example.app.userTask.*",
+              "com.example.application.task",
+              "com.vendor.sdk.sync"
+            ],
             "CFBundleDisplayName": "Example",
             "CFBundleExecutable": "App",
             "CFBundleIdentifier": "com.example.app",
@@ -1407,6 +1479,12 @@
         {
           "expected": {
             "AppIdentifierPrefix": "ZZZZZ99999.",
+            "BGTaskSchedulerPermittedIdentifiers": [
+              "com.example.app.refresh",
+              "com.example.app.userTask.*",
+              "com.example.application.task",
+              "com.vendor.sdk.sync"
+            ],
             "CFBundleDisplayName": "Example",
             "CFBundleExecutable": "App",
             "CFBundleIdentifier": "com.example.app",
@@ -1447,6 +1525,12 @@
           },
           "info_plist": {
             "AppIdentifierPrefix": "ABCDE12345.",
+            "BGTaskSchedulerPermittedIdentifiers": [
+              "com.example.app.refresh",
+              "com.example.app.userTask.*",
+              "com.example.application.task",
+              "com.vendor.sdk.sync"
+            ],
             "CFBundleDisplayName": "Example",
             "CFBundleExecutable": "App",
             "CFBundleIdentifier": "com.example.app",
@@ -1648,6 +1732,12 @@
         {
           "expected": {
             "AppIdentifierPrefix": "ZZZZZ99999.",
+            "BGTaskSchedulerPermittedIdentifiers": [
+              "4no.qv4clrx.xja.refresh",
+              "4no.qv4clrx.xja.userTask.*",
+              "4no.qv4clrx.xjalication.task",
+              "com.vendor.sdk.sync"
+            ],
             "CFBundleDisplayName": "Example",
             "CFBundleExecutable": "App",
             "CFBundleIcons": {
@@ -1705,6 +1795,12 @@
           },
           "info_plist": {
             "AppIdentifierPrefix": "ABCDE12345.",
+            "BGTaskSchedulerPermittedIdentifiers": [
+              "com.example.app.refresh",
+              "com.example.app.userTask.*",
+              "com.example.application.task",
+              "com.vendor.sdk.sync"
+            ],
             "CFBundleDisplayName": "Example",
             "CFBundleExecutable": "App",
             "CFBundleIdentifier": "com.example.app",
@@ -1821,6 +1917,6 @@
   ],
   "source": {
     "python": "3.13.16",
-    "warpsign_commit": "d96e33b3ec2c1a5bb3665eff64f80d84cb880518"
+    "warpsign_commit": "dbed168d63fd9eda207c8f1e092609bb572b9054"
   }
 }

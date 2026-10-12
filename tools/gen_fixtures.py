@@ -611,6 +611,13 @@ FULL_APP_INFO_PLISTS = [
             "keychain-access-groups": f"{TEAM_A}.com.example.app",
             "com.apple.developer.icloud-container-identifiers": ["iCloud.com.example.app"],
             "com.apple.developer.associated-domains": ["applinks:example.com"],
+            # Remapped when they start with the app's bundle ID; others kept
+            "BGTaskSchedulerPermittedIdentifiers": [
+                "com.example.app.refresh",
+                "com.example.app.userTask.*",
+                "com.example.application.task",
+                "com.vendor.sdk.sync",
+            ],
         },
     },
     {

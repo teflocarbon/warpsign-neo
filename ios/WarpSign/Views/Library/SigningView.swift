@@ -126,7 +126,9 @@ struct SigningView: View {
                 ProgressView()
                 VStack(alignment: .leading) {
                     Text("Signing…").font(.headline)
-                    Text("Keep WarpSign open until it's done.")
+                    Text(ContinuedWork.shared.isAvailable
+                        ? "You can leave WarpSign: it carries on in the Dynamic Island."
+                        : "Keep WarpSign open until it's done.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -152,7 +154,10 @@ struct SigningView: View {
         let (output, draft) = library.newSignedCopy(of: app)
         let recorder = StepRecorder { event in
             steps.apply(event)
+            ContinuedWork.shared.update(steps)
         }
+        ContinuedWork.shared.begin(title: "Signing \(app.displayName)", subtitle: "Starting")
+        defer { ContinuedWork.shared.finish() }
         do {
             let result = try await account.sign(
                 ipa: LibraryStore.ipaURL(of: app.id),
