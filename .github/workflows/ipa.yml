@@ -9,6 +9,13 @@ on:
 permissions:
   contents: write
 
+# One build at a time, and a newer one replaces an older one still queued
+# or running: they all publish to the same release, so only the newest
+# matters (and macOS runners are generous to public repos; be nice)
+concurrency:
+  group: ipa
+  cancel-in-progress: true
+
 jobs:
   ipa:
     runs-on: macos-latest

@@ -4,6 +4,11 @@ name: iOS
 on:
   workflow_dispatch:
 
+# A newer check replaces an older one still running
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-latest
