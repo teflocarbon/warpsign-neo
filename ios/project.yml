@@ -71,6 +71,17 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        # Source and install links: WarpSign's own, and AltStore's and
+        # SideStore's, which "Add to AltStore" buttons on websites use. If
+        # one of those is installed too, iOS picks which app opens them.
+        # Not feather://: pasted Feather links still work.
+        CFBundleURLTypes:
+          - CFBundleURLName: Source Links
+            CFBundleTypeRole: Viewer
+            CFBundleURLSchemes:
+              - warpsign
+              - altstore
+              - sidestore
         # Let IPAs and profiles be opened in WarpSign from Files and the share sheet
         LSSupportsOpeningDocumentsInPlace: false
         CFBundleDocumentTypes:

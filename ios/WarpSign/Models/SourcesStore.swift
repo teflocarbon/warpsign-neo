@@ -10,6 +10,9 @@ final class SourcesStore {
     private(set) var sources: [String: Source] = [:]
     private(set) var errors: [String: String] = [:]
     private(set) var loading: Set<String> = []
+    /// A source opened from a link (altstore://, sidestore://, a web page
+    /// wrapping one): Sources asks whether to add it
+    var proposed: String?
 
     private static let key = "sources"
     /// Screenshots: sample sources, never fetched
@@ -25,11 +28,12 @@ final class SourcesStore {
         isDemo = true
     }
 
-    /// Add a source after checking it loads
+    /// Add a source after checking it loads. Takes its address, or a
+    /// link that wraps one (altstore://source?url=…, feather://source/…,
+    /// or a web page redirecting to either).
     func add(_ text: String) async throws {
-        var text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !text.contains("://") { text = "https://" + text }
-        guard let url = URL(string: text), url.scheme == "https" || url.scheme == "http" else {
+        let text = try Self.resolve(text)
+        guard let url = URL(string: text) else {
             throw WarpsignError.Source(message: "That isn't a web address.")
         }
         guard !urls.contains(text) else { return }
@@ -37,6 +41,35 @@ final class SourcesStore {
         urls.append(text)
         sources[text] = source
         save()
+    }
+
+    /// Change a source's address, after checking the new one loads; it
+    /// keeps its place. Returns the address it now has.
+    @discardableResult
+    func replace(_ old: String, with text: String) async throws -> String {
+        let new = try Self.resolve(text)
+        guard new != old else { return old }
+        guard !urls.contains(new) else {
+            throw WarpsignError.Source(message: "That source is already added.")
+        }
+        guard let url = URL(string: new) else {
+            throw WarpsignError.Source(message: "That isn't a web address.")
+        }
+        let source = try await Self.fetch(url)
+        guard let index = urls.firstIndex(of: old) else { return old }
+        urls[index] = new
+        sources[old] = nil
+        errors[old] = nil
+        sources[new] = source
+        save()
+        return new
+    }
+
+    private static func resolve(_ text: String) throws -> String {
+        guard let url = resolveSourceUrl(text: text) else {
+            throw WarpsignError.Source(message: "That isn't a web address, or a link to a source.")
+        }
+        return url
     }
 
     func remove(at offsets: IndexSet) {

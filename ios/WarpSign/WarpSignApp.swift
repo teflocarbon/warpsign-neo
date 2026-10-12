@@ -68,6 +68,22 @@ struct WarpSignApp: App {
             }
             // IPAs, profiles and pairing files opened in WarpSign from Files or the share sheet
             .onOpenURL { url in
+                // altstore://, sidestore://, warpsign:// source and install links
+                if !url.isFileURL, let link = parseStoreLink(text: url.absoluteString) {
+                    switch link {
+                    case .source(let source):
+                        tab = .sources
+                        sources.proposed = source
+                    case .install(let ipa):
+                        tab = .library
+                        do {
+                            try DownloadManager.shared.download(link: ipa)
+                        } catch {
+                            library.importError = error.userMessage
+                        }
+                    }
+                    return
+                }
                 Task {
                     switch url.pathExtension.lowercased() {
                     case "mobileprovision":

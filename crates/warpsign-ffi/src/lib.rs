@@ -416,6 +416,43 @@ pub struct SourceApp {
     pub screenshot_urls: Vec<String>,
     /// Newest first, never empty
     pub versions: Vec<AppVersion>,
+    /// Entitlement keys the source says the app uses (`appPermissions`);
+    /// name them with `entitlement_names`
+    pub entitlements: Vec<String>,
+    /// Privacy permissions the source says the app asks for
+    pub privacy: Vec<PrivacyPermission>,
+}
+
+/// A privacy permission, e.g. `NSCameraUsageDescription`, and the reason
+/// the app gives for it
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct PrivacyPermission {
+    pub key: String,
+    pub reason: Option<String>,
+}
+
+/// What a source manager's link (`altstore://`, `sidestore://`,
+/// `feather://`, `warpsign://`, or a web page wrapping one) asks for
+#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
+pub enum StoreLink {
+    Source { url: String },
+    Install { url: String },
+}
+
+/// Understand a source manager's link; None for anything else
+#[uniffi::export]
+pub fn parse_store_link(text: String) -> Option<StoreLink> {
+    source::parse_store_link(&text).map(|link| match link {
+        source::StoreLink::Source(url) => StoreLink::Source { url },
+        source::StoreLink::Install(url) => StoreLink::Install { url },
+    })
+}
+
+/// The source URL to add for what the user typed or pasted (a store link
+/// gives its source; a bare address gets https); None when it isn't one
+#[uniffi::export]
+pub fn resolve_source_url(text: String) -> Option<String> {
+    source::resolve_source_url(&text)
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -492,6 +529,13 @@ pub fn parse_source(data: Vec<u8>) -> Result<Source, WarpsignError> {
                 tint_color: app.tint_color,
                 category: app.category,
                 screenshot_urls: app.screenshot_urls,
+                entitlements: app.permissions.entitlements,
+                privacy: app
+                    .permissions
+                    .privacy
+                    .into_iter()
+                    .map(|(key, reason)| PrivacyPermission { key, reason })
+                    .collect(),
                 versions: app
                     .versions
                     .into_iter()

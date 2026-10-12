@@ -162,7 +162,7 @@ final class Updater {
     }
 
     /// Work out the updates from the sources as last downloaded
-    private func evaluate() {
+    func evaluate() {
         guard let library, let sources else { return }
         var found: [UUID: Available] = [:]
         for app in library.apps {

@@ -106,19 +106,44 @@ struct AppUpdatesSection: View {
     @Environment(DeviceStore.self) private var device
     let app: LibraryApp
     private var updater: Updater { .shared }
+    @State private var linking = false
+    @State private var unlinking = false
 
     var body: some View {
+        content
+            .sheet(isPresented: $linking) { LinkSourceView(app: app) }
+            .confirmationDialog("Stop following \(app.origin ?? "its source")?", isPresented: $unlinking, titleVisibility: .visible) {
+                Button("Stop Following", role: .destructive) {
+                    library.unlink(app)
+                    updater.evaluate()
+                }
+            } message: {
+                Text("\(app.displayName) stays in the library, but isn't updated. You can link it again.")
+            }
+    }
+
+    private var linkButton: some View {
+        Button {
+            linking = true
+        } label: {
+            Label("Link to a Source…", systemImage: "link")
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch app.updateOrigin {
         case .source(let url):
             sourceSection(url)
         case .unlinked(let name):
             Section("Updates") {
                 Label {
-                    Text("Downloaded from \(name), which WarpSign hasn't found in your sources. Add it again in Sources to get updates for this app.")
+                    Text("Downloaded from \(name), which WarpSign hasn't found in your sources. Add it again in Sources, or link it to a source, to get updates for this app.")
                 } icon: {
                     Image(systemName: "exclamationmark.arrow.triangle.2.circlepath").foregroundStyle(.orange)
                 }
                 .font(.callout)
+                linkButton
             }
         case .bundled:
             Section("Updates") {
@@ -129,11 +154,12 @@ struct AppUpdatesSection: View {
         case .imported:
             Section("Updates") {
                 Label(app.link != nil
-                      ? "Downloaded from a link, so there's nowhere to look for updates. Download it from a source to have WarpSign keep it up to date."
-                      : "Imported from a file, so there's nowhere to look for updates. Download it from a source to have WarpSign keep it up to date.",
+                      ? "Downloaded from a link, so there's nowhere to look for updates. Link it to a source that lists it to have WarpSign keep it up to date."
+                      : "Imported from a file, so there's nowhere to look for updates. Link it to a source that lists it to have WarpSign keep it up to date.",
                       systemImage: app.link != nil ? "link" : "doc")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                linkButton
             }
         }
     }
@@ -213,6 +239,10 @@ struct AppUpdatesSection: View {
                         .disabled(updater.isChecking)
                 }
             }
+            Button("Stop Following Source", systemImage: "xmark.circle", role: .destructive) {
+                unlinking = true
+            }
+            .disabled(updater.isUpdating)
         } header: {
             Text("Updates")
         } footer: {
@@ -439,5 +469,119 @@ struct UpdateOriginLabel: View {
                 configuration.title
             }
         }
+    }
+}
+
+/// Pick the listing in a source that an app in the library is, so it
+/// updates from there without downloading it again. Listings with the
+/// app's bundle ID come first; another's updates would be refused, as a
+/// different app.
+struct LinkSourceView: View {
+    @Environment(SourcesStore.self) private var sources
+    @Environment(LibraryStore.self) private var library
+    @Environment(\.dismiss) private var dismiss
+    let app: LibraryApp
+    @State private var search = ""
+    @State private var confirming: Listing?
+
+    struct Listing: Identifiable {
+        let url: String
+        let source: Source
+        let app: SourceApp
+        var id: String { url + "\n" + app.bundleId }
+    }
+
+    private var listings: [Listing] {
+        sources.urls.flatMap { url -> [Listing] in
+            guard let source = sources.sources[url] else { return [] }
+            return source.apps.map { Listing(url: url, source: source, app: $0) }
+        }
+    }
+
+    private var matches: [Listing] { listings.filter { $0.app.bundleId == app.bundleId } }
+
+    private var others: [Listing] {
+        listings.filter { listing in
+            listing.app.bundleId != app.bundleId
+                && (search.isEmpty
+                    || listing.app.name.localizedCaseInsensitiveContains(search)
+                    || listing.source.name.localizedCaseInsensitiveContains(search)
+                    || listing.app.bundleId.localizedCaseInsensitiveContains(search))
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    if matches.isEmpty {
+                        Text("None of your sources lists \(app.bundleId). Add the source it comes from in Sources first.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(matches) { listing in
+                        Button { link(listing) } label: { row(listing) }
+                    }
+                } header: {
+                    Text("Same App")
+                } footer: {
+                    Text("It keeps its signed copies and settings, and updates from the source from now on.")
+                }
+                if !others.isEmpty {
+                    Section {
+                        ForEach(others) { listing in
+                            Button { confirming = listing } label: { row(listing) }
+                        }
+                    } header: {
+                        Text("Other Apps")
+                    } footer: {
+                        Text("Updates must have this app's bundle ID (\(app.bundleId)), or they're refused as a different app.")
+                    }
+                }
+            }
+            .searchable(text: $search, prompt: "Search sources")
+            .navigationTitle("Link to a Source")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .confirmationDialog(
+                confirming.map { "Link to \($0.app.name)?" } ?? "",
+                isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
+                titleVisibility: .visible,
+                presenting: confirming
+            ) { listing in
+                Button("Link Anyway") { link(listing) }
+            } message: { listing in
+                Text("It's listed as \(listing.app.bundleId), not \(app.bundleId): its updates are refused if they don't match this app.")
+            }
+        }
+    }
+
+    private func row(_ listing: Listing) -> some View {
+        HStack(spacing: 12) {
+            RemoteIconView(url: listing.app.iconUrl, size: 40)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(listing.app.name).font(.headline).foregroundStyle(.primary).lineLimit(1)
+                Text("\(listing.source.name) · \(listing.app.versions[0].version)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    private func link(_ listing: Listing) {
+        library.link(
+            app,
+            sourceURL: listing.url,
+            sourceAppId: listing.app.bundleId,
+            autoUpdate: Updater.shared.newAppsUpdate,
+            sourceName: listing.source.name
+        )
+        Updater.shared.evaluate()
+        dismiss()
     }
 }

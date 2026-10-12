@@ -31,6 +31,8 @@ idevice = { version = "0.1.68", default-features = false, features = [
 ] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 indexmap = "2"
+# Source links wrapped in redirectors and altstore:// / feather:// links
+url = "2"
 num-bigint = "0.5.1"
 p12-keystore = "0.4"
 pbkdf2 = "0.13.0"

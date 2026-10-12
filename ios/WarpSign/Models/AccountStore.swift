@@ -442,6 +442,13 @@ final class AccountStore {
             ?? EntitlementNames()
     }
 
+    /// Names from the team's last capabilities response, without asking
+    /// the portal: for showing what an app in a source uses
+    func cachedEntitlementNames() async -> EntitlementNames {
+        let json = selectedTeamId.flatMap { CapabilitiesCache.load(team: $0) }
+        return (try? await background { EntitlementNames.from(capabilitiesJson: json) }) ?? EntitlementNames()
+    }
+
     // MARK: Signing
 
     /// Why signing can't start yet, if it can't

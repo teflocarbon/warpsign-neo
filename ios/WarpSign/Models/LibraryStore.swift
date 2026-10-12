@@ -309,12 +309,43 @@ final class LibraryStore {
 
     /// Remember which source an app came from (apps downloaded before
     /// sources were remembered are matched by source name and bundle ID)
-    func link(_ app: LibraryApp, sourceURL: String, sourceAppId: String, autoUpdate: Bool) {
+    func link(_ app: LibraryApp, sourceURL: String, sourceAppId: String, autoUpdate: Bool, sourceName: String? = nil) {
         guard let index = apps.firstIndex(where: { $0.id == app.id }) else { return }
         apps[index].sourceURL = sourceURL
         apps[index].sourceAppId = sourceAppId
+        if let sourceName { apps[index].origin = sourceName }
         if apps[index].autoUpdate == nil { apps[index].autoUpdate = autoUpdate }
+        apps[index].skippedVersion = nil
         save()
+    }
+
+    /// Stop following its source: it keeps where it came from, but
+    /// isn't updated
+    func unlink(_ app: LibraryApp) {
+        guard let index = apps.firstIndex(where: { $0.id == app.id }) else { return }
+        apps[index].sourceURL = nil
+        apps[index].sourceAppId = nil
+        save()
+    }
+
+    /// A source's address changed: its apps follow it
+    func moveSource(from old: String, to new: String) {
+        var changed = false
+        for index in apps.indices where apps[index].sourceURL == old {
+            apps[index].sourceURL = new
+            changed = true
+        }
+        if changed { save() }
+    }
+
+    /// A source was removed: its apps no longer follow it
+    func unlinkSource(_ url: String) {
+        var changed = false
+        for index in apps.indices where apps[index].sourceURL == url {
+            apps[index].sourceURL = nil
+            changed = true
+        }
+        if changed { save() }
     }
 
     /// The icon chosen at the last sign, if any, so updates keep it

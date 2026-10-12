@@ -79,3 +79,56 @@ fn rejects_non_sources() {
     let empty = parse_source(br#"{"apps": []}"#).unwrap();
     assert_eq!(empty.name, "Untitled source");
 }
+
+#[test]
+fn parses_app_permissions() {
+    let json = br#"{
+        "name": "Permissions",
+        "apps": [
+            {
+                "name": "Map", "bundleIdentifier": "com.example.map",
+                "versions": [{"version": "1.0", "downloadURL": "https://example.com/map.ipa"}],
+                "appPermissions": {
+                    "entitlements": ["aps-environment", {"name": "com.apple.developer.associated-domains"}, ""],
+                    "privacy": {"NSCameraUsageDescription": "Scan codes.", "NSMicrophoneUsageDescription": ""}
+                }
+            },
+            {
+                "name": "List", "bundleIdentifier": "com.example.list",
+                "versions": [{"version": "1.0", "downloadURL": "https://example.com/list.ipa"}],
+                "appPermissions": {
+                    "privacy": [{"name": "NSPhotoLibraryUsageDescription", "usageDescription": "Pick photos."}]
+                }
+            },
+            {
+                "name": "None", "bundleIdentifier": "com.example.none",
+                "versions": [{"version": "1.0", "downloadURL": "https://example.com/none.ipa"}]
+            }
+        ]
+    }"#;
+    let source = parse_source(json).unwrap();
+    let map = &source.apps[0].permissions;
+    assert_eq!(
+        map.entitlements,
+        ["aps-environment", "com.apple.developer.associated-domains"]
+    );
+    assert_eq!(
+        map.privacy,
+        [
+            (
+                "NSCameraUsageDescription".to_string(),
+                Some("Scan codes.".to_string())
+            ),
+            ("NSMicrophoneUsageDescription".to_string(), None),
+        ]
+    );
+    assert_eq!(
+        source.apps[1].permissions.privacy,
+        [(
+            "NSPhotoLibraryUsageDescription".to_string(),
+            Some("Pick photos.".to_string())
+        )]
+    );
+    assert!(source.apps[2].permissions.entitlements.is_empty());
+    assert!(source.apps[2].permissions.privacy.is_empty());
+}

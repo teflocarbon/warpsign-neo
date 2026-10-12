@@ -48,6 +48,17 @@ pub struct SourceApp {
     pub screenshot_urls: Vec<String>,
     /// Newest first. Never empty.
     pub versions: Vec<AppVersion>,
+    /// What the app says it uses (`appPermissions`), as the source lists it
+    pub permissions: AppPermissions,
+}
+
+/// A source's `appPermissions`: entitlement keys, and privacy permissions
+/// with the reason the app gives for each
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AppPermissions {
+    pub entitlements: Vec<String>,
+    /// (Info.plist key, e.g. "NSCameraUsageDescription"; reason)
+    pub privacy: Vec<(String, Option<String>)>,
 }
 
 impl SourceApp {
@@ -175,7 +186,129 @@ fn parse_app(value: &Value) -> Result<SourceApp, String> {
         category: text(app, "category"),
         screenshot_urls: screenshots(app),
         versions,
+        permissions: permissions(app),
     })
+}
+
+/// `appPermissions`: `entitlements` as keys or `{name}` objects, and
+/// `privacy` as a key → reason map or a list of `{name, usageDescription}`.
+/// AltStore's older `permissions` list (`{type, usageDescription}`) names
+/// privacy permissions by type, so it's left out.
+fn permissions(app: &Map<String, Value>) -> AppPermissions {
+    let Some(Value::Object(permissions)) = app.get("appPermissions") else {
+        return AppPermissions::default();
+    };
+    let entitlements = permissions
+        .get("entitlements")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|item| match item {
+            Value::String(key) => Some(key.trim().to_string()),
+            Value::Object(object) => text(object, "name"),
+            _ => None,
+        })
+        .filter(|key| !key.is_empty())
+        .collect();
+    let privacy = match permissions.get("privacy") {
+        Some(Value::Object(map)) => map
+            .iter()
+            .map(|(key, reason)| {
+                (
+                    key.clone(),
+                    reason
+                        .as_str()
+                        .map(str::trim)
+                        .filter(|r| !r.is_empty())
+                        .map(String::from),
+                )
+            })
+            .collect(),
+        Some(Value::Array(list)) => list
+            .iter()
+            .filter_map(Value::as_object)
+            .filter_map(|item| Some((text(item, "name")?, text(item, "usageDescription"))))
+            .collect(),
+        _ => Vec::new(),
+    };
+    AppPermissions {
+        entitlements,
+        privacy,
+    }
+}
+
+/// What a link to a source manager asks for
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StoreLink {
+    /// Add the source at this URL
+    Source(String),
+    /// Download the app at this URL
+    Install(String),
+}
+
+/// Understand a source manager's link: `altstore://source?url=…`,
+/// `sidestore://source?url=…`, `feather://source/…` (or `?url=`), the
+/// same with `install`, and `warpsign://` alike. A web link wrapping one
+/// (a redirector page, e.g. `…/http-protocol-redirector?r=altstore://…`)
+/// is unwrapped. None for anything else.
+pub fn parse_store_link(text: &str) -> Option<StoreLink> {
+    const SCHEMES: &[&str] = &["altstore", "sidestore", "feather", "warpsign"];
+    let text = text.trim();
+    let url = url::Url::parse(text).ok()?;
+    let scheme = url.scheme().to_ascii_lowercase();
+    if scheme == "http" || scheme == "https" {
+        // A redirector: a query value that's itself a store link
+        return url
+            .query_pairs()
+            .find_map(|(_, value)| parse_store_link(&value));
+    }
+    if !SCHEMES.contains(&scheme.as_str()) {
+        return None;
+    }
+    // "altstore://source?url=X": the action is the host. Feather also puts
+    // the URL in the path: "feather://source/https://…".
+    let action = url.host_str()?.to_ascii_lowercase();
+    let target = url
+        .query_pairs()
+        .find(|(key, _)| key == "url")
+        .map(|(_, value)| value.into_owned())
+        .or_else(|| {
+            let start = text.find("://")? + 3 + action.len();
+            let rest = text.get(start..)?.trim_start_matches('/');
+            let rest = rest.split(['?', '#']).next().unwrap_or(rest);
+            // A URL in a path loses a slash after its scheme ("https:/x")
+            let rest = rest.replacen(":/", "://", 1).replacen(":///", "://", 1);
+            (!rest.is_empty()).then_some(rest)
+        })?;
+    let target = target.trim().to_string();
+    if !(target.starts_with("https://") || target.starts_with("http://")) {
+        return None;
+    }
+    match action.as_str() {
+        "source" => Some(StoreLink::Source(target)),
+        "install" => Some(StoreLink::Install(target)),
+        _ => None,
+    }
+}
+
+/// The source URL to add for what the user typed or pasted: a store link
+/// (or a web link wrapping one) gives its source, a bare address gets
+/// https. None when it isn't a web address.
+pub fn resolve_source_url(text: &str) -> Option<String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    if let Some(StoreLink::Source(url)) = parse_store_link(text) {
+        return Some(url);
+    }
+    let text = if text.contains("://") {
+        text.to_string()
+    } else {
+        format!("https://{text}")
+    };
+    let url = url::Url::parse(&text).ok()?;
+    (matches!(url.scheme(), "https" | "http") && url.host_str().is_some()).then_some(text)
 }
 
 /// A version entry, or (with `date_key`) the legacy fields on an app
@@ -360,6 +493,61 @@ mod version_tests {
         assert!(!newer("1.2", Some("44"), "1.2", Some("45")));
         assert!(!newer("1.2", Some("45"), "1.2", None));
         assert!(!newer("1.2", None, "1.2", None));
+    }
+
+    #[test]
+    fn unwraps_store_links() {
+        use super::{StoreLink, parse_store_link, resolve_source_url};
+        let source = "https://raw.githubusercontent.com/NeoFreeBird/app/refs/heads/v7/resources/AltSource.json";
+        for link in [
+            format!(
+                "https://intradeus.github.io/http-protocol-redirector?r=altstore://source?url={source}"
+            ),
+            format!(
+                "https://intradeus.github.io/http-protocol-redirector?r=sidestore://source?url={source}"
+            ),
+            format!(
+                "https://intradeus.github.io/http-protocol-redirector?r=feather://source/{source}"
+            ),
+            format!("altstore://source?url={source}"),
+            format!(
+                "sidestore://source?url={}",
+                url::form_urlencoded::byte_serialize(source.as_bytes()).collect::<String>()
+            ),
+            format!("feather://source/{source}"),
+            format!("warpsign://source?url={source}"),
+        ] {
+            assert_eq!(
+                parse_store_link(&link),
+                Some(StoreLink::Source(source.into())),
+                "{link}"
+            );
+            assert_eq!(resolve_source_url(&link).as_deref(), Some(source), "{link}");
+        }
+        assert_eq!(
+            parse_store_link("altstore://install?url=https://example.com/app.ipa"),
+            Some(StoreLink::Install("https://example.com/app.ipa".into()))
+        );
+    }
+
+    #[test]
+    fn resolves_plain_sources() {
+        use super::{parse_store_link, resolve_source_url};
+        assert_eq!(
+            resolve_source_url(" repo.example.com/apps.json ").as_deref(),
+            Some("https://repo.example.com/apps.json")
+        );
+        assert_eq!(
+            resolve_source_url("https://example.com/a.json?v=2").as_deref(),
+            Some("https://example.com/a.json?v=2")
+        );
+        assert_eq!(parse_store_link("https://example.com/a.json?v=2"), None);
+        assert_eq!(
+            parse_store_link("altstore://source?url=javascript:alert(1)"),
+            None
+        );
+        assert_eq!(resolve_source_url("not a url"), None);
+        assert_eq!(resolve_source_url(""), None);
     }
 
     #[test]
