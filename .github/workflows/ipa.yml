@@ -27,7 +27,8 @@ jobs:
           for scheme in WarpSign WarpSignCompanion; do
             xcodebuild -project ios/WarpSign.xcodeproj -scheme "$scheme" \
               -configuration Release -destination 'generic/platform=iOS' \
-              -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+              -derivedDataPath build CODE_SIGNING_ALLOWED=NO \
+              CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" WARPSIGN_COMMIT="${GITHUB_SHA::7}" build
           done
       - name: Package IPAs
         run: |
@@ -67,7 +68,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          notes="Unsigned WarpSign.ipa (with WarpSign Companion inside) from $GITHUB_SHA, for signing with WarpSign or the CLI."
+          notes="Build $GITHUB_RUN_NUMBER: unsigned WarpSign.ipa (with WarpSign Companion inside) from $GITHUB_SHA, for signing with WarpSign or the CLI. Both apps show their build in Settings (WarpSign) and at the bottom of Companion."
           # The release's tag follows the commit it was built from
           git tag -f latest "$GITHUB_SHA"
           git push -f origin refs/tags/latest

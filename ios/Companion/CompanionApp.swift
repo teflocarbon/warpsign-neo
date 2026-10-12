@@ -40,6 +40,14 @@ struct ContentView: View {
                     Section { ErrorRow(message: error) }
                 }
                 setupSections
+                Section {
+                    LabeledContent("Companion", value: AppInfo.versionText)
+                    if let commit = AppInfo.commit {
+                        LabeledContent("Commit", value: commit)
+                    }
+                } header: {
+                    Text("About")
+                }
             }
             .navigationTitle("Companion")
             .fileImporter(
@@ -63,7 +71,7 @@ struct ContentView: View {
                     AppIconView(image: app.icon)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(app.name).font(.headline)
-                        Text([app.version, app.bundleId].compactMap { $0 }.joined(separator: " · "))
+                        Text([app.versionText, app.bundleId].compactMap { $0 }.joined(separator: " · "))
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
                             .lineLimit(1)

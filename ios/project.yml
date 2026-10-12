@@ -9,7 +9,9 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.2.0"
+    # CI sets both from the IPA workflow's run number and the commit built
     CURRENT_PROJECT_VERSION: "1"
+    WARPSIGN_COMMIT: local
 targets:
   WarpSign:
     type: application
@@ -41,6 +43,9 @@ targets:
       path: WarpSign/Info.plist
       properties:
         CFBundleDisplayName: WarpSign
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        WarpSignCommit: $(WARPSIGN_COMMIT)
         UILaunchScreen: {}
         # Keeps WarpSign alive while iOS downloads an app from it (silent
         # audio, as ESign does): see Platform/KeepAlive.swift
@@ -128,6 +133,8 @@ targets:
       path: WarpSignTunnel/Info.plist
       properties:
         CFBundleDisplayName: WarpSign VPN
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider
@@ -140,6 +147,7 @@ targets:
     sources:
       - Companion
       # Shared with WarpSign
+      - WarpSign/Platform/AppInfo.swift
       - WarpSign/Platform/Background.swift
       - WarpSign/Platform/Keychain.swift
       - WarpSign/Platform/KeepAlive.swift
@@ -172,6 +180,9 @@ targets:
       path: Companion/Info.plist
       properties:
         CFBundleDisplayName: Companion
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        WarpSignCommit: $(WARPSIGN_COMMIT)
         UILaunchScreen: {}
         UIBackgroundModes:
           - audio
@@ -227,6 +238,8 @@ targets:
       path: CompanionTunnel/Info.plist
       properties:
         CFBundleDisplayName: Companion VPN
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider

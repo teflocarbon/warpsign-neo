@@ -12,8 +12,19 @@ final class CompanionStore {
         let url: URL
         let name: String
         let version: String?
+        let build: String?
         let bundleId: String
         let icon: UIImage?
+
+        /// "0.2.0 (31)"
+        var versionText: String? {
+            switch (version, build) {
+            case let (version?, build?) where build != version: "\(version) (\(build))"
+            case let (version?, _): version
+            case let (nil, build?): build
+            default: nil
+            }
+        }
 
         /// This app itself, which can't install over itself
         var isCompanion: Bool { bundleId == Bundle.main.bundleIdentifier }
@@ -82,6 +93,7 @@ final class CompanionStore {
                     url: copy,
                     name: metadata.displayName,
                     version: metadata.version,
+                    build: metadata.build,
                     bundleId: metadata.bundleId,
                     icon: metadata.icon.flatMap(UIImage.init(data:))
                 )

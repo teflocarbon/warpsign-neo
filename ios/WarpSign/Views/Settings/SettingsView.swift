@@ -139,7 +139,10 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    LabeledContent("WarpSign", value: appVersion)
+                    LabeledContent("WarpSign", value: AppInfo.versionText)
+                    if let commit = AppInfo.commit {
+                        LabeledContent("Commit", value: commit)
+                    }
                     LabeledContent("warpsign-core", value: coreVersion())
                 } header: {
                     Text("About")
@@ -157,13 +160,6 @@ struct SettingsView: View {
                 Text("Your signing identity stays on this device.")
             }
         }
-    }
-
-    private var appVersion: String {
-        let info = Bundle.main.infoDictionary
-        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
-        let build = info?["CFBundleVersion"] as? String ?? "?"
-        return "\(version) (\(build))"
     }
 }
 
