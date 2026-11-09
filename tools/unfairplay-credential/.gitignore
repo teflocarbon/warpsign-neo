@@ -1,0 +1,7 @@
+# The UnfairPlay clone and build output (fetched/built by build.sh)
+/src/
+/unfairplay
+# Never commit a credential or app IPAs
+/credential.bin
+*.bin
+*.ipa
