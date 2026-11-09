@@ -20,8 +20,12 @@ use warpsign_core::source;
 uniffi::setup_scaffolding!();
 
 mod account;
+mod appstore;
+mod emulator;
 mod install;
 pub use account::*;
+pub use appstore::*;
+pub use emulator::*;
 pub use install::*;
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
@@ -60,6 +64,18 @@ pub enum WarpsignError {
     DeviceUnreachable { message: String },
     #[error("{message}")]
     Device { message: String },
+    /// The App Store (ipatool)
+    #[error("{message}")]
+    Store { message: String },
+    /// Not signed in to the App Store
+    #[error("{message}")]
+    StoreSignedOut { message: String },
+    /// App Store sign-in needs the two-factor code Apple just sent
+    #[error("{message}")]
+    StoreCodeRequired { message: String },
+    /// The Apple ID doesn't own the app
+    #[error("{message}")]
+    StoreNotOwned { message: String },
 }
 
 /// A signable part of an app

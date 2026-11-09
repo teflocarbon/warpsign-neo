@@ -32,5 +32,16 @@ under the MIT License:
   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
   DEALINGS IN THE SOFTWARE.
 
+The iOS app links ipatool (https://github.com/majd/ipatool) by Majd Alfhaily,
+under the MIT License, through ipatool-bridge/. ipatool's Go dependencies
+keep their own licenses, listed in their modules.
+
+ipatool-bridge/unicorn/ is not part of WarpSign and not under its license:
+it builds Unicorn (https://github.com/unicorn-engine/unicorn), which is
+GPLv2-only, as a separate library that the app downloads at run time. Its
+own files (build.sh, splitwx.patch, README.md) are under the GNU General
+Public License, version 2 only. splitwx.patch follows the approach of QEMU's
+split W^X support (GPLv2-or-later); see ipatool-bridge/unicorn/README.md.
+
 Rust dependencies keep their own licenses (MIT, Apache-2.0, MPL-2.0 and
 others), listed in each crate's metadata.

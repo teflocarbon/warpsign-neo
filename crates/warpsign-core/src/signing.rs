@@ -136,6 +136,27 @@ pub fn sign_app_bundle(
     Ok(())
 }
 
+/// Sign one Mach-O file (a dylib, say) in place, without entitlements,
+/// as `identifier`. Any existing signature is replaced.
+pub fn sign_macho_file(
+    path: &Path,
+    identity: &SigningIdentity,
+    team_id: &str,
+    identifier: &str,
+) -> Result<(), SigningError> {
+    let mut settings = SigningSettings::default();
+    settings.set_signing_key(&identity.key, identity.certificate.clone());
+    settings.chain_apple_certificates();
+    settings.set_team_id(team_id);
+    settings.set_binary_identifier(SettingsScope::Main, identifier);
+    UnifiedSigner::new(settings)
+        .sign_path_in_place(path)
+        .map_err(|e| SigningError::Sign {
+            path: path.display().to_string(),
+            message: e.to_string(),
+        })
+}
+
 fn verify_entitlements(app_dir: &Path, bundle: &BundleEntitlements) -> Result<(), SigningError> {
     let name = if bundle.bundle_path.is_empty() {
         "the app".to_string()

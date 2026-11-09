@@ -1,0 +1,418 @@
+diff --git a/include/unicorn/unicorn.h b/include/unicorn/unicorn.h
+index b4ffc6b..17a316e 100644
+--- a/include/unicorn/unicorn.h
++++ b/include/unicorn/unicorn.h
+@@ -777,6 +777,21 @@ uc_err uc_query(uc_engine *uc, uc_query_type type, size_t *result);
+ UNICORN_EXPORT
+ uc_err uc_ctl(uc_engine *uc, uc_control_type control, ...);
+ 
++/*
++ Split W^X (warpsign-neo): run generated code from memory that is never
++ writable and executable at once, as iOS 26 and later require of JIT.
++
++ Call once, before uc_open(), with one region mapped twice: writable at
++ @rw, executable at @rx (both @size bytes, a page-multiple apart). Each
++ engine then takes a @slice-byte code buffer from the region (at most 64),
++ and gives it back on uc_close(). Without this call, Unicorn allocates its
++ own buffers as usual. POSIX hosts only.
++
++ @return: UC_ERR_OK, or UC_ERR_ARG for a bad region or a second call.
++*/
++UNICORN_EXPORT
++uc_err uc_splitwx_configure(void *rw, void *rx, size_t size, size_t slice);
++
+ /*
+  Report the last error number when some API function fails.
+  Like glibc's errno, uc_errno might not retain its old value once accessed.
+diff --git a/qemu/accel/tcg/tcg-runtime.c b/qemu/accel/tcg/tcg-runtime.c
+index 777287a..c2dceb2 100644
+--- a/qemu/accel/tcg/tcg-runtime.c
++++ b/qemu/accel/tcg/tcg-runtime.c
+@@ -154,10 +154,11 @@ void *HELPER(lookup_tb_ptr)(CPUArchState *env)
+     struct uc_struct *uc = (struct uc_struct *)cpu->uc;
+ 
+     tb = tb_lookup__cpu_state(cpu, &pc, &cs_base, &flags, curr_cflags());
++    /* Generated code jumps here, so it gets rx addresses (split W^X) */
+     if (tb == NULL) {
+-        return uc->tcg_ctx->code_gen_epilogue;
++        return (void *)tcg_splitwx_to_rx((uintptr_t)uc->tcg_ctx->code_gen_epilogue);
+     }
+-    return tb->tc.ptr;
++    return (void *)tcg_splitwx_to_rx((uintptr_t)tb->tc.ptr);
+ }
+ 
+ void HELPER(exit_atomic)(CPUArchState *env)
+diff --git a/qemu/accel/tcg/translate-all.c b/qemu/accel/tcg/translate-all.c
+index 123f5d4..d298ad9 100644
+--- a/qemu/accel/tcg/translate-all.c
++++ b/qemu/accel/tcg/translate-all.c
+@@ -287,6 +287,8 @@ static int cpu_restore_state_from_tb(CPUState *cpu, TranslationBlock *tb,
+     uint8_t *p = (uint8_t *)tb->tc.ptr + tb->tc.size;
+     int i, j, num_insns = tb->icount;
+ 
++    /* A return address from generated code is an rx one (split W^X) */
++    searched_pc = tcg_splitwx_to_rw(searched_pc);
+     searched_pc -= GETPC_ADJ;
+ 
+     if (searched_pc < host_pc) {
+@@ -338,6 +340,7 @@ bool cpu_restore_state(CPUState *cpu, uintptr_t host_pc, bool will_exit)
+      * tcg_init_ctx.code_gen_buffer check_offset will wrap to way
+      * above the code_gen_buffer_size
+      */
++    host_pc = tcg_splitwx_to_rw(host_pc);
+     check_offset = host_pc - (uintptr_t) uc->tcg_ctx->code_gen_buffer;
+ 
+     if (check_offset < uc->tcg_ctx->code_gen_buffer_size) {
+@@ -1010,6 +1013,9 @@ void free_code_gen_buffer(struct uc_struct *uc)
+ {
+     TCGContext *tcg_ctx = uc->tcg_ctx;
+     if (tcg_ctx->initial_buffer) {
++        if (uc_splitwx_free(tcg_ctx->initial_buffer)) {
++            return;
++        }
+         if (munmap(tcg_ctx->initial_buffer, tcg_ctx->initial_buffer_size)) {
+             perror("fail code_gen_buffer");
+         }
+@@ -1023,6 +1029,14 @@ static inline void *alloc_code_gen_buffer(struct uc_struct *uc)
+     int flags = MAP_PRIVATE | MAP_ANONYMOUS;
+     size_t size = tcg_ctx->code_gen_buffer_size;
+     void *buf;
++
++    /* Split W^X: a slice of the region set up with uc_splitwx_configure */
++    if (tcg_splitwx_enabled()) {
++        buf = uc_splitwx_alloc(&size);
++        tcg_ctx->code_gen_buffer_size = size;
++        return buf;
++    }
++
+ #ifdef USE_MAP_JIT
+     flags |= MAP_JIT;
+ #endif
+@@ -2177,6 +2191,11 @@ void tcg_flush_softmmu_tlb(struct uc_struct *uc)
+ void ipatool_jit_write_protect(struct uc_struct *uc, int enabled)
+ {
+     TCGContext *ctx = uc->tcg_ctx;
++    /* Split W^X: the code is always writable through one mapping and
++       executable through the other */
++    if (tcg_splitwx_enabled()) {
++        return;
++    }
+     if (ctx && ctx->initial_buffer &&
+         mprotect(ctx->initial_buffer, ctx->initial_buffer_size,
+                  PROT_READ | (enabled ? PROT_EXEC : PROT_WRITE)) != 0) {
+diff --git a/qemu/include/tcg/tcg-splitwx.h b/qemu/include/tcg/tcg-splitwx.h
+new file mode 100644
+index 0000000..d487b9c
+--- /dev/null
++++ b/qemu/include/tcg/tcg-splitwx.h
+@@ -0,0 +1,61 @@
++/*
++ * Split W^X for iOS 26 and later (warpsign-neo).
++ *
++ * Where TXM is present, an app with JIT gets executable memory only from
++ * regions its debugger prepared, and may write to them only through a
++ * second, writable mapping of the same memory. So generated code is
++ * written through the writable mapping (rw) and run from the executable
++ * one (rx), a fixed distance apart (uc_splitwx_diff).
++ *
++ * TCG keeps every code pointer in its rw form. Only what executes sees rx
++ * addresses: entering generated code, the pointers lookup_tb_ptr returns,
++ * PC-relative displacements (computed from rx addresses) and return
++ * addresses coming back from it, which are turned back into rw ones.
++ *
++ * Code buffers come from one region set up before any engine with
++ * uc_splitwx_configure(), handed out in slices. Without it, everything
++ * here is the identity and Unicorn works as it always has.
++ */
++
++#ifndef TCG_SPLITWX_H
++#define TCG_SPLITWX_H
++
++#include <stddef.h>
++#include <stdint.h>
++#include <stdbool.h>
++
++/* The writable mapping's range; both 0 when split W^X isn't in use */
++extern uintptr_t uc_splitwx_rw_start;
++extern uintptr_t uc_splitwx_rw_end;
++/* rx - rw */
++extern uintptr_t uc_splitwx_diff;
++
++static inline bool tcg_splitwx_enabled(void)
++{
++    return uc_splitwx_rw_end != 0;
++}
++
++/* The executable address of p, if p is in the writable mapping */
++static inline uintptr_t tcg_splitwx_to_rx(uintptr_t p)
++{
++    return p - uc_splitwx_rw_start < uc_splitwx_rw_end - uc_splitwx_rw_start
++               ? p + uc_splitwx_diff
++               : p;
++}
++
++/* The writable address of p, if p is in the executable mapping */
++static inline uintptr_t tcg_splitwx_to_rw(uintptr_t p)
++{
++    uintptr_t rx_start = uc_splitwx_rw_start + uc_splitwx_diff;
++    return p - rx_start < uc_splitwx_rw_end - uc_splitwx_rw_start
++               ? p - uc_splitwx_diff
++               : p;
++}
++
++/* A slice of the region for a code buffer of up to *size bytes (*size is
++   set to the slice's size), as its writable address; NULL if none is free */
++void *uc_splitwx_alloc(size_t *size);
++/* Give a slice back; false if buf isn't one */
++bool uc_splitwx_free(void *buf);
++
++#endif
+diff --git a/qemu/include/tcg/tcg.h b/qemu/include/tcg/tcg.h
+index bbeb4b9..bd144b3 100644
+--- a/qemu/include/tcg/tcg.h
++++ b/qemu/include/tcg/tcg.h
+@@ -31,6 +31,7 @@
+ #include "qemu/bitops.h"
+ #include "qemu/queue.h"
+ #include "tcg/tcg-mo.h"
++#include "tcg/tcg-splitwx.h"
+ #include "tcg-target.h"
+ #include "tcg-apple-jit.h"
+ #include "qemu/int128.h"
+@@ -1356,7 +1357,9 @@ static inline unsigned get_mmuidx(TCGMemOpIdx oi)
+ uintptr_t tcg_qemu_tb_exec(CPUArchState *env, uint8_t *tb_ptr);
+ #else
+ # define tcg_qemu_tb_exec(env, tb_ptr) \
+-    ((uintptr_t (*)(void *, void *))env->uc->tcg_ctx->code_gen_prologue)(env, tb_ptr)
++    ((uintptr_t (*)(void *, void *))tcg_splitwx_to_rx( \
++        (uintptr_t)env->uc->tcg_ctx->code_gen_prologue))( \
++        env, (void *)tcg_splitwx_to_rx((uintptr_t)(tb_ptr)))
+ #endif
+ 
+ void tcg_register_jit(TCGContext *s, void *buf, size_t buf_size);
+diff --git a/qemu/tcg/aarch64/tcg-target.h b/qemu/tcg/aarch64/tcg-target.h
+index 13993a7..7e88274 100644
+--- a/qemu/tcg/aarch64/tcg-target.h
++++ b/qemu/tcg/aarch64/tcg-target.h
+@@ -16,6 +16,7 @@
+ #if defined(__APPLE__)
+ #include <libkern/OSCacheControl.h>
+ #endif
++#include "tcg/tcg-splitwx.h"
+ 
+ #define TCG_TARGET_INSN_UNIT_SIZE  4
+ #define TCG_TARGET_TLB_DISPLACEMENT_BITS 24
+@@ -152,6 +153,10 @@ typedef enum {
+ 
+ static inline void flush_icache_range(uintptr_t start, uintptr_t stop)
+ {
++    /* Split W^X: code is written through the rw mapping and run from rx */
++    uintptr_t rx = tcg_splitwx_to_rx(start);
++    stop = rx + (stop - start);
++    start = rx;
+ #if defined(__APPLE__)
+     /* 
+      * On Intel-based Mac computers, this function does nothing.
+diff --git a/qemu/tcg/aarch64/tcg-target.inc.c b/qemu/tcg/aarch64/tcg-target.inc.c
+index 50c9e59..231629e 100644
+--- a/qemu/tcg/aarch64/tcg-target.inc.c
++++ b/qemu/tcg/aarch64/tcg-target.inc.c
+@@ -1056,12 +1056,14 @@ static void tcg_out_movi(TCGContext *s, TCGType type, TCGReg rd,
+     /* Look for host pointer values within 4G of the PC.  This happens
+        often when loading pointers to QEMU's own data structures.  */
+     if (type == TCG_TYPE_I64) {
+-        tcg_target_long disp = value - (intptr_t)s->code_ptr;
++        /* ADR and ADRP are relative to where the code runs (split W^X) */
++        intptr_t pc = tcg_splitwx_to_rx((uintptr_t)s->code_ptr);
++        tcg_target_long disp = value - pc;
+         if (disp == sextract64(disp, 0, 21)) {
+             tcg_out_insn(s, 3406, ADR, rd, disp);
+             return;
+         }
+-        disp = (value >> 12) - ((intptr_t)s->code_ptr >> 12);
++        disp = (value >> 12) - (pc >> 12);
+         if (disp == sextract64(disp, 0, 21)) {
+             tcg_out_insn(s, 3406, ADRP, rd, disp);
+             if (value & 0xfff) {
+@@ -1312,20 +1314,32 @@ static void tcg_out_cmp(TCGContext *s, TCGType ext, TCGReg a,
+     }
+ }
+ 
++/*
++ * Split W^X: the distance from where this code runs to target, in
++ * instructions. Targets in the code buffer run from rx like this code;
++ * helpers outside it are where they are.
++ */
++static inline ptrdiff_t tcg_splitwx_branch(TCGContext *s, tcg_insn_unit *target)
++{
++    return ((intptr_t)tcg_splitwx_to_rx((uintptr_t)target) -
++            (intptr_t)tcg_splitwx_to_rx((uintptr_t)s->code_ptr)) >> 2;
++}
++
+ static inline void tcg_out_goto(TCGContext *s, tcg_insn_unit *target)
+ {
+-    ptrdiff_t offset = target - s->code_ptr;
++    ptrdiff_t offset = tcg_splitwx_branch(s, target);
+     tcg_debug_assert(offset == sextract64(offset, 0, 26));
+     tcg_out_insn(s, 3206, B, offset);
+ }
+ 
+ static inline void tcg_out_goto_long(TCGContext *s, tcg_insn_unit *target)
+ {
+-    ptrdiff_t offset = target - s->code_ptr;
++    ptrdiff_t offset = tcg_splitwx_branch(s, target);
+     if (offset == sextract64(offset, 0, 26)) {
+         tcg_out_insn(s, 3206, BL, offset);
+     } else {
+-        tcg_out_movi(s, TCG_TYPE_I64, TCG_REG_TMP, (intptr_t)target);
++        tcg_out_movi(s, TCG_TYPE_I64, TCG_REG_TMP,
++                     tcg_splitwx_to_rx((uintptr_t)target));
+         tcg_out_insn(s, 3207, BR, TCG_REG_TMP);
+     }
+ }
+@@ -1337,11 +1351,12 @@ static inline void tcg_out_callr(TCGContext *s, TCGReg reg)
+ 
+ static inline void tcg_out_call(TCGContext *s, tcg_insn_unit *target)
+ {
+-    ptrdiff_t offset = target - s->code_ptr;
++    ptrdiff_t offset = tcg_splitwx_branch(s, target);
+     if (offset == sextract64(offset, 0, 26)) {
+         tcg_out_insn(s, 3206, BL, offset);
+     } else {
+-        tcg_out_movi(s, TCG_TYPE_I64, TCG_REG_TMP, (intptr_t)target);
++        tcg_out_movi(s, TCG_TYPE_I64, TCG_REG_TMP,
++                     tcg_splitwx_to_rx((uintptr_t)target));
+         tcg_out_callr(s, TCG_REG_TMP);
+     }
+ }
+diff --git a/qemu/tcg/tcg.c b/qemu/tcg/tcg.c
+index bc62051..529df41 100644
+--- a/qemu/tcg/tcg.c
++++ b/qemu/tcg/tcg.c
+@@ -354,7 +354,8 @@ TranslationBlock *tcg_tb_lookup(TCGContext *tcg_ctx, uintptr_t tc_ptr)
+ {
+     TranslationBlock *tb;
+ 
+-    struct tb_tc s = { .ptr = (void *)tc_ptr };
++    /* Return addresses from generated code are rx ones (split W^X) */
++    struct tb_tc s = { .ptr = (void *)tcg_splitwx_to_rw(tc_ptr) };
+     tb = g_tree_lookup(tcg_ctx->tree, &s);
+ 
+     return tb;
+diff --git a/uc.c b/uc.c
+index fd2ee1b..5dea85a 100644
+--- a/uc.c
++++ b/uc.c
+@@ -3067,3 +3067,112 @@ void trace_end(uc_tracer *tracer, trace_loc loc, const char *fmt, ...)
+             (double)(end - tracer->starts[loc]) / (double)(1000));
+ }
+ #endif
++
++/*
++ * Split W^X (warpsign-neo): code buffers come from one region mapped twice,
++ * writable at rw and executable at rx. See qemu/include/tcg/tcg-splitwx.h.
++ */
++#include "qemu/include/tcg/tcg-splitwx.h"
++
++uintptr_t uc_splitwx_rw_start;
++uintptr_t uc_splitwx_rw_end;
++uintptr_t uc_splitwx_diff;
++
++#if !defined(_WIN32) && !defined(UNICORN_HAS_OSXKERNEL)
++#include <pthread.h>
++#include <sys/mman.h>
++#include <unistd.h>
++
++#define SPLITWX_MAX_SLICES 64
++
++static pthread_mutex_t splitwx_lock = PTHREAD_MUTEX_INITIALIZER;
++static size_t splitwx_slice;
++static size_t splitwx_slices;
++static uint64_t splitwx_used;
++
++UNICORN_EXPORT
++uc_err uc_splitwx_configure(void *rw, void *rx, size_t size, size_t slice)
++{
++    size_t page = (size_t)sysconf(_SC_PAGESIZE);
++    uc_err err = UC_ERR_OK;
++
++    if (rw == NULL || rx == NULL || slice == 0 || slice % page != 0 ||
++        size < slice || size / slice > SPLITWX_MAX_SLICES ||
++        ((uintptr_t)rw - (uintptr_t)rx) % page != 0) {
++        return UC_ERR_ARG;
++    }
++    pthread_mutex_lock(&splitwx_lock);
++    if (uc_splitwx_rw_end != 0) {
++        // Once only: engines may be running from the region already
++        err = UC_ERR_ARG;
++    } else {
++        splitwx_slice = slice;
++        splitwx_slices = size / slice;
++        splitwx_used = 0;
++        uc_splitwx_rw_start = (uintptr_t)rw;
++        uc_splitwx_diff = (uintptr_t)rx - (uintptr_t)rw;
++        uc_splitwx_rw_end = (uintptr_t)rw + splitwx_slices * slice;
++    }
++    pthread_mutex_unlock(&splitwx_lock);
++    return err;
++}
++
++void *uc_splitwx_alloc(size_t *size)
++{
++    void *buf = NULL;
++    size_t i;
++
++    pthread_mutex_lock(&splitwx_lock);
++    for (i = 0; i < splitwx_slices; i++) {
++        if (!(splitwx_used & (1ULL << i))) {
++            splitwx_used |= 1ULL << i;
++            buf = (void *)(uc_splitwx_rw_start + i * splitwx_slice);
++            break;
++        }
++    }
++    pthread_mutex_unlock(&splitwx_lock);
++    if (buf == NULL) {
++        fprintf(stderr, "Unicorn: all %zu split W^X code buffers are in use\n",
++                splitwx_slices);
++        return NULL;
++    }
++    if (*size == 0 || *size > splitwx_slice) {
++        *size = splitwx_slice;
++    }
++    return buf;
++}
++
++bool uc_splitwx_free(void *buf)
++{
++    uintptr_t p = (uintptr_t)buf;
++    size_t i;
++
++    if (p < uc_splitwx_rw_start || p >= uc_splitwx_rw_end) {
++        return false;
++    }
++    i = (p - uc_splitwx_rw_start) / splitwx_slice;
++    // TCG puts guard pages in its buffer: make the slice writable again
++    mprotect((void *)(uc_splitwx_rw_start + i * splitwx_slice), splitwx_slice,
++             PROT_READ | PROT_WRITE);
++    pthread_mutex_lock(&splitwx_lock);
++    splitwx_used &= ~(1ULL << i);
++    pthread_mutex_unlock(&splitwx_lock);
++    return true;
++}
++#else
++UNICORN_EXPORT
++uc_err uc_splitwx_configure(void *rw, void *rx, size_t size, size_t slice)
++{
++    return UC_ERR_ARG;
++}
++
++void *uc_splitwx_alloc(size_t *size)
++{
++    return NULL;
++}
++
++bool uc_splitwx_free(void *buf)
++{
++    return false;
++}
++#endif

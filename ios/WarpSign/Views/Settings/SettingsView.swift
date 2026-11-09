@@ -150,6 +150,11 @@ struct SettingsView: View {
                     } label: {
                         Label("Developer", systemImage: "hammer")
                     }
+                    NavigationLink {
+                        AppStoreTestView()
+                    } label: {
+                        Label("App Store (ipatool)", systemImage: "bag")
+                    }
                 }
 
                 Section {

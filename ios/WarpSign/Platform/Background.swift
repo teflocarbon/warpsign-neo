@@ -31,7 +31,9 @@ extension Error {
                  .Offline(let message), .IncorrectCode(let message),
                  .SessionExpired(let message), .Portal(let message),
                  .Identity(let message), .Signing(let message),
-                 .DeviceUnreachable(let message), .Device(let message):
+                 .DeviceUnreachable(let message), .Device(let message),
+                 .Store(let message), .StoreSignedOut(let message),
+                 .StoreCodeRequired(let message), .StoreNotOwned(let message):
                 return message
             }
         }

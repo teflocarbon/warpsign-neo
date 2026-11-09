@@ -462,6 +462,15 @@ fn to_identity(data: &IdentityData) -> Result<Identity, WarpsignError> {
     Identity::new(&data.certificate, &data.private_key).map_err(identity_error)
 }
 
+/// For signing with an identity the app keeps
+pub(crate) fn signing_identity_of(
+    data: &IdentityData,
+) -> Result<warpsign_core::signing::SigningIdentity, WarpsignError> {
+    to_identity(data)?
+        .signing_identity()
+        .map_err(identity_error)
+}
+
 fn identity_info_of(identity: &Identity) -> IdentityInfo {
     IdentityInfo {
         common_name: identity.common_name(),

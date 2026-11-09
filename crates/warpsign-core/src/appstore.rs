@@ -136,6 +136,9 @@ pub enum StoreError {
     /// no system keychain (Windows, Linux without a secret service)
     #[error("ipatool's keychain needs its passphrase")]
     KeychainLocked,
+    /// Signing in needs the two-factor code Apple has just sent
+    #[error("Apple needs the two-factor code")]
+    CodeRequired,
     #[error("{0}")]
     Failed(String),
     #[error("couldn't understand ipatool's output: {0}")]
@@ -247,12 +250,16 @@ pub mod ipatool {
     /// works.
     pub fn classify(message: &str) -> StoreError {
         let lower = message.to_ascii_lowercase();
-        if lower.contains("failed to get account") {
+        // First: ipatool wraps it in "failed to get account" when the
+        // keychain file is locked, signed in or not
+        if lower.contains("keychain passphrase is required") {
+            StoreError::KeychainLocked
+        } else if lower.contains("failed to get account") {
             StoreError::NotSignedIn
         } else if lower.contains("license is required") {
             StoreError::LicenseRequired
-        } else if lower.contains("keychain passphrase is required") {
-            StoreError::KeychainLocked
+        } else if lower.contains("auth code is required") {
+            StoreError::CodeRequired
         } else {
             StoreError::Failed(message.to_string())
         }
@@ -333,10 +340,205 @@ pub mod ipatool {
     }
 }
 
+/// ipatool linked into the iOS app, through ipatool-bridge
+/// (ipatool-bridge/bridge.go): one call taking a JSON request and returning
+/// one JSON object, shaped as ipatool's `--format json` prints it, so
+/// [`ipatool`] parses the replies.
+pub mod bridge {
+    use serde_json::{Value, json};
+
+    use super::*;
+
+    /// The bridge, through whatever calls it (`call` takes a request and
+    /// returns the reply)
+    pub struct Bridge<F: Fn(&str) -> String> {
+        call: F,
+    }
+
+    impl<F: Fn(&str) -> String> Bridge<F> {
+        pub fn new(call: F) -> Self {
+            Self { call }
+        }
+
+        fn send(&self, request: Value) -> String {
+            (self.call)(&request.to_string())
+        }
+
+        /// Where ipatool keeps its state (under `home`/ipatool), the
+        /// passphrase for its keychain file, and the made-up MAC address
+        /// Apple knows this device by. Before anything else.
+        pub fn configure(
+            &self,
+            home: &str,
+            passphrase: &str,
+            mac_address: &str,
+        ) -> Result<(), StoreError> {
+            let reply = self.send(json!({
+                "op": "configure",
+                "home": home,
+                "passphrase": passphrase,
+                "mac_address": mac_address,
+            }));
+            ipatool::result(&reply, "success").map(|_| ())
+        }
+
+        /// Load ipatool's runtime and cache Apple's assets. Needs no account;
+        /// otherwise done on the first sign-in.
+        pub fn prepare(&self) -> Result<(), StoreError> {
+            let reply = self.send(json!({"op": "prepare"}));
+            ipatool::result(&reply, "success").map(|_| ())
+        }
+
+        /// [`StoreError::CodeRequired`] when Apple wants a two-factor code:
+        /// sign in again with it
+        pub fn login(
+            &self,
+            email: &str,
+            password: &str,
+            code: Option<&str>,
+        ) -> Result<StoreAccount, StoreError> {
+            let reply = self.send(json!({
+                "op": "login",
+                "email": email,
+                "password": password,
+                "auth_code": code.unwrap_or_default(),
+            }));
+            ipatool::parse_account(&reply)
+        }
+
+        pub fn logout(&self) -> Result<(), StoreError> {
+            let reply = self.send(json!({"op": "logout"}));
+            ipatool::result(&reply, "success").map(|_| ())
+        }
+    }
+
+    fn platform_name(platform: Option<Platform>) -> &'static str {
+        platform.map(Platform::ipatool_name).unwrap_or_default()
+    }
+
+    fn app_fields(app: &AppRef) -> (String, i64) {
+        match app {
+            AppRef::BundleId(id) => (id.clone(), 0),
+            AppRef::Id(id) => (String::new(), *id),
+        }
+    }
+
+    impl<F: Fn(&str) -> String> AppStore for Bridge<F> {
+        fn account(&self) -> Result<StoreAccount, StoreError> {
+            ipatool::parse_account(&self.send(json!({"op": "account"})))
+        }
+
+        fn search(
+            &self,
+            term: &str,
+            limit: u32,
+            platform: Option<Platform>,
+        ) -> Result<Vec<StoreApp>, StoreError> {
+            let reply = self.send(json!({
+                "op": "search",
+                "term": term,
+                "limit": limit,
+                "platform": platform_name(platform),
+            }));
+            ipatool::parse_search(&reply)
+        }
+
+        fn versions(
+            &self,
+            app: &AppRef,
+            platform: Option<Platform>,
+        ) -> Result<Versions, StoreError> {
+            let (bundle_id, app_id) = app_fields(app);
+            let reply = self.send(json!({
+                "op": "versions",
+                "bundle_id": bundle_id,
+                "app_id": app_id,
+                "platform": platform_name(platform),
+            }));
+            ipatool::parse_versions(&reply)
+        }
+
+        fn download(&self, request: &DownloadRequest) -> Result<Download, StoreError> {
+            let (bundle_id, app_id) = app_fields(&request.app);
+            let reply = self.send(json!({
+                "op": "download",
+                "bundle_id": bundle_id,
+                "app_id": app_id,
+                "version": request.version.clone().unwrap_or_default(),
+                "output": request
+                    .output
+                    .as_ref()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_default(),
+                "purchase": request.purchase,
+                "platform": platform_name(request.platform),
+            }));
+            ipatool::parse_download(&reply)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::ipatool::*;
     use super::*;
+
+    #[test]
+    fn bridge_requests_and_replies() {
+        use std::cell::RefCell;
+
+        let sent = RefCell::new(Vec::<serde_json::Value>::new());
+        let bridge = bridge::Bridge::new(|request: &str| {
+            let request: serde_json::Value = serde_json::from_str(request).unwrap();
+            let reply = match request["op"].as_str().unwrap() {
+                "login" if request["auth_code"] == "" => {
+                    r#"{"level":"error","error":"auth code is required","success":false}"#
+                }
+                "login" => {
+                    r#"{"level":"info","name":"Test User","email":"test@example.com","success":true}"#
+                }
+                "download" => {
+                    r#"{"level":"info","output":"/tmp/a.ipa","purchased":false,"success":true}"#
+                }
+                _ => r#"{"level":"info","success":true}"#,
+            };
+            sent.borrow_mut().push(request);
+            reply.to_string()
+        });
+
+        bridge
+            .configure("/home", "secret", "02:00:00:00:00:01")
+            .unwrap();
+        assert!(matches!(
+            bridge.login("test@example.com", "pw", None),
+            Err(StoreError::CodeRequired)
+        ));
+        let account = bridge
+            .login("test@example.com", "pw", Some("123456"))
+            .unwrap();
+        assert_eq!(account.name, "Test User");
+        let download = bridge
+            .download(&DownloadRequest {
+                app: AppRef::Id(111),
+                version: None,
+                output: Some(PathBuf::from("/tmp")),
+                purchase: true,
+                platform: Some(Platform::IPad),
+            })
+            .unwrap();
+        assert_eq!(download.path, PathBuf::from("/tmp/a.ipa"));
+
+        let sent = sent.borrow();
+        assert_eq!(sent[0]["op"], "configure");
+        assert_eq!(sent[0]["mac_address"], "02:00:00:00:00:01");
+        assert_eq!(sent[2]["auth_code"], "123456");
+        let download = &sent[3];
+        assert_eq!(download["app_id"], 111);
+        assert_eq!(download["bundle_id"], "");
+        assert_eq!(download["output"], "/tmp");
+        assert_eq!(download["purchase"], true);
+        assert_eq!(download["platform"], "ipad");
+    }
 
     // Shaped like ipatool 2.8.0's output (cmd/*.go), with made-up values
 
@@ -416,6 +618,13 @@ mod tests {
         assert!(matches!(
             parse_search(&line(
                 "keychain passphrase is required when not running in interactive mode; use the \"--keychain-passphrase\" flag"
+            )),
+            Err(StoreError::KeychainLocked)
+        ));
+        // As ipatool 2.8.0 on Windows says it, signed in with a locked file
+        assert!(matches!(
+            parse_account(&line(
+                "failed to get account: failed to get item: keychain passphrase is required when not running in interactive mode; use the \"--keychain-passphrase\" flag"
             )),
             Err(StoreError::KeychainLocked)
         ));

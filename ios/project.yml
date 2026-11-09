@@ -38,6 +38,14 @@ targets:
         "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # ipatool, for the App Store (built by ipatool-bridge/build_ios.sh).
+        # Nothing calls it directly: the Rust core finds it with dlsym, so
+        # load all of it and export its symbols, and strip only local ones.
+        # Unicorn isn't linked: it's loaded at run time
+        # (Platform/UnicornRuntime.swift).
+        "OTHER_LDFLAGS[sdk=iphoneos*]": "$(inherited) -Wl,-force_load,$(PROJECT_DIR)/Frameworks/IpatoolBridge.xcframework/ios-arm64/libIpatoolBridge.a -Wl,-export_dynamic -framework CoreFoundation -framework Security -lresolv"
+        "OTHER_LDFLAGS[sdk=iphonesimulator*]": "$(inherited) -Wl,-force_load,$(PROJECT_DIR)/Frameworks/IpatoolBridge.xcframework/ios-arm64-simulator/libIpatoolBridge.a -Wl,-export_dynamic -framework CoreFoundation -framework Security -lresolv"
+        STRIP_STYLE: non-global
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
     info:
       path: WarpSign/Info.plist

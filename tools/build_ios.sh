@@ -4,12 +4,14 @@
 # Produces (all git-ignored):
 #   ios/Frameworks/WarpsignFFI.xcframework   static library for device + simulator
 #   ios/WarpSign/Generated/warpsign_ffi.swift Swift bindings from uniffi
+#   ios/Frameworks/IpatoolBridge.xcframework ipatool for the App Store (ipatool-bridge/)
 #   ios/WarpSign.xcodeproj                   generated from ios/project.yml
 #
 # Usage: tools/build_ios.sh            (release build)
 #        PROFILE=dev tools/build_ios.sh (faster debug build)
+#        DEVICE_ONLY=1 tools/build_ios.sh (no simulator slice)
 #
-# Needs: macOS with Xcode, rustup, xcodegen (brew install xcodegen).
+# Needs: macOS with Xcode, rustup, Go, xcodegen (brew install go xcodegen).
 # The simulator slice is arm64 only (Apple silicon Macs).
 
 set -euo pipefail
@@ -20,7 +22,12 @@ case "$PROFILE" in
     dev) PROFILE_DIR=debug ;;
     *) PROFILE_DIR=$PROFILE ;;
 esac
-TARGETS=(aarch64-apple-ios aarch64-apple-ios-sim)
+# DEVICE_ONLY=1: skip the simulator, for building an IPA faster
+if [ "${DEVICE_ONLY:-0}" = 1 ]; then
+    TARGETS=(aarch64-apple-ios)
+else
+    TARGETS=(aarch64-apple-ios aarch64-apple-ios-sim)
+fi
 
 cd "$ROOT"
 rustup target add "${TARGETS[@]}"
@@ -54,6 +61,9 @@ for target in "${TARGETS[@]}"; do
     LIBRARIES+=(-library "target/$target/$PROFILE_DIR/libwarpsign_ffi.a" -headers "$WORK/headers")
 done
 xcodebuild -create-xcframework "${LIBRARIES[@]}" -output ios/Frameworks/WarpsignFFI.xcframework
+
+echo "== Building ipatool-bridge (the App Store)"
+"$ROOT/ipatool-bridge/build_ios.sh"
 
 if command -v xcodegen >/dev/null; then
     echo "== Generating WarpSign.xcodeproj"

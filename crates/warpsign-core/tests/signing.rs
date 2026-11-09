@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 
 use plist::{Dictionary, Value};
 use warpsign_core::signature::{read_entitlements, read_signature};
-use warpsign_core::signing::{BundleEntitlements, SigningError, SigningIdentity, sign_app_bundle};
+use warpsign_core::signing::{
+    BundleEntitlements, SigningError, SigningIdentity, sign_app_bundle, sign_macho_file,
+};
 
 const TEAM_ID: &str = "ZZZZZ99999";
 
@@ -263,4 +265,23 @@ fn entitlements_for_an_unknown_bundle_are_an_error() {
         "{:?}",
         result.err()
     );
+}
+
+#[test]
+fn signs_a_lone_dylib() {
+    // A Mach-O on its own, as the app signs the Unicorn it downloads
+    let dir = tempfile::tempdir().unwrap();
+    let dylib = dir.path().join("libfoo.dylib");
+    std::fs::copy(
+        data_dir().join("Test.app/Frameworks/Foo.framework/Foo"),
+        &dylib,
+    )
+    .unwrap();
+
+    sign_macho_file(&dylib, &identity(), TEAM_ID, "org.example.foo").unwrap();
+
+    let signature = read_signature(&dylib).unwrap().unwrap();
+    assert_eq!(signature.identifier, "org.example.foo");
+    assert_eq!(signature.team_id.as_deref(), Some(TEAM_ID));
+    assert!(signature.entitlements.is_empty());
 }
