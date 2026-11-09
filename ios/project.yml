@@ -82,6 +82,11 @@ targets:
               - warpsign
               - altstore
               - sidestore
+        # Pair This Device (iOS 27+): WarpSign advertises itself as a
+        # computer this device can pair with (Platform/OnDevicePairer.swift)
+        NSLocalNetworkUsageDescription: WarpSign shows itself on your local network so Settings can pair this device with it, to install apps without a computer. Nothing leaves the device.
+        NSBonjourServices:
+          - _remotepairing-pairable-host._tcp
         # Let IPAs and profiles be opened in WarpSign from Files and the share sheet
         LSSupportsOpeningDocumentsInPlace: false
         CFBundleDocumentTypes:

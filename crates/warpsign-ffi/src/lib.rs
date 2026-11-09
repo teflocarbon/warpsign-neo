@@ -58,6 +58,9 @@ pub enum WarpsignError {
     /// The device can't be reached: usually the VPN isn't connected
     #[error("{message}")]
     DeviceUnreachable { message: String },
+    /// On-device pairing was cancelled: nothing to show
+    #[error("{message}")]
+    PairingCancelled { message: String },
     #[error("{message}")]
     Device { message: String },
 }

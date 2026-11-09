@@ -11,6 +11,7 @@ pub mod info_plist;
 pub mod inspect;
 pub mod ipa;
 pub mod metadata;
+pub mod pairable_host;
 pub mod pipeline;
 pub mod portal;
 pub mod profile;

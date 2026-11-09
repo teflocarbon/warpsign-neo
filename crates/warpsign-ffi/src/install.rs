@@ -1,9 +1,11 @@
 //! Installing on this device through the loopback VPN, for Swift.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use warpsign_core::device::{self, DeviceError, INSTALL_STEPS, Target};
+use warpsign_core::pairable_host;
 use warpsign_core::serve::{self, InstallServer, ManifestApp, SERVER_INSTALL_STEPS, SLOTS};
 
 use crate::{ObserverBridge, StepInfo, StepObserver, WarpsignError};
@@ -28,6 +30,7 @@ fn device_error(error: DeviceError) -> WarpsignError {
     let message = error.to_string();
     match error {
         DeviceError::Unreachable(_) => WarpsignError::DeviceUnreachable { message },
+        DeviceError::PairingCancelled => WarpsignError::PairingCancelled { message },
         _ => WarpsignError::Device { message },
     }
 }
@@ -259,4 +262,83 @@ pub fn web_install_steps() -> Vec<StepInfo> {
             title: step.title().to_string(),
         })
         .collect()
+}
+
+/// Implemented in Swift: show the pairing code
+#[uniffi::export(with_foreign)]
+pub trait PairingCodeObserver: Send + Sync {
+    /// The six-digit code to type into Settings. Called once, from a
+    /// background thread, while `OnDevicePairing.accept` waits.
+    fn show_code(&self, code: String);
+}
+
+/// This device, paired from WarpSign
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct PairedDevice {
+    /// A RemotePairing file for this device: keep it like an imported one
+    pub pairing_file: Vec<u8>,
+    pub name: String,
+    pub model: String,
+}
+
+/// Pairing with this device without a computer (iOS 27+): advertise
+/// `service_type()` as `service_name()` on `port()` with `txt_record()`
+/// (NetService), then call `accept` on a background thread. The user taps
+/// "Pair with …" in Settings → Privacy & Security → Developer Mode and types
+/// the code.
+#[derive(uniffi::Object)]
+pub struct OnDevicePairing {
+    host: pairable_host::PairableHost,
+}
+
+#[uniffi::export]
+impl OnDevicePairing {
+    /// Start listening. `name` is what Settings shows.
+    #[uniffi::constructor]
+    pub fn new(name: String) -> Result<Arc<Self>, WarpsignError> {
+        Ok(Arc::new(Self {
+            host: pairable_host::PairableHost::new(&name).map_err(device_error)?,
+        }))
+    }
+
+    /// The Bonjour type, as NetService takes it
+    pub fn service_type(&self) -> String {
+        pairable_host::SERVICE_TYPE.to_string()
+    }
+
+    /// The Bonjour instance name
+    pub fn service_name(&self) -> String {
+        self.host.service_name().to_string()
+    }
+
+    pub fn port(&self) -> u16 {
+        self.host.port()
+    }
+
+    /// The TXT record, for `NetService.data(fromTXTRecord:)`
+    pub fn txt_record(&self) -> HashMap<String, String> {
+        self.host.txt_records().iter().cloned().collect()
+    }
+
+    /// Wait for this device to pair. Blocks; `cancel` from another thread
+    /// ends it with `WarpsignError.PairingCancelled`. Only once.
+    pub fn accept(
+        &self,
+        observer: Arc<dyn PairingCodeObserver>,
+    ) -> Result<PairedDevice, WarpsignError> {
+        let paired = self
+            .host
+            .accept(|code| observer.show_code(code))
+            .map_err(device_error)?;
+        Ok(PairedDevice {
+            pairing_file: paired.pairing_file,
+            name: paired.name,
+            model: paired.model,
+        })
+    }
+
+    /// Stop waiting
+    pub fn cancel(&self) {
+        self.host.cancel();
+    }
 }
