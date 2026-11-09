@@ -1,6 +1,7 @@
 //! `warpsign`: sign iOS apps with your Apple Developer account from Linux,
 //! Windows or macOS.
 
+mod ipatool;
 mod store;
 mod transport;
 
@@ -12,6 +13,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use plist::{Dictionary, Value as PlistValue};
+use warpsign_core::appstore::{AppRef, AppStore, DownloadRequest, Platform, StoreError};
 use warpsign_core::capability_names::{self, EntitlementNames};
 use warpsign_core::device::{self, Target};
 use warpsign_core::identity::{self, CertificateKind, Identity};
@@ -22,6 +24,7 @@ use warpsign_core::portal::{AuthError, Authenticator, Portal, SignInOutcome, Two
 use warpsign_core::profile::ProvisioningProfile;
 use warpsign_core::progress::{ProgressObserver, Step};
 
+use ipatool::Ipatool;
 use store::{Store, write_private};
 use transport::UreqTransport;
 
@@ -106,6 +109,96 @@ enum Command {
         #[arg(long)]
         lockdown: bool,
     },
+    /// Search the App Store and download apps your Apple ID owns, through
+    /// ipatool (https://github.com/majd/ipatool)
+    #[command(name = "appstore")]
+    AppStore(AppStoreArgs),
+}
+
+#[derive(Args)]
+struct AppStoreArgs {
+    /// The ipatool program [default: ipatool, found on PATH]
+    #[arg(long, global = true, env = "WARPSIGN_IPATOOL")]
+    ipatool: Option<PathBuf>,
+    /// Passphrase for ipatool's keychain file, where there's no system
+    /// keychain (asked for when needed otherwise)
+    #[arg(
+        long,
+        global = true,
+        env = "IPATOOL_KEYCHAIN_PASSPHRASE",
+        hide_env_values = true
+    )]
+    keychain_passphrase: Option<String>,
+    #[command(subcommand)]
+    command: AppStoreCommand,
+}
+
+#[derive(Subcommand)]
+enum AppStoreCommand {
+    /// Sign in to the App Store (ipatool asks for the Apple ID, password and
+    /// two-factor code; warpsign never sees them)
+    Login {
+        #[arg(long)]
+        email: Option<String>,
+    },
+    /// Sign ipatool out of the App Store
+    Logout,
+    /// Show the App Store account ipatool is signed in to
+    Status,
+    /// Search the App Store
+    Search {
+        term: String,
+        #[arg(short, long, default_value_t = 10)]
+        limit: u32,
+        #[arg(long)]
+        platform: Option<StorePlatform>,
+    },
+    /// List the versions the store still has for an app, by external ID
+    Versions {
+        /// Bundle ID, or App Store ID (the number in its store link)
+        app: AppRef,
+        #[arg(long)]
+        platform: Option<StorePlatform>,
+    },
+    /// Download an app (still App Store encrypted)
+    Download {
+        /// Bundle ID, or App Store ID (the number in its store link)
+        app: AppRef,
+        /// External version ID from `appstore versions` [default: latest]
+        #[arg(long)]
+        version: Option<String>,
+        /// File or directory to save to [default: ipatool's name for it, here]
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Get the app first if the account doesn't own it (free apps only)
+        #[arg(long)]
+        purchase: bool,
+        #[arg(long)]
+        platform: Option<StorePlatform>,
+    },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum StorePlatform {
+    Iphone,
+    Ipad,
+    Appletv,
+    Watchos,
+    Visionos,
+    Macos,
+}
+
+impl From<StorePlatform> for Platform {
+    fn from(platform: StorePlatform) -> Self {
+        match platform {
+            StorePlatform::Iphone => Platform::IPhone,
+            StorePlatform::Ipad => Platform::IPad,
+            StorePlatform::Appletv => Platform::AppleTv,
+            StorePlatform::Watchos => Platform::WatchOs,
+            StorePlatform::Visionos => Platform::VisionOs,
+            StorePlatform::Macos => Platform::MacOs,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -269,6 +362,7 @@ fn run(cli: Cli) -> Result<()> {
             output,
             lockdown,
         } => pair(udid, output, lockdown),
+        Command::AppStore(args) => app_store(args),
     }
 }
 
@@ -941,4 +1035,104 @@ fn pair(udid: Option<String>, output: Option<PathBuf>, lockdown: bool) -> Result
     println!("AirDrop it to the device and open it in WarpSign (Settings > Installing).");
     println!("It lets apps on that device install apps: keep it private.");
     Ok(())
+}
+
+// The App Store
+
+fn app_store(args: AppStoreArgs) -> Result<()> {
+    let store = Ipatool::new(args.ipatool, args.keychain_passphrase);
+    match args.command {
+        AppStoreCommand::Login { email } => {
+            store.login(email.as_deref())?;
+            let account = store.account().map_err(store_error)?;
+            println!("Signed in to the App Store as {}.", account.email);
+        }
+        AppStoreCommand::Logout => {
+            store.logout()?;
+            println!("Signed out of the App Store.");
+        }
+        AppStoreCommand::Status => match store.account() {
+            Ok(account) if account.name.is_empty() => println!("App Store: {}", account.email),
+            Ok(account) => println!("App Store: {} ({})", account.email, account.name),
+            Err(StoreError::NotSignedIn) => println!("App Store: not signed in"),
+            Err(error) => return Err(store_error(error)),
+        },
+        AppStoreCommand::Search {
+            term,
+            limit,
+            platform,
+        } => {
+            let apps = store
+                .search(&term, limit, platform.map(Into::into))
+                .map_err(store_error)?;
+            if apps.is_empty() {
+                println!("Nothing found for \"{term}\".");
+            }
+            for app in apps {
+                let price = if app.price > 0.0 {
+                    format!("  {:.2}", app.price)
+                } else {
+                    String::new()
+                };
+                println!(
+                    "{} {}  {}  id{}{price}",
+                    app.name, app.version, app.bundle_id, app.id
+                );
+            }
+        }
+        AppStoreCommand::Versions { app, platform } => {
+            let versions = store
+                .versions(&app, platform.map(Into::into))
+                .map_err(store_error)?;
+            let name = versions.bundle_id.unwrap_or_else(|| app.to_string());
+            println!(
+                "{name}: {} versions (external IDs, oldest first)",
+                versions.external_ids.len()
+            );
+            for id in versions.external_ids {
+                println!("  {id}");
+            }
+        }
+        AppStoreCommand::Download {
+            app,
+            version,
+            output,
+            purchase,
+            platform,
+        } => {
+            eprintln!(
+                "Downloading {app}. This can take a while, and ipatool shows no progress here."
+            );
+            let download = store
+                .download(&DownloadRequest {
+                    app,
+                    version,
+                    output,
+                    purchase,
+                    platform: platform.map(Into::into),
+                })
+                .map_err(store_error)?;
+            if download.purchased {
+                println!("Got the app for this Apple ID.");
+            }
+            println!("Saved {}", download.path.display());
+            println!("It's App Store encrypted, so it needs decrypting before it can be signed.");
+        }
+    }
+    Ok(())
+}
+
+fn store_error(error: StoreError) -> anyhow::Error {
+    match error {
+        StoreError::NotSignedIn => {
+            anyhow::anyhow!("not signed in to the App Store: run `warpsign appstore login`")
+        }
+        StoreError::LicenseRequired => anyhow::anyhow!(
+            "this Apple ID doesn't own the app: get it on the App Store first, or add --purchase if it's free"
+        ),
+        StoreError::KeychainLocked => anyhow::anyhow!(
+            "ipatool's keychain is locked: pass --keychain-passphrase or set IPATOOL_KEYCHAIN_PASSPHRASE"
+        ),
+        other => other.into(),
+    }
 }

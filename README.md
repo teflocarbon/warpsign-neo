@@ -96,6 +96,23 @@ warpsign install App-signed.ipa    # install over USB
 warpsign pair                      # pairing file so the phone can install on itself
 ```
 
+### App Store
+
+`warpsign appstore` searches the App Store and downloads apps your Apple ID owns, through [ipatool](https://github.com/majd/ipatool). Install ipatool first (from its releases, or `brew install ipatool`); warpsign runs it, so a newer ipatool needs no newer warpsign.
+
+```bash
+warpsign appstore login                        # ipatool asks for the Apple ID, password and code
+warpsign appstore search "maps"
+warpsign appstore versions com.example.app     # external version IDs, oldest first
+warpsign appstore download com.example.app     # latest version, into this directory
+warpsign appstore download id123456789 --version 800000001 -o old.ipa
+warpsign appstore download com.example.app --purchase   # get a free app first
+```
+
+ipatool keeps the App Store session itself, in the system keychain or, where there's none (Windows, Linux without a secret service), a file protected by a passphrase of your choosing. warpsign asks for that passphrase when ipatool needs it, or takes `--keychain-passphrase` / `IPATOOL_KEYCHAIN_PASSPHRASE`; it's passed on ipatool's command line, so other users of the machine could see it. Point `--ipatool` (or `WARPSIGN_IPATOOL`) at ipatool if it isn't on `PATH`.
+
+Downloads are still App Store encrypted: they need decrypting before they can be signed.
+
 Not ported yet: `--patch-liquid-glass`, `--hide-home-indicator` and `--inject-warpsign-fix`, which edit Mach-O load commands (Python warpsign used LIEF).
 
 The session and identities live in the config directory (`~/.config/warpsign`, `~/Library/Application Support/warpsign` or `%APPDATA%\warpsign`; override with `--config-dir` or `WARPSIGN_CONFIG_DIR`), readable only by you. `identity import` takes a phone's backup, so the CLI and the app can share certificates. For automation, `WARPSIGN_P12_PASSPHRASE` supplies the import passphrase.
