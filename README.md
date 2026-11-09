@@ -87,6 +87,7 @@ warpsign sign App.ipa --distribution --force-original-id
 warpsign sign App.ipa -e           # also list what each part was signed with, and what changed
 warpsign inspect App.ipa
 warpsign inspect -e App.ipa        # with each component's entitlements
+warpsign decrypt App.ipa App-decrypted.ipa --credential credential.bin  # offline FairPlay decrypt
 warpsign capabilities              # the team's portal capabilities and the entitlements they grant
 warpsign profile *.mobileprovision # PPQ check
 warpsign status
@@ -95,6 +96,8 @@ warpsign sign App.ipa --install    # sign, then install over USB
 warpsign install App-signed.ipa    # install over USB
 warpsign pair                      # pairing file so the phone can install on itself
 ```
+
+**Decrypting App Store apps you own.** `warpsign decrypt` strips FairPlay encryption from an IPA you downloaded from the App Store, so it can be re-signed without crashing on launch. It runs offline — no device, no jailbreak — using a 16-byte per-account credential and the app's own `SC_Info` licence records. Recover the credential once with [UnfairPlay](https://github.com/DrWhax/unfairplay) on an enrolled Mac (no jailbreak), or with [fairplay-decrypt](https://github.com/EthanArbuckle/fairplay-decrypt) on a jailbroken device; it's a per-account secret, so keep it private and only decrypt apps you own. A fully on-device, no-credential path (the iOS 27 FairPlay trick) is planned separately as a device spike.
 
 Not ported yet: `--patch-liquid-glass`, `--hide-home-indicator` and `--inject-warpsign-fix`, which edit Mach-O load commands (Python warpsign used LIEF).
 
