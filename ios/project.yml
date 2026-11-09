@@ -284,6 +284,14 @@ targets:
     deploymentTarget: "18.0"
     sources:
       - DecryptHelper
+      # Shared with WarpSign: hand the decrypted IPA back over loopback.
+      - WarpSign/Generated/warpsign_ffi.swift
+      - WarpSign/Platform/KeepAlive.swift
+      - WarpSign/Models/StepProgress.swift
+      - WarpSign/Resources/silence.wav
+    dependencies:
+      - framework: Frameworks/WarpsignFFI.xcframework
+        embed: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.warpsigndecrypt
@@ -298,3 +306,12 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
+        # Keep serving the decrypted IPA while WarpSign fetches it in foreground
+        UIBackgroundModes:
+          - audio
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        # WarpSign launches the helper via this scheme
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - warpsign-decrypt

@@ -255,6 +255,17 @@ pub fn core_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+/// Package an extracted `.app` directory into an IPA (Payload/<App>.app). Used
+/// by the decrypt helper to pack the decrypted app before handing it back.
+#[uniffi::export]
+pub fn package_ipa(app_dir: String, output_ipa: String) -> Result<(), WarpsignError> {
+    warpsign_core::ipa::package_ipa(Path::new(&app_dir), Path::new(&output_ipa)).map_err(|e| {
+        WarpsignError::Ipa {
+            message: e.to_string(),
+        }
+    })
+}
+
 /// Build a signable on-device decrypt-helper IPA (Pathway A): copy the helper
 /// template, stage the owned encrypted app into it (EmbeddedPayload + replicated
 /// sinfs), and package it. Sign the result (the signer treats EmbeddedPayload as
