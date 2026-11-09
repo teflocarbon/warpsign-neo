@@ -55,5 +55,10 @@ under the MIT License:
   in the Software without restriction. The Software is provided "as is",
   without warranty of any kind.
 
+crates/warpsign-core/src/decrypt_helper.rs follows the SinfReplicationPaths
+replication of ios-decrypt-py by teflocarbon
+(https://github.com/teflocarbon/ios-decrypt-py), the same author, for staging an
+app's FairPlay licence next to each encrypted binary.
+
 Rust dependencies keep their own licenses (MIT, Apache-2.0, MPL-2.0 and
 others), listed in each crate's metadata.

@@ -300,3 +300,46 @@ pub fn team_ids(components: &[AppComponent]) -> Vec<String> {
         .into_iter()
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn touch(path: &Path) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, b"x").unwrap();
+    }
+
+    /// `EmbeddedPayload/` is the decrypt helper's opaque target app and must
+    /// never be walked for the helper's own signable components.
+    #[test]
+    fn find_candidates_skips_embedded_payload() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = dir.path();
+        fs::write(
+            app.join("Info.plist"),
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>Main</string>
+<key>CFBundleIdentifier</key><string>com.example.main</string>
+</dict></plist>"#,
+        )
+        .unwrap();
+        touch(&app.join("Main"));
+        touch(&app.join("Frameworks/Real.framework/Real"));
+        touch(&app.join("EmbeddedPayload/Demo/Frameworks/Fake.framework/Fake"));
+        touch(&app.join("EmbeddedPayload/Demo/PlugIns/Widget.appex/Widget"));
+
+        let components = inspect_app_with(app, |_| Dictionary::new()).unwrap();
+        let paths: Vec<String> = components.iter().map(|c| slash_path(&c.path)).collect();
+        assert!(paths.iter().any(|p| p == "Frameworks/Real.framework"));
+        assert!(
+            !paths.iter().any(|p| p.contains("EmbeddedPayload")
+                || p.contains("Fake")
+                || p.contains("Widget")),
+            "embedded payload leaked into components: {paths:?}"
+        );
+    }
+}
