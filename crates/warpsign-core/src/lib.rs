@@ -3,6 +3,7 @@
 pub mod auth;
 pub mod bundle_mapping;
 pub mod capability_names;
+pub mod decrypt_helper;
 pub mod device;
 pub mod entitlements;
 pub mod fairplay;
