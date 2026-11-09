@@ -224,6 +224,10 @@ struct SignArgs {
     /// List what each component was signed with, and what changed
     #[arg(short, long)]
     entitlements: bool,
+    /// Decrypt FairPlay encryption first, using this 16-byte credential file
+    /// (for App Store apps you own; see `warpsign decrypt`)
+    #[arg(long)]
+    credential: Option<PathBuf>,
     /// Then install it on a device connected by USB
     #[arg(long)]
     install: bool,
@@ -728,15 +732,20 @@ fn inspect(store: &Store, ipa: &Path, show_entitlements: bool) -> Result<()> {
     Ok(())
 }
 
-fn decrypt(ipa: &Path, output: &Path, credential: &Path) -> Result<()> {
-    // The credential is a per-account secret: read it, use it, never print or
-    // log it (and it is never sent anywhere, so --http-log can't capture it).
-    let bytes = std::fs::read(credential)
-        .with_context(|| format!("reading credential {}", credential.display()))?;
-    let cred: [u8; 16] = bytes
+/// Read a 16-byte FairPlay credential. It is a per-account secret: callers must
+/// never print, log, or persist it (it is also never sent to Apple, so
+/// `--http-log` can't capture it).
+fn read_credential(path: &Path) -> Result<[u8; 16]> {
+    let bytes =
+        std::fs::read(path).with_context(|| format!("reading credential {}", path.display()))?;
+    bytes
         .as_slice()
         .try_into()
-        .map_err(|_| anyhow::anyhow!("credential must be exactly 16 bytes"))?;
+        .map_err(|_| anyhow::anyhow!("credential must be exactly 16 bytes"))
+}
+
+fn decrypt(ipa: &Path, output: &Path, credential: &Path) -> Result<()> {
+    let cred = read_credential(credential)?;
     if ipa == output {
         bail!("input and output must be different files");
     }
@@ -890,6 +899,11 @@ fn sign(store: &Store, args: SignArgs) -> Result<()> {
         }
         None => None,
     };
+    let credential = args
+        .credential
+        .as_deref()
+        .map(read_credential)
+        .transpose()?;
     let options = SignOptions {
         patching: PatchingOptions {
             icon,
@@ -920,6 +934,7 @@ fn sign(store: &Store, args: SignArgs) -> Result<()> {
         // Profiles kept between signs, so an unchanged app makes no portal changes
         profile_cache: Some(store.dir().join("profiles")),
         pretend_not_granted: false,
+        credential,
     };
 
     let work = tempfile::tempdir()?;

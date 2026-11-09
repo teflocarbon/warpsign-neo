@@ -22,6 +22,8 @@ pub enum Step {
     PatchInfoPlists,
     /// Create (or regenerate) and download provisioning profiles
     CreateProfiles,
+    /// Remove FairPlay encryption, if a credential was supplied
+    Decrypt,
     /// Replace old identifiers inside executables
     PatchBinaries,
     /// Code sign every bundle and executable
@@ -50,6 +52,7 @@ impl Step {
             Step::RegisterIdentifiers => "Register identifiers",
             Step::PatchInfoPlists => "Patch Info.plists",
             Step::CreateProfiles => "Create provisioning profiles",
+            Step::Decrypt => "Decrypt (FairPlay)",
             Step::PatchBinaries => "Patch binaries",
             Step::Sign => "Sign",
             Step::Package => "Package IPA",

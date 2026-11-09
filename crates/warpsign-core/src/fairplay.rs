@@ -572,6 +572,104 @@ fn enclosing_app_sinf(names: &[String], bundle: &str) -> Option<String> {
     None
 }
 
+/// Pair each SUPF with its binary and SINF. `read` fetches a member's bytes by
+/// name, used only to skip binaries that aren't actually encrypted. Returns
+/// `(binary, sinf, supf)` name triples.
+fn plan_decryption(
+    names: &[String],
+    mut read: impl FnMut(&str) -> Result<Vec<u8>, FairplayError>,
+) -> Result<Vec<(String, String, String)>, FairplayError> {
+    let mut plan = Vec::new();
+    for supf_path in supf_paths(names) {
+        let (bundle, filename) = supf_path
+            .rsplit_once("/SC_Info/")
+            .ok_or_else(|| FairplayError::Supf(format!("SUPF outside SC_Info: {supf_path}")))?;
+        let is_v5 = filename.ends_with(".v5.supf");
+        let stem = filename
+            .strip_suffix(".v5.supf")
+            .or_else(|| filename.strip_suffix(".supf"))
+            .unwrap();
+        let binary_path = format!("{bundle}/{stem}");
+        if !names.iter().any(|n| n == &binary_path) {
+            return Err(FairplayError::Supf(format!(
+                "SUPF lacks binary: {supf_path}"
+            )));
+        }
+        let source = read(&binary_path)?;
+        if arm64_encryption_infos(&source)?.is_empty() {
+            continue;
+        }
+        let sinf_name = if is_v5 {
+            format!("{stem}.v4.sinf")
+        } else {
+            format!("{stem}.sinf")
+        };
+        let mut sinf_path = format!("{bundle}/SC_Info/{sinf_name}");
+        if !names.iter().any(|n| n == &sinf_path) && is_v5 {
+            sinf_path = format!("{bundle}/SC_Info/{stem}.sinf");
+        }
+        if !names.iter().any(|n| n == &sinf_path) {
+            sinf_path = enclosing_app_sinf(names, bundle)
+                .ok_or_else(|| FairplayError::Sinf(format!("SUPF lacks SINF: {supf_path}")))?;
+        }
+        plan.push((binary_path, sinf_path, supf_path));
+    }
+    Ok(plan)
+}
+
+/// Every file under `dir`, as `"/"`-joined names below `prefix`.
+fn collect_names(dir: &Path, prefix: &str, out: &mut Vec<String>) -> Result<(), FairplayError> {
+    for entry in std::fs::read_dir(dir).map_err(io_err(dir))? {
+        let entry = entry.map_err(io_err(dir))?;
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let rel = format!("{prefix}/{name}");
+        if entry.file_type().map_err(io_err(&path))?.is_dir() {
+            collect_names(&path, &rel, out)?;
+        } else {
+            out.push(rel);
+        }
+    }
+    Ok(())
+}
+
+/// Decrypt the FairPlay-encrypted binaries of an already-extracted `.app`, in
+/// place, using the `SC_Info` records still present in the bundle. Returns a
+/// zero summary (not an error) when nothing is encrypted, so it's safe to run
+/// unconditionally before signing.
+pub fn decrypt_app_dir(
+    app_dir: &Path,
+    credential: &[u8; 16],
+    mut on_binary: impl FnMut(usize, usize, &str, usize),
+) -> Result<DecryptSummary, FairplayError> {
+    let root = app_dir
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let mut names = Vec::new();
+    collect_names(app_dir, &root, &mut names)?;
+    let prefix = format!("{root}/");
+    let to_abs = |name: &str| app_dir.join(name.strip_prefix(&prefix).unwrap_or(name));
+
+    let plan = plan_decryption(&names, |name| {
+        std::fs::read(to_abs(name)).map_err(io_err(&to_abs(name)))
+    })?;
+
+    let mut summary = DecryptSummary::default();
+    let total = plan.len();
+    for (ordinal, (binary_path, sinf_path, supf_path)) in plan.iter().enumerate() {
+        let source = std::fs::read(to_abs(binary_path)).map_err(io_err(&to_abs(binary_path)))?;
+        let sinf = std::fs::read(to_abs(sinf_path)).map_err(io_err(&to_abs(sinf_path)))?;
+        let supf = std::fs::read(to_abs(supf_path)).map_err(io_err(&to_abs(supf_path)))?;
+        let (result, pages) = decrypt_binary(&source, &sinf, &supf, credential)?;
+        std::fs::write(to_abs(binary_path), &result).map_err(io_err(&to_abs(binary_path)))?;
+        on_binary(ordinal + 1, total, binary_path, pages);
+        summary.binaries += 1;
+        summary.pages += pages;
+    }
+    Ok(summary)
+}
+
 fn io_err(path: &Path) -> impl FnOnce(std::io::Error) -> FairplayError + '_ {
     move |source| FairplayError::Io {
         path: path.display().to_string(),
@@ -604,42 +702,7 @@ pub fn decrypt_ipa(
     let mut archive = ZipArchive::new(file).map_err(zip_err(ipa))?;
     let names: Vec<String> = archive.file_names().map(String::from).collect();
 
-    // Build the decrypt plan: (binary_path, sinf_path, supf_path).
-    let mut plan: Vec<(String, String, String)> = Vec::new();
-    for supf_path in supf_paths(&names) {
-        let (bundle, filename) = supf_path
-            .rsplit_once("/SC_Info/")
-            .ok_or_else(|| FairplayError::Supf(format!("SUPF outside SC_Info: {supf_path}")))?;
-        let is_v5 = filename.ends_with(".v5.supf");
-        let stem = filename
-            .strip_suffix(".v5.supf")
-            .or_else(|| filename.strip_suffix(".supf"))
-            .unwrap();
-        let binary_path = format!("{bundle}/{stem}");
-        if !names.contains(&binary_path) {
-            return Err(FairplayError::Supf(format!(
-                "SUPF lacks binary: {supf_path}"
-            )));
-        }
-        let source = read_entry(&mut archive, &binary_path)?;
-        if arm64_encryption_infos(&source)?.is_empty() {
-            continue;
-        }
-        let sinf_name = if is_v5 {
-            format!("{stem}.v4.sinf")
-        } else {
-            format!("{stem}.sinf")
-        };
-        let mut sinf_path = format!("{bundle}/SC_Info/{sinf_name}");
-        if !names.contains(&sinf_path) && is_v5 {
-            sinf_path = format!("{bundle}/SC_Info/{stem}.sinf");
-        }
-        if !names.contains(&sinf_path) {
-            sinf_path = enclosing_app_sinf(&names, bundle)
-                .ok_or_else(|| FairplayError::Sinf(format!("SUPF lacks SINF: {supf_path}")))?;
-        }
-        plan.push((binary_path, sinf_path, supf_path));
-    }
+    let plan = plan_decryption(&names, |name| read_entry(&mut archive, name))?;
     if plan.is_empty() {
         return Err(FairplayError::NothingToDecrypt);
     }
@@ -1011,6 +1074,35 @@ mod tests {
             .read_to_end(&mut info)
             .unwrap();
         assert_eq!(info, b"<plist/>");
+    }
+
+    #[test]
+    fn decrypt_app_dir_decrypts_in_place() {
+        let (encrypted, sinf, supf, expected) = encrypted_sample(2);
+        let credential: [u8; 16] =
+            std::array::from_fn(|i| (i as u8).wrapping_mul(5).wrapping_add(2));
+
+        let dir = tempfile::tempdir().unwrap();
+        let app = dir.path().join("Test.app");
+        std::fs::create_dir_all(app.join("SC_Info")).unwrap();
+        std::fs::write(app.join("Test"), &encrypted).unwrap();
+        std::fs::write(app.join("SC_Info/Test.sinf"), &sinf).unwrap();
+        std::fs::write(app.join("SC_Info/Test.supf"), &supf).unwrap();
+
+        let summary = decrypt_app_dir(&app, &credential, |_, _, _, _| {}).unwrap();
+        assert_eq!(summary.binaries, 1);
+        assert_eq!(summary.pages, 2);
+        assert_eq!(std::fs::read(app.join("Test")).unwrap(), expected);
+    }
+
+    #[test]
+    fn decrypt_app_dir_is_noop_without_encryption() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = dir.path().join("Plain.app");
+        std::fs::create_dir_all(&app).unwrap();
+        std::fs::write(app.join("Plain"), b"not a mach-o").unwrap();
+        let summary = decrypt_app_dir(&app, &[0u8; 16], |_, _, _, _| {}).unwrap();
+        assert_eq!(summary.binaries, 0);
     }
 
     #[test]
