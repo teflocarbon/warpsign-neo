@@ -90,6 +90,18 @@ pub fn sign_app_bundle(
     settings.chain_apple_certificates();
     settings.set_team_id(team_id);
 
+    // The on-device decrypt helper carries the target app under
+    // `EmbeddedPayload/` as opaque resources to be FairPlay-decrypted, not
+    // re-signed. Exclude its nested bundles from signing — otherwise
+    // apple-codesign signs those frameworks/appex with no provisioning
+    // profiles of their own, which iOS then refuses to install.
+    settings
+        .add_path_exclusion("EmbeddedPayload/**")
+        .map_err(|e| SigningError::Sign {
+            path: "EmbeddedPayload".into(),
+            message: e.to_string(),
+        })?;
+
     for bundle in entitlements {
         let scope = if bundle.bundle_path.is_empty() {
             SettingsScope::Main

@@ -100,6 +100,14 @@ fn find_candidates(app_dir: &Path) -> Result<Vec<PathBuf>, InspectError> {
         entries.sort_by_key(|entry| entry.file_name());
 
         for entry in entries {
+            // The on-device decrypt helper stages the target app under
+            // `EmbeddedPayload/` as opaque resources to be FairPlay-decrypted,
+            // not re-signed. Never treat its nested frameworks/appex as the
+            // helper's own signable components (that would register App IDs for
+            // someone else's app and rewrite its identifiers).
+            if entry.file_name() == "EmbeddedPayload" {
+                continue;
+            }
             let path = relative.join(entry.file_name());
             let is_match = match extension(&path) {
                 Some("framework" | "dylib" | "appex") => true,
