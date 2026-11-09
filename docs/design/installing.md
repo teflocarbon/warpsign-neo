@@ -27,7 +27,7 @@ In the Cloudflare dashboard: Workers & Pages > Create > Worker, name it, then Ed
 - **Since iOS 26.6, lockdownd resets connections that arrive through the VPN** (first `QueryType`/`StartSession` gets "connection reset" or "broken pipe"; seen on a device in October 2026, and by SideStore and AirCard users). So `warpsign pair` makes a **RemotePairing** file by default (iOS 17.4+): idevice_pair's format, paired promptlessly over USB through `com.apple.dt.remotepairingdeviced.lockdown`, plus a `UDID` key other tools ignore. On the device, WarpSign pair-verifies on the remote pairing port (usually 49152; overridable in Settings, as some devices advertise another as `_remotepairing._tcp`), opens the TLS-PSK tunnel, runs idevice's userspace TCP stack through it, and reaches AFC and installation_proxy as RSD shim services. It only ever verifies: it never starts a pair-setup from the device. `warpsign pair --lockdown` still makes the old kind for earlier iOS.
 - WarpSign copies the IPA into `PublicStaging` over AFC and asks `installation_proxy` to install it (`device.rs`, using the `idevice` crate). Lockdown connections keep a heartbeat.
 - Clearer errors and real progress, straight from installd. The pairing file also gives WarpSign the device's UDID, so it can check, and fix, the device's registration on the team.
-- Costs: a computer once.
+- Costs: a computer once, or on iOS 27 and later not even that: Settings → Installing → Pair This Device makes a RemotePairing file on the device, with Settings' "Pair with WarpSign" and a six-digit code ([design](on-device-pairing.md)).
 
 ### WarpSign's own loopback VPN
 

@@ -10,6 +10,7 @@ struct InstallingView: View {
     @Environment(LibraryStore.self) private var library
     @State private var importing = false
     @State private var confirmingRemove = false
+    @State private var pairingHere = false
     @State private var registered: Bool?
     @State private var registering = false
     @State private var registerError: String?
@@ -70,6 +71,7 @@ struct InstallingView: View {
                 Task { await device.check() }
             }
         }
+        .sheet(isPresented: $pairingHere) { PairThisDeviceView() }
         .confirmationDialog("Remove the pairing file?", isPresented: $confirmingRemove, titleVisibility: .visible) {
             Button("Remove", role: .destructive) { device.removePairingFile() }
         } message: {
@@ -130,6 +132,9 @@ struct InstallingView: View {
                     Button("Replace Pairing File…") { importing = true }
                     Button("Remove Pairing File", role: .destructive) { confirmingRemove = true }
                 } else {
+                    if OnDevicePairer.isSupported {
+                        Button("Pair This Device…", systemImage: "link") { pairingHere = true }
+                    }
                     Button("Add Pairing File…", systemImage: "doc.badge.plus") { importing = true }
                 }
                 if let error = device.importError {
@@ -138,7 +143,11 @@ struct InstallingView: View {
             } header: {
                 Text("1. Pairing File")
             } footer: {
-                Text("Made once on a computer: connect this device by USB and run `warpsign pair`, then get the .rppairing.plist file here (AirDrop, iCloud Drive or Files). Pairing files from idevice_pair work too. It lets apps on this device install apps, so keep it private.")
+                if OnDevicePairer.isSupported {
+                    Text("Pair This Device makes one here, with Settings, on Wi-Fi. Or make one on a computer: connect this device by USB and run `warpsign pair`, then get the .rppairing.plist file here (AirDrop, iCloud Drive or Files). Pairing files from idevice_pair work too. It lets apps on this device install apps, so keep it private.")
+                } else {
+                    Text("Made once on a computer: connect this device by USB and run `warpsign pair`, then get the .rppairing.plist file here (AirDrop, iCloud Drive or Files). Pairing files from idevice_pair work too. It lets apps on this device install apps, so keep it private.")
+                }
             }
 
             tunnelSection

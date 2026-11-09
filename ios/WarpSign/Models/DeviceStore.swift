@@ -125,18 +125,25 @@ final class DeviceStore {
     func importPairingFile(_ url: URL) {
         do {
             let data = try withSecurityScopedAccess(to: url) { try Data(contentsOf: url) }
-            let info = try pairingFileInfo(pairingFile: data)
-            try Keychain.set(data, for: Self.key)
-            hasPairingFile = true
-            udid = info.udid
-            isRemotePairing = info.remotePairing
-            connection = .unknown
-            importError = nil
-            // The better way: use it
-            method = .pairing
+            try keepPairingFile(data)
         } catch {
             importError = error.userMessage
         }
+    }
+
+    /// Keep a pairing file made here (OnDevicePairer) or imported
+    func keepPairingFile(_ data: Data) throws {
+        let info = try pairingFileInfo(pairingFile: data)
+        try Keychain.set(data, for: Self.key)
+        hasPairingFile = true
+        // RemotePairing files made on the device don't name it: the first
+        // connection fills it in (check())
+        udid = info.udid
+        isRemotePairing = info.remotePairing
+        connection = .unknown
+        importError = nil
+        // The better way: use it
+        method = .pairing
     }
 
     func removePairingFile() {

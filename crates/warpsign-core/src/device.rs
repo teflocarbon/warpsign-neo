@@ -84,6 +84,8 @@ pub enum DeviceError {
     PairingDenied,
     #[error("unlock the device and try again")]
     Locked,
+    #[error("pairing was cancelled")]
+    PairingCancelled,
     #[error("{0}")]
     InstallFailed(String),
     #[error("{context}: {}", detail(source))]
@@ -108,7 +110,7 @@ fn detail(error: &IdeviceError) -> String {
     }
 }
 
-fn failed(context: &'static str) -> impl FnOnce(IdeviceError) -> DeviceError {
+pub(crate) fn failed(context: &'static str) -> impl FnOnce(IdeviceError) -> DeviceError {
     move |source| match source {
         IdeviceError::PasswordProtected => DeviceError::Locked,
         IdeviceError::UserDeniedPairing => DeviceError::PairingDenied,
@@ -230,7 +232,7 @@ pub struct DeviceInfo {
     pub ios_version: String,
 }
 
-fn runtime() -> Result<tokio::runtime::Runtime, DeviceError> {
+pub(crate) fn runtime() -> Result<tokio::runtime::Runtime, DeviceError> {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -432,7 +434,8 @@ async fn tunnel(
         .attempt_pair_verify()
         .await
         .map_err(failed("starting RemotePairing"))?;
-    // Only ever verify: pairing from scratch needs a computer
+    // Only ever verify: pair-setup happens over USB (`warpsign pair`) or,
+    // started by the device itself, in crate::pairable_host
     control
         .validate_pairing(file)
         .await
