@@ -41,6 +41,8 @@ pub enum PipelineError {
     PpqRisk(#[from] PpqRisk),
     #[error(transparent)]
     Signing(#[from] SigningError),
+    #[error("FairPlay decryption failed: {0}")]
+    Decrypt(#[from] crate::fairplay::FairplayError),
     #[error("{path}: {source}")]
     Io {
         path: String,
@@ -152,7 +154,7 @@ pub fn inspect_ipa(
 }
 
 /// Steps `sign_ipa` runs, in order
-pub const SIGN_STEPS: [Step; 10] = [
+pub const SIGN_STEPS: [Step; 11] = [
     Step::Extract,
     Step::InspectComponents,
     Step::ReadTeamIds,
@@ -160,6 +162,7 @@ pub const SIGN_STEPS: [Step; 10] = [
     Step::RegisterIdentifiers,
     Step::PatchInfoPlists,
     Step::CreateProfiles,
+    Step::Decrypt,
     Step::PatchBinaries,
     Step::Sign,
     Step::Package,
@@ -182,6 +185,10 @@ pub struct SignOptions {
     /// (e.g. Family Controls (Distribution)) as not granted even when the
     /// profile grants them, to see that path on any account
     pub pretend_not_granted: bool,
+    /// A 16-byte FairPlay credential to decrypt the app before signing (so an
+    /// App Store app you own is usable after re-signing). None leaves any
+    /// encryption in place. A per-account secret: never logged or persisted.
+    pub credential: Option<[u8; 16]>,
 }
 
 impl Default for SignOptions {
@@ -192,6 +199,7 @@ impl Default for SignOptions {
             patch_debug: false,
             profile_cache: None,
             pretend_not_granted: false,
+            credential: None,
         }
     }
 }
@@ -838,6 +846,38 @@ pub fn sign_ipa(
         Ok((profiles, parsed))
     })?;
     let (profiles, parsed_profiles) = profiles;
+
+    // Before SC_Info is removed: if a credential was supplied, decrypt the
+    // FairPlay-encrypted binaries in place using the app's own licence records.
+    run_step(observer, Step::Decrypt, |log| {
+        match options.credential {
+            Some(credential) => {
+                let summary = crate::fairplay::decrypt_app_dir(
+                    &app.app_dir,
+                    &credential,
+                    |n, total, path, pages| {
+                        log.log(format!("[{n}/{total}] {pages} pages  {path}"));
+                    },
+                )?;
+                if summary.binaries == 0 {
+                    log.log("No FairPlay-encrypted binaries to decrypt");
+                } else {
+                    log.log(format!(
+                        "Decrypted {} {} ({} pages)",
+                        summary.binaries,
+                        if summary.binaries == 1 {
+                            "binary"
+                        } else {
+                            "binaries"
+                        },
+                        summary.pages
+                    ));
+                }
+            }
+            None => log.log("No credential supplied; leaving any FairPlay encryption in place"),
+        }
+        Ok::<_, PipelineError>(())
+    })?;
 
     run_step(observer, Step::PatchBinaries, |log| {
         // App Store DRM metadata. Python warpsign removed it after signing,

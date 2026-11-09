@@ -491,7 +491,8 @@ mod account {
         let steps: Vec<Step> = sign_steps().into_iter().map(|s| s.step).collect();
         assert_eq!(steps.first(), Some(&Step::Extract));
         assert_eq!(steps.last(), Some(&Step::Package));
-        assert_eq!(steps.len(), 10);
+        assert_eq!(steps.len(), 11);
+        assert!(steps.contains(&Step::Decrypt));
         let settings = default_sign_settings();
         assert!(settings.encode_ids && settings.patch_ids);
         assert!(!settings.force_original_id && !settings.patch_debug);

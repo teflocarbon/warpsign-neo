@@ -70,6 +70,18 @@ enum Command {
         #[arg(short, long)]
         entitlements: bool,
     },
+    /// Decrypt a FairPlay-encrypted App Store IPA you own, using a 16-byte
+    /// per-account credential (e.g. recovered by UnfairPlay on your Mac).
+    /// Runs offline: no device, no jailbreak.
+    Decrypt {
+        /// The encrypted IPA, as downloaded from the App Store
+        ipa: PathBuf,
+        /// Where to write the decrypted IPA (must not already exist)
+        output: PathBuf,
+        /// File holding the 16-byte credential
+        #[arg(long)]
+        credential: PathBuf,
+    },
     /// List the Developer Portal's capabilities for the team, with the
     /// entitlement keys each one grants (and names)
     Capabilities {
@@ -212,6 +224,10 @@ struct SignArgs {
     /// List what each component was signed with, and what changed
     #[arg(short, long)]
     entitlements: bool,
+    /// Decrypt FairPlay encryption first, using this 16-byte credential file
+    /// (for App Store apps you own; see `warpsign decrypt`)
+    #[arg(long)]
+    credential: Option<PathBuf>,
     /// Then install it on a device connected by USB
     #[arg(long)]
     install: bool,
@@ -260,6 +276,11 @@ fn run(cli: Cli) -> Result<()> {
         Command::Identity(command) => identity_command(&store, command),
         Command::Device(command) => device_command(&store, command),
         Command::Inspect { ipa, entitlements } => inspect(&store, &ipa, entitlements),
+        Command::Decrypt {
+            ipa,
+            output,
+            credential,
+        } => decrypt(&ipa, &output, &credential),
         Command::Capabilities { json } => capabilities(&store, json),
         Command::Profile { files } => profiles(&files),
         Command::Sign(args) => sign(&store, args),
@@ -711,6 +732,41 @@ fn inspect(store: &Store, ipa: &Path, show_entitlements: bool) -> Result<()> {
     Ok(())
 }
 
+/// Read a 16-byte FairPlay credential. It is a per-account secret: callers must
+/// never print, log, or persist it (it is also never sent to Apple, so
+/// `--http-log` can't capture it).
+fn read_credential(path: &Path) -> Result<[u8; 16]> {
+    let bytes =
+        std::fs::read(path).with_context(|| format!("reading credential {}", path.display()))?;
+    bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("credential must be exactly 16 bytes"))
+}
+
+fn decrypt(ipa: &Path, output: &Path, credential: &Path) -> Result<()> {
+    let cred = read_credential(credential)?;
+    if ipa == output {
+        bail!("input and output must be different files");
+    }
+    let summary =
+        warpsign_core::fairplay::decrypt_ipa(ipa, output, &cred, |ordinal, total, path, pages| {
+            eprintln!("[{ordinal}/{total}] {pages} pages  {path}");
+        })?;
+    println!(
+        "Decrypted {} {} ({} pages) -> {}",
+        summary.binaries,
+        if summary.binaries == 1 {
+            "binary"
+        } else {
+            "binaries"
+        },
+        summary.pages,
+        output.display()
+    );
+    Ok(())
+}
+
 /// A plist value on one line
 fn plist_text(value: &PlistValue) -> String {
     match value {
@@ -843,6 +899,11 @@ fn sign(store: &Store, args: SignArgs) -> Result<()> {
         }
         None => None,
     };
+    let credential = args
+        .credential
+        .as_deref()
+        .map(read_credential)
+        .transpose()?;
     let options = SignOptions {
         patching: PatchingOptions {
             icon,
@@ -873,6 +934,7 @@ fn sign(store: &Store, args: SignArgs) -> Result<()> {
         // Profiles kept between signs, so an unchanged app makes no portal changes
         profile_cache: Some(store.dir().join("profiles")),
         pretend_not_granted: false,
+        credential,
     };
 
     let work = tempfile::tempdir()?;

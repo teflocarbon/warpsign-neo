@@ -323,6 +323,9 @@ impl From<SignSettings> for SignOptions {
             patch_debug: settings.patch_debug,
             profile_cache: None,
             pretend_not_granted: settings.pretend_not_granted,
+            // iOS FairPlay decryption is a separate flow (no credential wired
+            // through sign settings yet); see the dedicated decrypt_ipa export.
+            credential: None,
         }
     }
 }

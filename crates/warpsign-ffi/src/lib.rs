@@ -164,6 +164,7 @@ pub enum Step {
     RegisterIdentifiers,
     PatchInfoPlists,
     CreateProfiles,
+    Decrypt,
     PatchBinaries,
     Sign,
     Package,
@@ -184,6 +185,7 @@ impl From<progress::Step> for Step {
             progress::Step::RegisterIdentifiers => Step::RegisterIdentifiers,
             progress::Step::PatchInfoPlists => Step::PatchInfoPlists,
             progress::Step::CreateProfiles => Step::CreateProfiles,
+            progress::Step::Decrypt => Step::Decrypt,
             progress::Step::PatchBinaries => Step::PatchBinaries,
             progress::Step::Sign => Step::Sign,
             progress::Step::Package => Step::Package,
@@ -251,6 +253,51 @@ pub fn inspect_steps() -> Vec<StepInfo> {
 #[uniffi::export]
 pub fn core_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+/// How much `decrypt_ipa` decrypted
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct DecryptSummary {
+    pub binaries: u32,
+    pub pages: u64,
+}
+
+/// Decrypt a FairPlay-encrypted App Store IPA the user owns, offline, using a
+/// 16-byte per-account credential. Pure computation: no device needed. Progress
+/// is reported as the single `Decrypt` step. `credential` is a per-account
+/// secret — don't log or persist it.
+#[uniffi::export]
+pub fn decrypt_ipa(
+    ipa_path: String,
+    output_path: String,
+    credential: Vec<u8>,
+    observer: Arc<dyn StepObserver>,
+) -> Result<DecryptSummary, WarpsignError> {
+    let cred: [u8; 16] = credential
+        .as_slice()
+        .try_into()
+        .map_err(|_| WarpsignError::Ipa {
+            message: "credential must be exactly 16 bytes".to_string(),
+        })?;
+    let bridge = ObserverBridge(observer);
+    progress::run_step(&bridge, progress::Step::Decrypt, |log| {
+        let summary = warpsign_core::fairplay::decrypt_ipa(
+            Path::new(&ipa_path),
+            Path::new(&output_path),
+            &cred,
+            |n, total, path, pages| {
+                log.log(format!("[{n}/{total}] {pages} pages  {path}"));
+                log.progress(n as f64 / total.max(1) as f64);
+            },
+        )?;
+        Ok::<_, warpsign_core::fairplay::FairplayError>(DecryptSummary {
+            binaries: summary.binaries as u32,
+            pages: summary.pages as u64,
+        })
+    })
+    .map_err(|e| WarpsignError::Ipa {
+        message: e.to_string(),
+    })
 }
 
 /// Extract an IPA into `work_dir` (which must be empty or not exist) and
