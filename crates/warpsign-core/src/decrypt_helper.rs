@@ -72,6 +72,26 @@ pub fn stage_decrypt_helper(
     Ok(())
 }
 
+/// Produce a signable decrypt-helper IPA: copy the helper template, stage the
+/// owned encrypted app into it (`EmbeddedPayload/<App>/` + replicated sinfs),
+/// and package it. The result is ready to sign (the signer treats
+/// `EmbeddedPayload/` as opaque) and install. `work_dir` is scratch space.
+pub fn build_helper_ipa(
+    template_app: &Path,
+    encrypted_ipa: &Path,
+    output_ipa: &Path,
+    work_dir: &Path,
+) -> Result<(), StageError> {
+    let helper = work_dir.join("DecryptHelper.app");
+    if helper.exists() {
+        fs::remove_dir_all(&helper).map_err(io(&helper))?;
+    }
+    copy_tree(template_app, &helper)?;
+    stage_decrypt_helper(&helper, encrypted_ipa, &work_dir.join("extract"))?;
+    ipa::package_ipa(&helper, output_ipa)?;
+    Ok(())
+}
+
 /// Copy the master `.sinf` to every `SinfReplicationPaths` location so each
 /// encrypted framework/appex binary has a licence next to it.
 pub fn replicate_sinfs(app_dir: &Path) -> Result<usize, StageError> {
@@ -215,6 +235,43 @@ mod tests {
         assert_eq!(
             fs::read(embedded.join("Frameworks/X.framework/SC_Info/X.sinf")).unwrap(),
             b"SINF"
+        );
+    }
+
+    fn demo_ipa(dir: &Path) -> PathBuf {
+        let app = dir.join("build/Payload/Demo.app");
+        write(&app.join("Demo"), b"binary");
+        write(&app.join("SC_Info/Demo.sinf"), b"SINF");
+        let mut m = plist::Dictionary::new();
+        m.insert(
+            "SinfReplicationPaths".into(),
+            Value::Array(vec![Value::String(
+                "Frameworks/X.framework/SC_Info/X.sinf".into(),
+            )]),
+        );
+        plist::to_file_binary(app.join("SC_Info/Manifest.plist"), &Value::Dictionary(m)).unwrap();
+        let ipa = dir.join("demo.ipa");
+        ipa::package_ipa(&app, &ipa).unwrap();
+        ipa
+    }
+
+    #[test]
+    fn build_helper_ipa_packages_staged_app() {
+        let dir = tempfile::tempdir().unwrap();
+        let ipa = demo_ipa(dir.path());
+        let template = dir.path().join("Template.app");
+        fs::create_dir_all(&template).unwrap();
+        fs::write(template.join("Template"), b"helper").unwrap();
+
+        let out = dir.path().join("helper.ipa");
+        build_helper_ipa(&template, &ipa, &out, &dir.path().join("work")).unwrap();
+
+        let helper_app = ipa::extract_ipa(&out, &dir.path().join("check")).unwrap();
+        assert!(helper_app.join("EmbeddedPayload/Demo/Demo").is_file());
+        assert!(
+            helper_app
+                .join("EmbeddedPayload/Demo/Frameworks/X.framework/SC_Info/X.sinf")
+                .is_file()
         );
     }
 }
