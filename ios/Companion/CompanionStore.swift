@@ -8,7 +8,10 @@ import UIKit
 @Observable
 final class CompanionStore {
     /// An IPA ready to install
-    struct Picked: Sendable {
+    struct Picked: Sendable, Identifiable {
+        /// New for every pick, even of the same file: a handoff of the
+        /// same app again is a new install
+        let id = UUID()
         let url: URL
         let name: String
         let version: String?
@@ -36,8 +39,14 @@ final class CompanionStore {
     var error: String?
     /// Fetching an IPA WarpSign is serving
     private(set) var isReceiving = false
-    /// WarpSign's IPA is picked: show installing it
-    var handoffReady = false
+    /// Sent by WarpSign and not yet shown installing: ContentView opens
+    /// its install screen, over whatever screen is showing, once no
+    /// install is running
+    var pendingHandoff: Picked?
+    /// An install is running: a handoff now waits for it
+    private(set) var isInstalling = false
+    /// The IPA being installed, which a new pick mustn't delete
+    private var installingURL: URL?
     /// The VPN that lets Companion reach this device's installer
     let tunnel = LoopbackTunnel()
 
@@ -89,30 +98,39 @@ final class CompanionStore {
             let named = file.deletingLastPathComponent().appendingPathComponent(source.lastPathComponent)
             try? FileManager.default.removeItem(at: named)
             try FileManager.default.moveItem(at: file, to: named)
-            await pick(named)
+            let app = await pick(named)
             try? FileManager.default.removeItem(at: named)
-            handoffReady = picked != nil
+            // Only what this link sent: not an older pick, if this one failed
+            if let app { pendingHandoff = app }
         } catch {
             self.error = "Couldn't get the app from WarpSign: \(error.userMessage) Open WarpSign and try again."
         }
     }
 
-    func pick(_ url: URL) async {
+    @discardableResult
+    func pick(_ url: URL) async -> Picked? {
         error = nil
+        // Kept while it installs: a pick can arrive mid-install (a handoff)
+        let keep = installingURL?.deletingLastPathComponent().lastPathComponent
         do {
-            picked = try await runInBackground {
+            let app = try await runInBackground {
                 let fileManager = FileManager.default
                 try fileManager.createDirectory(at: Self.incoming, withIntermediateDirectories: true)
-                // One at a time: the last one picked replaces the others
-                for old in (try? fileManager.contentsOfDirectory(at: Self.incoming, includingPropertiesForKeys: nil)) ?? [] {
+                // One at a time: the last one picked replaces the others,
+                // except one being installed
+                for old in (try? fileManager.contentsOfDirectory(at: Self.incoming, includingPropertiesForKeys: nil)) ?? []
+                where old.lastPathComponent != keep {
                     try? fileManager.removeItem(at: old)
                 }
-                var copy = Self.incoming.appendingPathComponent(url.lastPathComponent)
+                // Each in its own folder: WarpSign's handoffs reuse names (appN.ipa)
+                let folder = Self.incoming.appendingPathComponent(UUID().uuidString, isDirectory: true)
+                try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
+                var copy = folder.appendingPathComponent(url.lastPathComponent)
                 try withSecurityScopedAccess(to: url) {
                     try fileManager.copyItem(at: url, to: copy)
                 }
                 // A zip with the IPA inside (a GitHub artifact, say): keep the IPA
-                let unwrapped = Self.incoming.appendingPathComponent("unwrapped.ipa")
+                let unwrapped = folder.appendingPathComponent("unwrapped.ipa")
                 if try unwrapIpa(path: copy.path, output: unwrapped.path) {
                     let ipa = copy.deletingPathExtension().appendingPathExtension("ipa")
                     try fileManager.removeItem(at: copy)
@@ -134,8 +152,11 @@ final class CompanionStore {
                     icon: metadata.icon.flatMap(UIImage.init(data:))
                 )
             }
+            picked = app
+            return app
         } catch {
             self.error = error.userMessage
+            return nil
         }
     }
 
@@ -161,8 +182,14 @@ final class CompanionStore {
         guard let data = Keychain.data(for: Self.pairingKey) else {
             throw WarpsignError.Device(message: "Add this device's pairing file first.")
         }
+        isInstalling = true
+        installingURL = app.url
         UIApplication.shared.isIdleTimerDisabled = true
-        defer { UIApplication.shared.isIdleTimerDisabled = false }
+        defer {
+            UIApplication.shared.isIdleTimerDisabled = false
+            installingURL = nil
+            isInstalling = false
+        }
         let path = app.url.path
         try await tunnel.reachDevice(fresh: true) {
             try installIpa(pairingFile: data, remotePairingPort: nil, ipaPath: path, observer: observer)

@@ -27,8 +27,9 @@ struct CompanionApp: App {
 struct ContentView: View {
     @Environment(CompanionStore.self) private var store
     @State private var importing: Kind?
-    /// Sent by WarpSign: straight to installing it
-    @State private var installingHandoff = false
+    /// What's pushed: set whole by a handoff, so it replaces any screen
+    /// showing, an old install's included
+    @State private var path: [InstallRoute] = []
 
     private enum Kind {
         case ipa, pairing
@@ -41,7 +42,7 @@ struct ContentView: View {
     ]
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 if store.isReceiving {
                     Section {
@@ -66,16 +67,14 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("Companion")
-            .navigationDestination(isPresented: $installingHandoff) {
-                if let app = store.picked {
-                    InstallScreen(app: app)
-                }
+            .navigationDestination(for: InstallRoute.self) { route in
+                // Its own state per pick: a new app never reuses a finished screen
+                InstallScreen(app: route.app).id(route.app.id)
             }
-            .onChange(of: store.handoffReady) { _, ready in
-                guard ready else { return }
-                store.handoffReady = false
-                if store.picked != nil, store.hasPairingFile { installingHandoff = true }
-            }
+            .onChange(of: store.pendingHandoff?.id) { showHandoff() }
+            // A handoff that came mid-install goes next
+            .onChange(of: store.isInstalling) { showHandoff() }
+            .onAppear { showHandoff() }
             .fileImporter(
                 isPresented: Binding(get: { importing != nil }, set: { if !$0 { importing = nil } }),
                 // Any file, checked after: types depend on which apps declared them
@@ -87,6 +86,16 @@ struct ContentView: View {
             }
             .task { await store.tunnel.refresh() }
         }
+    }
+
+    /// WarpSign's app, straight to installing it, from whichever screen is
+    /// showing. Waits while an install runs: two at once would fight over
+    /// the VPN and the installer, and leaving its screen loses its steps.
+    private func showHandoff() {
+        guard let app = store.pendingHandoff, !store.isInstalling else { return }
+        store.pendingHandoff = nil
+        // Without a pairing file it can't install: show it picked
+        path = store.hasPairingFile ? [InstallRoute(app: app)] : []
     }
 
     @ViewBuilder
@@ -107,9 +116,7 @@ struct ContentView: View {
                     Label("This is Companion itself, which can't install over itself. Install it with WarpSign.", systemImage: "nosign")
                         .foregroundStyle(.secondary)
                 } else {
-                    NavigationLink {
-                        InstallScreen(app: app)
-                    } label: {
+                    NavigationLink(value: InstallRoute(app: app)) {
                         Label("Install on This Device", systemImage: "arrow.down.app").font(.headline)
                     }
                     .disabled(!store.hasPairingFile)
@@ -168,6 +175,14 @@ struct ContentView: View {
     }
 }
 
+/// An install screen to show, one per pick
+struct InstallRoute: Hashable {
+    let app: CompanionStore.Picked
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.app.id == rhs.app.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(app.id) }
+}
+
 /// Installing the picked IPA, step by step
 struct InstallScreen: View {
     @Environment(CompanionStore.self) private var store
@@ -201,6 +216,13 @@ struct InstallScreen: View {
                         .foregroundStyle(.green)
                 case .failed(let message):
                     ErrorRow(message: message)
+                }
+            }
+            if let next = store.pendingHandoff {
+                Section {
+                    Label("Next: \(next.name)", systemImage: "clock")
+                } footer: {
+                    Text("Sent by WarpSign. It installs once this one's finished.")
                 }
             }
             if isFailed {
