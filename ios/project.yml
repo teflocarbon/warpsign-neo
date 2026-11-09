@@ -23,6 +23,16 @@ targets:
       - framework: Frameworks/WarpsignFFI.xcframework
         embed: false
       - target: WarpSignTunnel
+      # The on-device FairPlay decrypt helper, carried as a template that the
+      # app stages a target app into, re-signs and installs (Pathway A).
+      - target: DecryptHelper
+        embed: false
+    postBuildScripts:
+      - name: Embed DecryptHelper template
+        basedOnDependencyAnalysis: false
+        script: |
+          cp -R "$BUILT_PRODUCTS_DIR/DecryptHelper.app" \
+            "$CODESIGNING_FOLDER_PATH/DecryptHelperTemplate.app"
     # Managing its own loopback VPN (Platform/LoopbackTunnel.swift). CI
     # ad-hoc signs with these, so signing WarpSign with WarpSign sees them.
     entitlements:
@@ -264,3 +274,27 @@ targets:
         NSExtension:
           NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider
+  # The on-device FairPlay decrypt helper (Pathway A). Minimal, self-contained:
+  # its C core decrypts the app staged under EmbeddedPayload/ at runtime. Built
+  # and carried inside WarpSign as a template (DecryptHelperTemplate.app) that
+  # the app stages a target app into, re-signs and installs.
+  DecryptHelper:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - DecryptHelper
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.warpsigndecrypt
+        PRODUCT_NAME: DecryptHelper
+        SWIFT_OBJC_BRIDGING_HEADER: DecryptHelper/DecryptHelper-Bridging-Header.h
+        "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
+        TARGETED_DEVICE_FAMILY: "1"
+    info:
+      path: DecryptHelper/Info.plist
+      properties:
+        CFBundleDisplayName: Decrypt
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
