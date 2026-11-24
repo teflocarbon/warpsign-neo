@@ -68,6 +68,11 @@ struct WarpSignApp: App {
             }
             // IPAs, profiles and pairing files opened in WarpSign from Files or the share sheet
             .onOpenURL { url in
+                // The decrypt helper handing back the app it decrypted
+                if url.scheme == "warpsign", url.host() == "decrypted" {
+                    if OnDeviceDecrypt.shared.receive(url) { tab = .library }
+                    return
+                }
                 // altstore://, sidestore://, warpsign:// source and install links
                 if !url.isFileURL, let link = parseStoreLink(text: url.absoluteString) {
                     switch link {

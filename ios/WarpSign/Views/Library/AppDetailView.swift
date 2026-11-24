@@ -48,11 +48,16 @@ struct AppDetailView: View {
             if app.isEncrypted {
                 Section {
                     Label {
-                        Text("This app is still encrypted (as downloaded from the App Store). It will install once signed, but crash on launch. Use a decrypted IPA.")
+                        Text("This app is still encrypted (as downloaded from the App Store). It will install once signed, but crash on launch. Decrypt it first, or use a decrypted IPA.")
                     } icon: {
                         Image(systemName: "lock.fill").foregroundStyle(.red)
                     }
                     .font(.callout)
+                    NavigationLink {
+                        DecryptView(app: app)
+                    } label: {
+                        Label("Decrypt on This \(UIDevice.current.model)", systemImage: "lock.open")
+                    }
                 }
             }
 

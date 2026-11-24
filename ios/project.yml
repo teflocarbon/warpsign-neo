@@ -92,6 +92,10 @@ targets:
               - warpsign
               - altstore
               - sidestore
+        # The decrypt helper hands decrypted apps back over loopback
+        # (http://127.0.0.1, OnDeviceDecrypt)
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         # Let IPAs and profiles be opened in WarpSign from Files and the share sheet
         LSSupportsOpeningDocumentsInPlace: false
         CFBundleDocumentTypes:

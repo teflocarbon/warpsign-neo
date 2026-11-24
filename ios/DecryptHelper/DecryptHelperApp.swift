@@ -10,6 +10,7 @@ struct DecryptHelperApp: App {
 
 struct ContentView: View {
     @State private var report = "Decrypting…"
+    @State private var running = false
     var body: some View {
         VStack(spacing: 12) {
             Text("WarpSign Decrypt").font(.headline)
@@ -23,9 +24,16 @@ struct ContentView: View {
         }
         .padding()
         .task { await runAndHandBack() }
+        // Opened again by WarpSign (warpsign-decrypt://) while still running:
+        // decrypt again, as a fresh launch would
+        .onOpenURL { _ in Task { await runAndHandBack() } }
     }
 
     func runAndHandBack() async {
+        guard !running else { return }
+        running = true
+        defer { running = false }
+        report = "Decrypting…"
         let result = await Task.detached { decryptEmbedded() }.value
         let docs = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true)[0]
         try? result.log.write(toFile: docs + "/report.txt", atomically: true, encoding: .utf8)
