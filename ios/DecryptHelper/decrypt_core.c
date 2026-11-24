@@ -57,7 +57,11 @@ static double region_entropy(const uint8_t *p, size_t n) {
 //  <0  parse error
 static int parse(int fd, slice_t *s) {
     uint32_t magic = 0;
-    if (pread(fd, &magic, 4, 0) != 4) return -1;
+    // Shorter than a magic number: a data file, not a Mach-O (YouTube
+    // carries a 0-3 byte EmbeddedDataPushVersion.binarypb)
+    ssize_t got = pread(fd, &magic, 4, 0);
+    if (got >= 0 && got < 4) return 1;
+    if (got != 4) return -1;
     uint64_t base = 0;
     if (magic == FAT_CIGAM || magic == FAT_CIGAM_64) {
         struct fat_header fh;
