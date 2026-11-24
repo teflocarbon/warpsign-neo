@@ -50,6 +50,23 @@ struct SigningOptions: Codable, Equatable {
     var statusBar: StatusBarChoice = .unchanged
     var interfaceStyle: StyleChoice = .automatic
     var removeUrlSchemes = false
+    /// Python warpsign's fix dylibs. Optional, so options saved before
+    /// they existed still decode.
+    var warpsignFix: Bool? = nil
+    var homeIndicatorHidden: Bool? = nil
+
+    /// WarpsignFix: keychain groups, app groups and iCloud containers
+    /// pointed at the new team while the app runs
+    var injectWarpsignFix: Bool {
+        get { warpsignFix ?? false }
+        set { warpsignFix = newValue }
+    }
+
+    /// ForceHideHomeIndicator
+    var hideHomeIndicator: Bool {
+        get { homeIndicatorHidden ?? false }
+        set { homeIndicatorHidden = newValue }
+    }
 
     /// For warpsign-core, with a new icon (PNG) if one was chosen
     func settings(icon: Data?) -> SignSettings {
@@ -61,6 +78,8 @@ struct SigningOptions: Codable, Equatable {
             patchIds: patchIds,
             forceOriginalId: forceOriginalId,
             patchDebug: patchDebug,
+            injectWarpsignFix: injectWarpsignFix,
+            hideHomeIndicator: hideHomeIndicator,
             patchAllDevices: patchAllDevices,
             patchFileSharing: patchFileSharing,
             patchPromotion: patchPromotion,

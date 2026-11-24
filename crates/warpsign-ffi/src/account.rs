@@ -254,6 +254,11 @@ pub struct SignSettings {
     pub force_original_id: bool,
     /// Allow debuggers (get-task-allow)
     pub patch_debug: bool,
+    /// Inject WarpsignFix (keychain, app group and iCloud remapping at
+    /// runtime), as Python warpsign's --inject-warpsign-fix
+    pub inject_warpsign_fix: bool,
+    /// Inject ForceHideHomeIndicator, as --hide-home-indicator
+    pub hide_home_indicator: bool,
     pub patch_all_devices: bool,
     pub patch_file_sharing: bool,
     pub patch_promotion: bool,
@@ -279,6 +284,8 @@ pub fn default_sign_settings() -> SignSettings {
         patch_ids: options.patching.patch_ids,
         force_original_id: options.patching.force_original_id,
         patch_debug: options.patch_debug,
+        inject_warpsign_fix: options.inject_warpsign_fix,
+        hide_home_indicator: options.hide_home_indicator,
         patch_all_devices: false,
         patch_file_sharing: false,
         patch_promotion: false,
@@ -290,6 +297,13 @@ pub fn default_sign_settings() -> SignSettings {
         remove_url_schemes: false,
         pretend_not_granted: false,
     }
+}
+
+/// The fix dylibs WarpSign carries (`FixDylibs/` in its bundle, from
+/// `ios/project.yml`): next to the executable, as iOS app bundles are flat
+fn bundled_fix_dylibs() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    Some(exe.parent()?.join("FixDylibs"))
 }
 
 impl From<SignSettings> for SignOptions {
@@ -326,6 +340,9 @@ impl From<SignSettings> for SignOptions {
             // iOS FairPlay decryption is a separate flow (no credential wired
             // through sign settings yet); see the dedicated decrypt_ipa export.
             credential: None,
+            inject_warpsign_fix: settings.inject_warpsign_fix,
+            hide_home_indicator: settings.hide_home_indicator,
+            fix_dylibs: bundled_fix_dylibs(),
         }
     }
 }

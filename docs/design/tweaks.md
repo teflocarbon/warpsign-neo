@@ -113,7 +113,7 @@ Between them, they do this:
 6. Writes the list of what it injected to `tweaks.json` in the app (name, file, depot ID), next to `remappings.json`.
 7. Logs exactly what it did, so the Activity log shows it.
 
-**Telling the user a tweak didn't load:** weak loading fails silently, so WarpsignFix checks for it. When an app has tweaks, WarpsignFix is injected too, strongly, as Python injects it. At launch it reads `tweaks.json` and compares it with the images dyld loaded (`_dyld_image_count`, `_dyld_get_image_name`). If one is missing, WarpsignFixUI shows an alert naming the tweak, and dyld's reason when it can be had (`dlopen` on the path, then `dlerror`). It does this once per launch, with "Don't show again" for that tweak. This needs a change in the WarpsignFix repo, and that repo needs a licence before CI can build it.
+**Telling the user a tweak didn't load:** weak loading fails silently, so WarpsignFix checks for it. When an app has tweaks, WarpsignFix is injected too, strongly, as Python injects it. At launch it reads `tweaks.json` and compares it with the images dyld loaded (`_dyld_image_count`, `_dyld_get_image_name`). If one is missing, WarpsignFixUI shows an alert naming the tweak, and dyld's reason when it can be had (`dlopen` on the path, then `dlerror`). It does this once per launch, with "Don't show again" for that tweak. This needs a change to WarpsignFix, whose source is now in `ios/WarpsignFix`.
 
 **Bundle IDs:** injected files are added before the components are listed, as Python stages its dylibs before analysis. So `PatchBinaries` bundle-ID-patches them like any other nested dylib. A tweak that compares the bundle ID with `com.google.ios.youtube` then compares it with the ID the app is really signed with, which is what it reads at runtime. Python warpsign does the same for every nested dylib except its own fixes. Injected files then sign like any other nested code: `sign_app_bundle` already signs every dylib and framework inside the app.
 
@@ -234,14 +234,14 @@ There's no token support at first, so nothing secret is stored. A personal token
 - ElleKit (BSD-3) comes from a pinned release `.deb`, downloaded and checked against its SHA-256 in CI and by the CLI, not committed. It's credited in NOTICE, and its licence text ships with the framework.
 - Code may be followed from Impactor's `tweak.rs`/`macho.rs` (MIT), cyan (Unlicense), Feather (GPL-3.0), LiveContainer's arm64e fix-up (AGPL-3.0) and Zsign (MIT), each with a NOTICE credit. Azule (no licence), saurik's Substrate (proprietary) and libhooker (BSD-4) are ideas only, or nothing.
 - **WarpsignFix and WarpsignFixUI** are the owner's ([teflocarbon/WarpsignFix](https://github.com/teflocarbon/WarpsignFix)), and fine to ship.
-  - That repo has no licence yet. It needs one (AGPL-3.0, to match) before `ipa.yml` builds it from source.
-  - Its tracked `xcuserdata/` folder should go before anything here builds from it.
-  - ForceHideHomeIndicator's source still needs finding; until then it's the prebuilt binary from Python warpsign.
+  - Their source is copied into `ios/WarpsignFix` (from commit 2c51879, without its Xcode project, which named the team) and licensed here under the AGPL-3.0. fishhook (BSD-3) is credited in NOTICE.
+  - Python warpsign's prebuilt dylibs aren't used: they're signed with a personal development certificate and carry a build path, so they can't go in a public repo. They're also built for iOS 18.2 and up; ours are built for WarpSign's own minimum, iOS 17.0.
+  - ForceHideHomeIndicator's source isn't published, so `ios/WarpsignFix/ForceHideHomeIndicator` is a rewrite: `-[UIViewController prefersHomeIndicatorAutoHidden]` returns YES.
 
 ## Decisions (November 2026)
 
 1. **Order:** the Python parity flags (`--inject-warpsign-fix`, `--hide-home-indicator`) come right after the Mach-O editor, before tweaks. They use the same editor and prove it.
-2. **WarpsignFix** (and WarpsignFixUI) ship with WarpSign, built from the owner's repo once it has a licence. It also becomes the check that tells the user when a tweak didn't load.
+2. **WarpsignFix** (and WarpsignFixUI) ship with WarpSign, built from source in `ios/WarpsignFix` (`ios/project.yml`; `FixDylibs/` in WarpSign, `WarpsignFix-dylibs.zip` on the release for the CLI). It also becomes the check that tells the user when a tweak didn't load.
 3. **Tweaks load weakly** by default, with that check behind them. Strong is an option.
 4. **Injected tweaks are bundle-ID-patched** like every other nested dylib, as in Python.
 5. **The Tweak Depot is part of the Library** (Apps | Tweaks), and GitHub tweak repos are in the Sources tab. There's no fifth tab.
@@ -251,8 +251,8 @@ There's no token support at first, so nothing secret is stored. A personal token
 
 ## Still open
 
-- ForceHideHomeIndicator's source: where it is, and whether it moves into the WarpsignFix repo.
-- The WarpsignFix repo's licence (AGPL-3.0 proposed), and its missing-tweak alert (a change there).
+- WarpsignFix's missing-tweak alert (a change in `ios/WarpsignFix`).
+- Whether the from-source dylibs behave as Python's on a device: only CI has built them so far.
 - Whether the Apps | Tweaks control, or the fallback row, looks right once it's on a phone.
 
 ## Order of work
@@ -260,7 +260,7 @@ There's no token support at first, so nothing secret is stored. A personal token
 Core and CLI first. Each piece is testable on Windows and Linux without a device, and the Swift UI comes once the core holds up.
 
 1. `macho_edit.rs`: read, add, remove and change load commands and rpaths, fat and thin, with byte-built tests. Done.
-2. **Parity:** port `--inject-warpsign-fix` and `--hide-home-indicator` (generator cases and fixtures first, then the port), with `remappings.json`. WarpsignFix's binaries come from Python warpsign until its repo has a licence and CI builds it.
+2. **Parity:** port `--inject-warpsign-fix` and `--hide-home-indicator` (generator cases and fixtures first, then the port), with `remappings.json`. The dylibs are built from source (`ios/WarpsignFix`). Done (`warpsign_fix.rs`, `fixtures/warpsign_fix.json`).
 3. `scan.rs` and `warpsign tweaks scan <ipa>`: extraction's detection with reasons, checked against the public ytkace IPAs and described in the doc.
 4. `deb.rs` and `depot.rs`, with `warpsign depot import/list/show` and `warpsign tweaks extract`.
 

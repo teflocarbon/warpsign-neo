@@ -196,6 +196,18 @@ struct SignArgs {
     /// Allow debuggers (get-task-allow)
     #[arg(long)]
     patch_debug: bool,
+    /// Inject WarpsignFix, which points keychain groups, app groups and iCloud
+    /// containers at the new team while the app runs (needs a decrypted app)
+    #[arg(long)]
+    inject_warpsign_fix: bool,
+    /// Hide the home indicator (injects ForceHideHomeIndicator)
+    #[arg(long)]
+    hide_home_indicator: bool,
+    /// The folder holding WarpsignFix.dylib, WarpsignFixUI.dylib and
+    /// ForceHideHomeIndicator.dylib (unzip WarpsignFix-dylibs.zip from the
+    /// latest release). Defaults to fix-dylibs in the config folder.
+    #[arg(long, value_name = "DIR")]
+    fix_dylibs: Option<PathBuf>,
     /// Support every device and lower the minimum iOS version
     #[arg(long)]
     patch_all_devices: bool,
@@ -935,6 +947,13 @@ fn sign(store: &Store, args: SignArgs) -> Result<()> {
         profile_cache: Some(store.dir().join("profiles")),
         pretend_not_granted: false,
         credential,
+        inject_warpsign_fix: args.inject_warpsign_fix,
+        hide_home_indicator: args.hide_home_indicator,
+        fix_dylibs: Some(
+            args.fix_dylibs
+                .clone()
+                .unwrap_or_else(|| store.dir().join("fix-dylibs")),
+        ),
     };
 
     let work = tempfile::tempdir()?;

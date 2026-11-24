@@ -23,6 +23,35 @@ targets:
       - framework: Frameworks/WarpsignFFI.xcframework
         embed: false
       - target: WarpSignTunnel
+      # The fix dylibs signing can inject (WarpsignFix/README.md): built,
+      # but neither linked nor embedded; the script below copies them in
+      - target: WarpsignFix
+        embed: false
+        link: false
+      - target: WarpsignFixUI
+        embed: false
+        link: false
+      - target: ForceHideHomeIndicator
+        embed: false
+        link: false
+    postBuildScripts:
+      - name: Copy fix dylibs
+        basedOnDependencyAnalysis: true
+        inputFiles:
+          - $(BUILT_PRODUCTS_DIR)/WarpsignFix.framework/WarpsignFix
+          - $(BUILT_PRODUCTS_DIR)/WarpsignFixUI.framework/WarpsignFixUI
+          - $(BUILT_PRODUCTS_DIR)/ForceHideHomeIndicator.framework/ForceHideHomeIndicator
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/FixDylibs/WarpsignFix.dylib
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/FixDylibs/WarpsignFixUI.dylib
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/FixDylibs/ForceHideHomeIndicator.dylib
+        script: |
+          set -euo pipefail
+          out="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/FixDylibs"
+          mkdir -p "$out"
+          for name in WarpsignFix WarpsignFixUI ForceHideHomeIndicator; do
+            cp -f "$BUILT_PRODUCTS_DIR/$name.framework/$name" "$out/$name.dylib"
+          done
     # Managing its own loopback VPN (Platform/LoopbackTunnel.swift). CI
     # ad-hoc signs with these, so signing WarpSign with WarpSign sees them.
     entitlements:
@@ -264,3 +293,72 @@ targets:
         NSExtension:
           NSExtensionPointIdentifier: com.apple.networkextension.packet-tunnel
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PacketTunnelProvider
+  # The fix dylibs signing can inject (WarpsignFix/README.md), built as
+  # frameworks and copied into WarpSign as FixDylibs/<Name>.dylib. Their
+  # install names stay @rpath/<Name>.framework/<Name>, as Python warpsign's.
+  WarpsignFix:
+    type: framework
+    platform: iOS
+    sources:
+      - path: WarpsignFix/WarpsignFix
+        excludes:
+          - README.md
+    dependencies:
+      - sdk: Security.framework
+      - sdk: CloudKit.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.warpsign.WarpsignFix
+        GENERATE_INFOPLIST_FILE: YES
+        DEFINES_MODULE: YES
+        SKIP_INSTALL: YES
+        # WSFKeychainFix.m includes <fishhook.h>
+        HEADER_SEARCH_PATHS: $(SRCROOT)/WarpsignFix/WarpsignFix
+        "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
+        TARGETED_DEVICE_FAMILY: "1,2"
+  WarpsignFixUI:
+    type: framework
+    platform: iOS
+    sources:
+      - path: WarpsignFix/WarpsignFixUI
+        excludes:
+          # Xcode writes its own
+          - module.modulemap
+          # Public, below
+          - WarpsignFixUI.h
+          - WSFConfig.h
+          - WSFConfigScreen.h
+      # The umbrella header and what it includes, for Swift and
+      # WarpsignFixUI-Swift.h
+      - path: WarpsignFix/WarpsignFixUI/WarpsignFixUI.h
+        headerVisibility: public
+      - path: WarpsignFix/WarpsignFixUI/WSFConfig.h
+        headerVisibility: public
+      - path: WarpsignFix/WarpsignFixUI/WSFConfigScreen.h
+        headerVisibility: public
+    dependencies:
+      - sdk: UIKit.framework
+      - sdk: SwiftUI.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.warpsign.WarpsignFixUI
+        GENERATE_INFOPLIST_FILE: YES
+        DEFINES_MODULE: YES
+        SKIP_INSTALL: YES
+        "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
+        TARGETED_DEVICE_FAMILY: "1,2"
+  ForceHideHomeIndicator:
+    type: framework
+    platform: iOS
+    sources:
+      - WarpsignFix/ForceHideHomeIndicator
+    dependencies:
+      - sdk: UIKit.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.warpsign.ForceHideHomeIndicator
+        GENERATE_INFOPLIST_FILE: YES
+        DEFINES_MODULE: YES
+        SKIP_INSTALL: YES
+        "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
+        TARGETED_DEVICE_FAMILY: "1,2"

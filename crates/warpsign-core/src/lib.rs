@@ -22,6 +22,7 @@ pub mod serve;
 pub mod signature;
 pub mod signing;
 pub mod source;
+pub mod warpsign_fix;
 
 #[doc(hidden)]
 pub use pyrandom::PyRandom;

@@ -180,6 +180,8 @@ enum SigningReport {
             "- Status bar: \(options.statusBar.title)",
             "- Appearance: \(options.interfaceStyle.title)",
             "- Allow debugging: \(onOff(options.patchDebug))",
+            "- WarpsignFix: \(onOff(options.injectWarpsignFix))",
+            "- Hide home indicator: \(onOff(options.hideHomeIndicator))",
         ]
     }
 }

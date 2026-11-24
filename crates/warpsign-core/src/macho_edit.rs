@@ -795,6 +795,65 @@ pub fn add_dylib_with(data: &mut [u8], dylib: &Dylib, kind: DylibKind) -> Result
     Ok(changed > 0)
 }
 
+/// Append a dylib load to every slice, even one already loading the same
+/// path, as LIEF's `add_library` does (Python warpsign's injection).
+/// Refuses encrypted slices.
+pub fn append_dylib(data: &mut [u8], dylib: &Dylib, kind: DylibKind) -> Result<()> {
+    edit_slices(data, true, |_, slice| {
+        let mut commands = keep_all(slice);
+        commands.push(Command::New(dylib_command(
+            kind.cmd(),
+            dylib,
+            slice.alignment(),
+        )));
+        Ok(Some(commands))
+    })?;
+    Ok(())
+}
+
+/// Every dylib command in each slice, in order: loads of each kind, and
+/// the install name (`LC_ID_DYLIB`) where it falls. With the raw command
+/// type, as LIEF lists `DylibCommand`s.
+pub fn dylib_commands(data: &[u8]) -> Result<Vec<Vec<(u32, Dylib)>>> {
+    slice_ranges(data)?
+        .into_iter()
+        .map(|range| {
+            let slice = parse_slice(data, range)?;
+            let s = &data[range.offset..range.offset + range.size];
+            Ok(slice
+                .commands
+                .iter()
+                .filter(|&&(cmd, _, _)| cmd == LC_ID_DYLIB || DylibKind::from_cmd(cmd).is_some())
+                .filter_map(|&(cmd, offset, size)| Some((cmd, parse_dylib(s, offset, size)?)))
+                .collect())
+        })
+        .collect()
+}
+
+/// In each slice, remove the first dylib command `matches` picks, the
+/// install name (`LC_ID_DYLIB`) included, without the checks
+/// `remove_dylib` makes. Python warpsign removes conflicting dylibs this
+/// way, with LIEF; encrypted slices are edited too, as LIEF does (only the
+/// header changes). Returns whether anything changed.
+pub fn remove_first_dylib_command_where(
+    data: &mut [u8],
+    mut matches: impl FnMut(&Dylib) -> bool,
+) -> Result<bool> {
+    let changed = edit_slices(data, false, |s, slice| {
+        let found = slice.commands.iter().position(|&(cmd, offset, size)| {
+            (cmd == LC_ID_DYLIB || DylibKind::from_cmd(cmd).is_some())
+                && parse_dylib(s, offset, size).is_some_and(|dylib| matches(&dylib))
+        });
+        Ok(found.map(|found| {
+            (0..slice.commands.len())
+                .filter(|&index| index != found)
+                .map(Command::Keep)
+                .collect()
+        }))
+    })?;
+    Ok(changed > 0)
+}
+
 /// What `remove_dylib` may do that would otherwise make it refuse
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RemoveOptions {
