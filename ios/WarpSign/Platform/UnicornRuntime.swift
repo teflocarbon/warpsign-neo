@@ -6,7 +6,9 @@ import UIKit
 /// download. It's GPLv2-only, so WarpSign doesn't ship it
 /// (ipatool-bridge/unicorn/README.md): it's downloaded once, checked
 /// against the hash here, signed with the user's development certificate
-/// (iOS only loads code signed by the app's own team) and loaded.
+/// (iOS only loads code signed by the app's own team) and loaded. iOS also
+/// only loads it from the app's own files when WarpSign is signed with
+/// debugging allowed (get-task-allow), or a debugger has attached.
 ///
 /// The build is Unicorn with QEMU's interpreter (interpreter.patch): it runs
 /// Apple's code without JIT, so nothing else is needed. A JIT build (split
@@ -48,6 +50,7 @@ enum UnicornRuntime {
         case noDebugger
         case wrongResult(UInt64)
         case notLoaded(String)
+        case notDebuggable
 
         var errorDescription: String? {
             switch self {
@@ -65,8 +68,10 @@ enum UnicornRuntime {
                 "JIT wasn't enabled: StikDebug didn't attach to WarpSign. Make sure LocalDevVPN is connected, then try again."
             case .wrongResult(let result):
                 "Unicorn ran its check wrongly (got \(result), not 3000)."
-            case .notLoaded(let tried):
-                "iOS wouldn't load Unicorn:\n\(tried)"
+            case .notLoaded(let reason):
+                "iOS wouldn't load Unicorn: \(reason)"
+            case .notDebuggable:
+                "iOS only loads Unicorn into a WarpSign signed with debugging allowed. Sign WarpSign again with Allow Debugging on, install it, and try again."
             }
         }
     }
@@ -136,6 +141,13 @@ enum UnicornRuntime {
             throw Failure.otherTeam(app: appTeam, certificate: certificateTeam)
         }
 
+        #if !targetEnvironment(simulator)
+        // Seen on iOS 26: without get-task-allow (or a debugger), the
+        // sandbox refuses to map it ("file system sandbox blocked mmap()")
+        let state = emulatorState()
+        guard state.debuggable || state.debugged else { throw Failure.notDebuggable }
+        #endif
+
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         if !(try await background { isExpected(original) }) {
             report("Downloading Unicorn")
@@ -145,86 +157,29 @@ enum UnicornRuntime {
         try await background {
             let files = FileManager.default
             try? files.removeItem(at: signed)
-            // A fresh file, not a copy: nothing of the download's (extended
-            // attributes such as a quarantine mark) carries over
-            try Data(contentsOf: original).write(to: signed)
-            let attributes = extendedAttributes(signed)
-            attributes.forEach { removeExtendedAttribute($0, from: signed) }
+            try files.copyItem(at: original, to: signed)
             try signLibrary(
                 path: signed.path,
                 identity: identity,
                 teamId: certificateTeam,
                 identifier: "org.unicorn-engine.unicorn"
             )
-            try loadFirstAllowed(attributes: attributes)
-        }
-    }
-
-    /// Load the signed library from the first place iOS allows it.
-    ///
-    /// With no debugger attached, iOS's sandbox refused to map the library
-    /// when it was a copy of the download ("file system sandbox blocked
-    /// mmap()"). A freshly written file, with no extended attributes, loaded
-    /// (seen on a device in November 2026). Other folders are kept as
-    /// fallbacks, and if none loads, the error says what happened in each.
-    private static func loadFirstAllowed(attributes: [String]) throws {
-        let files = FileManager.default
-        let places: [(String, URL)] = [
-            ("Application Support", signed),
-            ("tmp", files.temporaryDirectory.appendingPathComponent("unicorn", isDirectory: true)),
-            ("Caches", URL.cachesDirectory.appendingPathComponent("unicorn", isDirectory: true)),
-            ("Documents", URL.documentsDirectory.appendingPathComponent(".unicorn", isDirectory: true)),
-        ]
-        var tried: [String] = []
-        for (name, place) in places {
-            var file = place
             do {
-                if place != signed {
-                    try files.createDirectory(at: place, withIntermediateDirectories: true)
-                    file = place.appendingPathComponent("libunicorn.dylib")
-                    try? files.removeItem(at: file)
-                    try Data(contentsOf: signed).write(to: file)
-                }
-                try loadUnicorn(path: file.path)
-                return
+                try loadUnicorn(path: signed.path)
             } catch {
-                tried.append("\(name): \(shortLoadError(error.userMessage))")
+                throw Failure.notLoaded(shortLoadError(error.userMessage))
             }
         }
-        let debugged = emulatorState().debugged ? "yes" : "no"
-        throw Failure.notLoaded(
-            tried.joined(separator: "\n")
-                + "\nAttributes removed: \(attributes.isEmpty ? "none" : attributes.joined(separator: ", "))"
-                + "\nDebugged: \(debugged), iOS \(UIDevice.current.systemVersion)")
     }
 
     /// dyld's reason, without the paths it tried
     private static func shortLoadError(_ message: String) -> String {
-        if message.contains("sandbox blocked mmap") { return "sandbox blocked it" }
+        if message.contains("sandbox blocked mmap") { return "the sandbox blocked it." }
         // e.g. "… (code signature in <…> '…' not valid for use in process: …)"
         if let reason = message.range(of: "code signature") ?? message.range(of: "not valid") {
             return String(message[reason.lowerBound...].prefix(160))
         }
         return String(message.prefix(160))
-    }
-
-    private static func extendedAttributes(_ file: URL) -> [String] {
-        file.withUnsafeFileSystemRepresentation { path -> [String] in
-            guard let path else { return [] }
-            let size = listxattr(path, nil, 0, 0)
-            guard size > 0 else { return [] }
-            var names = [CChar](repeating: 0, count: size)
-            guard listxattr(path, &names, size, 0) == size else { return [] }
-            return names.split(separator: 0).map { name in
-                String(decoding: name.map { UInt8(bitPattern: $0) }, as: UTF8.self)
-            }
-        }
-    }
-
-    private static func removeExtendedAttribute(_ name: String, from file: URL) {
-        _ = file.withUnsafeFileSystemRepresentation { path in
-            path.map { removexattr($0, name, 0) }
-        }
     }
 
     private static func download() async throws {

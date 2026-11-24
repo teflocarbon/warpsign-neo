@@ -13,6 +13,12 @@ can't be combined in one program, so WarpSign doesn't contain Unicorn:
   `ios/WarpSign/Platform/UnicornRuntime.swift`, signs it with the user's
   development certificate (iOS only loads code signed by the app's own team)
   and loads it with `dlopen`. ipatool finds it with `dlsym`.
+- iOS only maps code from the app's own files (not its bundle) when the
+  app is signed with debugging allowed (`get-task-allow`), or a debugger
+  has attached. Otherwise dyld fails with "file system sandbox blocked
+  mmap()", whatever the folder and however the library is signed. Seen on
+  iOS 26 in November 2026: the same build loaded with `get-task-allow` and
+  was refused without it.
 - The library is built from the sources here, and published with them.
 
 ## What's here

@@ -55,6 +55,10 @@ pub struct EmulatorState {
     pub loaded: bool,
     /// A debugger has attached at some point (CS_DEBUGGED): JIT is allowed
     pub debugged: bool,
+    /// The app is signed with debugging allowed (get-task-allow, seen as
+    /// CS_GET_TASK_ALLOW). Without a debugger, iOS only loads Unicorn from
+    /// the app's own files when it is (seen on iOS 26, November 2026).
+    pub debuggable: bool,
     /// A debugger is attached now (P_TRACED). Enabling JIT ahead, from
     /// StikDebug, leaves the app debugged but with nothing attached, and
     /// iOS 26's region calls need the script there to answer them.
@@ -75,6 +79,7 @@ pub fn emulator_state() -> EmulatorState {
     EmulatorState {
         loaded,
         debugged: sys::debugged(),
+        debuggable: sys::debuggable(),
         attached: sys::attached(),
         ready,
         interpreter: loaded && sys::interpreter(),
@@ -143,6 +148,7 @@ mod sys {
     const VM_FLAGS_ANYWHERE: c_int = 0x1;
     const VM_INHERIT_NONE: u32 = 2;
     const CS_OPS_STATUS: u32 = 0;
+    const CS_GET_TASK_ALLOW: u32 = 0x0000_0004;
     const CS_DEBUGGED: u32 = 0x1000_0000;
 
     type Configure = unsafe extern "C" fn(*mut c_void, *mut c_void, usize, usize) -> c_int;
@@ -181,7 +187,8 @@ mod sys {
         ) -> c_int;
     }
 
-    pub fn debugged() -> bool {
+    /// The process's code-signing flags (none if they can't be read)
+    fn code_signing_flags() -> u32 {
         let mut flags: u32 = 0;
         // SAFETY: CS_OPS_STATUS writes the process's code-signing flags
         // into the u32 given
@@ -193,7 +200,15 @@ mod sys {
                 std::mem::size_of::<u32>(),
             )
         };
-        status == 0 && flags & CS_DEBUGGED != 0
+        if status == 0 { flags } else { 0 }
+    }
+
+    pub fn debugged() -> bool {
+        code_signing_flags() & CS_DEBUGGED != 0
+    }
+
+    pub fn debuggable() -> bool {
+        code_signing_flags() & CS_GET_TASK_ALLOW != 0
     }
 
     pub fn attached() -> bool {
@@ -475,6 +490,10 @@ mod sys {
 #[cfg(not(target_vendor = "apple"))]
 mod sys {
     pub fn debugged() -> bool {
+        false
+    }
+
+    pub fn debuggable() -> bool {
         false
     }
 
