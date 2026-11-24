@@ -1,6 +1,6 @@
 # Design: tweaks (injection, extraction, Tweak Depot)
 
-Proposed November 2026, not built yet. This covers injecting tweaks into an IPA as it's signed, finding the tweaks already injected into an IPA and taking them out, and the Tweak Depot that keeps them. A later section sketches adding tweaks from GitHub releases. The open questions are at the end.
+Proposed November 2026, decisions agreed (below), not built yet. This covers injecting tweaks into an IPA as it's signed, finding the tweaks already injected into an IPA and saving copies of them, and the Tweak Depot that keeps them. A later section sketches adding tweaks from GitHub releases. Decisions, what is still open and the order of work are at the end.
 
 ## Background
 
@@ -33,7 +33,10 @@ The ytkace release linked as an example (v1.1.9) has `…_rootless.deb` and `…
 
 ### What Python warpsign does
 
-Python warpsign injects only its own three prebuilt dylibs, behind `--inject-warpsign-fix` (WarpsignFix, WarpsignFixUI) and `--hide-home-indicator` (ForceHideHomeIndicator). It uses LIEF. It has no `.deb` or user-tweak support. The README lists these flags as not ported yet, along with `--patch-liquid-glass`. The facts that matter for parity:
+Python warpsign injects only its own three prebuilt dylibs, behind two flags, using LIEF:
+
+- `--inject-warpsign-fix` adds WarpsignFix and WarpsignFixUI, from [teflocarbon/WarpsignFix](https://github.com/teflocarbon/WarpsignFix). WarpsignFix uses fishhook to rewrite keychain access groups, app groups and CloudKit containers to the new team's. WarpsignFixUI is its in-app settings and help screen.
+- `--hide-home-indicator` adds ForceHideHomeIndicator, a separate small tweak whose source isn't in that repo. It has no `.deb` or user-tweak support. The README lists these flags as not ported yet, along with `--patch-liquid-glass`. The facts that matter for parity:
 
 - The dylibs are copied to `<App>.app/Frameworks/` (always created), only if a file with the same name isn't there already.
 - The load command is a strong `LC_LOAD_DYLIB` at `@loader_path/` + `../` × depth + `Frameworks/<name>`. So the main binary gets `@loader_path/Frameworks/WarpsignFix.dylib`, and `PlugIns/E.appex/E` gets `@loader_path/../../Frameworks/WarpsignFix.dylib`.
@@ -41,7 +44,7 @@ Python warpsign injects only its own three prebuilt dylibs, behind `--inject-war
 - A list of conflicting fix-up dylibs (`CONFLICTING_DYLIBS`: `sideloadFixerLol.dylib`, `zxPluginsInject.dylib`, …) is removed from `Frameworks/`. In each slice, the first load command whose path contains one of those names is removed.
 - `remappings.json` (keychain groups, app groups, iCloud containers, team IDs) is written for WarpsignFix to read.
 
-None of this changes the design below, but it does decide the order of work. The Mach-O editor that tweaks need is also what porting those three flags needs. Porting them is pure parity work (fixtures from the generator, as for everything else), and it proves the editor on code we already know works on devices.
+None of this changes the design below, but it does decide the order of work. The Mach-O editor that tweaks need is also what porting those flags needs. Porting them is pure parity work (fixtures from the generator, as for everything else), and it proves the editor on code we already know works on devices. WarpsignFix also has a second job here: it's how an app tells the user that a tweak didn't load (see Injection).
 
 ## Pieces
 
@@ -72,7 +75,13 @@ The code signature isn't touched: the Sign step replaces it. Testing builds Mach
 
 ### The tweak runtime
 
-ElleKit is shipped as `CydiaSubstrate.framework` inside WarpSign and the CLI's data. It's built from a pinned ElleKit tag in `ipa.yml` (macOS), arm64 only, rather than committing a binary. The BSD-3 notice goes in NOTICE and next to the framework. At injection:
+ElleKit is shipped as `CydiaSubstrate.framework`, taken from a pinned ElleKit release `.deb`, as Feather does:
+
+- **In the app:** `ipa.yml` downloads the pinned `.deb`, checks its SHA-256, and unpacks the framework into WarpSign's bundle. The binary isn't committed.
+- **In the CLI:** the CLI downloads the same pinned URL and checks the same hash the first time it injects, keeping the framework in the config directory.
+- **Notice:** the BSD-3 notice goes in NOTICE and next to the framework.
+
+At injection:
 
 - **Add the runtime:** if any tweak depends on Substrate (or libhooker, substitute, or ElleKit itself) and the app has no `Frameworks/CydiaSubstrate.framework`, it's added.
 - **Rewrite dependencies:** any dependency of an injected binary whose path contains `substrate` (case-insensitive: `/Library/Frameworks/CydiaSubstrate.framework/CydiaSubstrate`, `/usr/lib/libsubstrate.dylib`, `@rpath/CydiaSubstrate.dylib`, rootless `/var/jb/...`), and likewise libhooker and substitute, becomes `@rpath/CydiaSubstrate.framework/CydiaSubstrate`. This is cyan's broad rule, not Feather's one exact path.
@@ -80,16 +89,24 @@ ElleKit is shipped as `CydiaSubstrate.framework` inside WarpSign and the CLI's d
 
 ### Injection (`inject.rs`, a new sign step)
 
-A new `Step::InjectTweaks` goes in `sign_ipa` after `Decrypt` and before `PatchBinaries`. It takes `SignOptions::tweaks: Vec<TweakRef>` (depot entries, or loose files for the CLI). It does this:
+Injection takes `SignOptions::tweaks: Vec<TweakRef>` (depot entries, or loose files for the CLI). It's split in two, like Python's staging and patching:
 
-1. Refuses if the main executable is still encrypted. It says to decrypt first, or does so, given a credential or Pathway A.
+- **Copying the files** goes in `Extract`, before the components are listed.
+- **Editing the load commands** is a new `Step::InjectTweaks`, after `Decrypt` and before `PatchBinaries`, as load commands can only be edited in a decrypted binary.
+
+Between them, they do this:
+
+1. Refuses if the main executable is still encrypted and won't be decrypted. It says to decrypt first, or does so, given a credential or Pathway A.
 2. Copies each tweak's files into place: dylibs and frameworks to `Frameworks/`, `.bundle`s to the app root, `.appex` to `PlugIns/`. A file with the same name already there is a conflict. Replacing it is the user's choice, shown before signing.
 3. Rewrites the Substrate dependencies and adds ElleKit if needed.
-4. Adds `LC_LOAD_WEAK_DYLIB @rpath/<name>` to the main executable for each dylib, or `@rpath/<X>.framework/<X>` for each injected framework the tweak itself loads. It also adds `LC_RPATH @executable_path/Frameworks` if the app doesn't resolve `@rpath` there already. Weak is what cyan, Feather and Impactor default to: a missing tweak then doesn't stop the app launching. Strong is an option.
+4. Adds `LC_LOAD_WEAK_DYLIB @rpath/<name>` to the main executable for each dylib, or `@rpath/<X>.framework/<X>` for each injected framework the tweak itself loads. It also adds `LC_RPATH @executable_path/Frameworks` if the app doesn't resolve `@rpath` there already. Weak is the default, as in cyan, Feather and Impactor: a missing or broken tweak then doesn't stop the app launching. Strong is an option.
 5. Extensions get the same load commands only when asked (Feather's "inject into extensions"), with `@executable_path/../../Frameworks`.
-6. Logs exactly what it did, so the Activity log shows it.
+6. Writes the list of what it injected to `tweaks.json` in the app (name, file, depot ID), next to `remappings.json`.
+7. Logs exactly what it did, so the Activity log shows it.
 
-Injected files then sign like any other nested code: `sign_app_bundle` already signs every dylib and framework inside the app. They aren't bundle-ID-patched by `PatchBinaries`, because they aren't components. Whether they should be is an open question.
+**Telling the user a tweak didn't load:** weak loading fails silently, so WarpsignFix checks for it. When an app has tweaks, WarpsignFix is injected too, strongly, as Python injects it. At launch it reads `tweaks.json` and compares it with the images dyld loaded (`_dyld_image_count`, `_dyld_get_image_name`). If one is missing, WarpsignFixUI shows an alert naming the tweak, and dyld's reason when it can be had (`dlopen` on the path, then `dlerror`). It does this once per launch, with "Don't show again" for that tweak. This needs a change in the WarpsignFix repo, and that repo needs a licence before CI can build it.
+
+**Bundle IDs:** injected files are added before the components are listed, as Python stages its dylibs before analysis. So `PatchBinaries` bundle-ID-patches them like any other nested dylib. A tweak that compares the bundle ID with `com.google.ios.youtube` then compares it with the ID the app is really signed with, which is what it reads at runtime. Python warpsign does the same for every nested dylib except its own fixes. Injected files then sign like any other nested code: `sign_app_bundle` already signs every dylib and framework inside the app.
 
 The tweaks a signed copy was made with are recorded with its signing options. Then `Updater` re-applies them when it re-signs an update, the same way it reuses the other options. That's the feature people will notice most: a tweaked YouTube that stays tweaked across updates.
 
@@ -123,7 +140,9 @@ The input is an extracted app (Library IPA, or a file for the CLI). The output i
 - **Needs JIT:** imports `MSHookFunction`, `MSHookMemory` or `LHHookFunctions`. The tweak works fully only with JIT (StikDebug).
 - **Filter plists:** not in IPAs (injectors drop them), so there's none to recover. The source app's bundle ID stands in for one.
 
-**Taking tweaks out.** The same scan removes tweaks: drop the load commands and delete the files. That gives a clean IPA as well as the depot entries. It's an option on extraction ("also remove from the IPA") and a CLI command of its own.
+**Extraction only copies.** It saves the tweaks to the depot so they can be used elsewhere, and never changes the IPA they came from.
+
+**Removing tweaks** is a separate action, for an IPA that's wanted without them. The same scan finds them, then their load commands are dropped and their files deleted, writing a new IPA. In the app it's Remove Tweaks… on the Library app's menu, which asks first because it replaces the Library's copy. In the CLI it's `warpsign tweaks strip`.
 
 Signal thresholds need testing on real tweaked IPAs (the ytkace IPAs are a good public sample), with results described in the doc, not committed.
 
@@ -169,9 +188,11 @@ The depot is defined in Rust (types, index, import, export) and exposed through 
 
 ## The iOS app
 
-- **A Tweaks tab** (Tweak Depot), between Sources and Settings. It's a list grouped by where tweaks came from. Each extracted app is a section with its icon, name, bundle ID and version ("From YouTube 21.47.6"), with its tweaks below. Packages and imported files have their own sections. Rows show name, version, size, and badges: needs JIT, needs Substrate, and update available. There's search, and **+** for Import File (`.deb`, `.dylib`, `.framework` zip) and Add GitHub Repo.
+- **The Tweak Depot is part of the Library, not a tab of its own**, so the tab bar doesn't grow to five. A segmented control at the top of the Library switches between **Apps** and **Tweaks**, as Music switches Library views. Search and **+** follow the selection. For Tweaks, **+** offers Import File (`.deb`, `.dylib`, a zipped `.framework`). Apps' filters (Updates, Installed…) only show for Apps.
+- **The Tweaks view** is a list grouped by where tweaks came from. Each extracted app is a section with its icon, name, bundle ID and version ("From YouTube 21.47.6"), with its tweaks below. Packages, GitHub tweaks and imported files have their own sections. Rows show name, version, size, and badges: needs JIT, needs Substrate, and update available. An empty depot explains where tweaks come from, with buttons for each.
+- **The fallback** if the segmented control feels crowded beside the activity strip and downloads: a Tweak Depot row at the top of the Apps list, showing a count ("12 tweaks from 4 apps"), which opens the same view.
 - **Tweak detail:** name (renameable), version, kind and size, the origin(s) with a link to the Library app if it's still there, and the files (a tree). Also what it hooks, its dependencies and whether they're satisfied, archs and minimum iOS, the filter's bundle IDs, and notes. Actions: Inject Into… (choose a Library app, open Signing with it selected), Export (share as `.dylib`, or a zip for multi-file tweaks), and Delete.
-- **Library app page:** a Tweaks section from the scan, done once at import and kept with the entry like `encryption`: "3 tweaks injected: YTKACE, YouTubeHeader…, ElleKit (runtime)". Extract… opens a sheet listing what was found, each with confidence and reasons ("not used by the app · links CydiaSubstrate · appended load"), all tweaks preselected and the runtime unselected. Options there: also remove them from this IPA, which replaces it with the clean IPA.
+- **Library app page:** a Tweaks section from the scan, done once at import and kept with the entry like `encryption`: "3 tweaks injected: YTKACE, YouTubeHeader…, ElleKit (runtime)". Extract… opens a sheet listing what was found, each with confidence and reasons ("not used by the app · links CydiaSubstrate · appended load"), all tweaks preselected and the runtime unselected. Saving copies them to the depot; the IPA is untouched. Remove Tweaks… is a separate item in the app's menu.
 - **Signing options:** a Tweaks row. Its picker is the depot, with tweaks extracted from this same bundle ID or filtered for it at the top. It also offers inject into extensions, and strong instead of weak. A warning shows for an encrypted app (with Decrypt), for unmet dependencies, and for tweaks that need JIT. The choice is saved with the signed copy, so updates keep it.
 
 ## The CLI
@@ -188,7 +209,7 @@ warpsign sign … --tweak <depot-id|name|path>… [--tweak-extensions] [--strong
 
 ## Later: tweaks from GitHub releases
 
-A **Tweak Sources** list in the Tweaks tab, sitting beside Sources rather than inside it. AltStore sources are JSON for apps. This is repos:
+A **Tweak Repos** section in the Sources tab, below the AltStore sources. Both are places things come from, and the Sources tab's add flow can tell them apart from the link: a GitHub repo or release link is a tweak repo, and anything else is an AltStore source. Tweak repos list releases, not apps:
 
 - **Adding a source:** add `github.com/owner/repo` (or a release URL, which is reduced to the repo). WarpSign reads `GET https://api.github.com/repos/{owner}/{repo}/releases`, unauthenticated, with `ETag`/`If-None-Match` (a 304 is free against the 60-requests-an-hour limit). Release notes are shown as Markdown.
 - **Assets:** sorted into tweaks (`.deb`, `.dylib`, `.zip` holding a `.framework`) and apps (`.ipa`). When a release has several debs, the rootless variant is preferred (`iphoneos-arm64` in its control file), then rootful. Roothide debs are offered last, with a warning: their binaries can link roothide's own library.
@@ -201,27 +222,37 @@ There's no token support at first, so nothing secret is stored. A personal token
 ## Public-repo and licence notes
 
 - No tweak, deb or IPA goes into the repo or CI logs. Tests build Mach-O, ar and tar bytes in code. Real-world checks are described in prose: "seen on a tweaked YouTube IPA in November 2026".
-- ElleKit (BSD-3) is built in CI from a pinned tag and credited in NOTICE. Its licence text ships with the framework.
+- ElleKit (BSD-3) comes from a pinned release `.deb`, downloaded and checked against its SHA-256 in CI and by the CLI, not committed. It's credited in NOTICE, and its licence text ships with the framework.
 - Code may be followed from Impactor's `tweak.rs`/`macho.rs` (MIT), cyan (Unlicense), Feather (GPL-3.0), LiveContainer's arm64e fix-up (AGPL-3.0) and Zsign (MIT), each with a NOTICE credit. Azule (no licence), saurik's Substrate (proprietary) and libhooker (BSD-4) are ideas only, or nothing.
-- Python warpsign's three fix dylibs are prebuilt binaries with no source in its repo. Vendoring them into this public repo needs the owner's call.
+- **WarpsignFix and WarpsignFixUI** are the owner's ([teflocarbon/WarpsignFix](https://github.com/teflocarbon/WarpsignFix)), and fine to ship.
+  - That repo has no licence yet. It needs one (AGPL-3.0, to match) before `ipa.yml` builds it from source.
+  - Its tracked `xcuserdata/` folder should go before anything here builds from it.
+  - ForceHideHomeIndicator's source still needs finding; until then it's the prebuilt binary from Python warpsign.
 
-## Open questions
+## Decisions (November 2026)
 
-1. **Order of work:** port Python's `--inject-warpsign-fix` and `--hide-home-indicator` first (parity), or go straight to tweaks? Both need the same Mach-O editor.
-2. **Python's fix dylibs:** are WarpsignFix, WarpsignFixUI and ForceHideHomeIndicator OK to vendor here, and is their source available to build in CI instead?
-3. **Weak or strong by default:** weak, as other injectors? A missing tweak then fails silently, where strong would refuse to launch.
-4. **Bundle-ID patching of injected tweaks:** should `PatchBinaries` patch bundle IDs in injected dylibs, as Python does for every nested dylib except its own fixes? Tweaks that check `com.google.ios.youtube` would then see the encoded ID.
-5. **A Tweaks tab, or a section in the Library?** This design proposes a tab. The App Store tab already makes five.
-6. **ElleKit:** build it in CI from source (proposed), or vendor the release `.deb` as Feather does?
-7. **Taking tweaks out:** by default, should extraction leave the Library IPA as it is (proposed), or offer to replace it with the clean one?
-8. **Depot in Rust, or in Swift with the CLI separate:** this design puts it in Rust, so both share it.
+1. **Order:** the Python parity flags (`--inject-warpsign-fix`, `--hide-home-indicator`) come right after the Mach-O editor, before tweaks. They use the same editor and prove it.
+2. **WarpsignFix** (and WarpsignFixUI) ship with WarpSign, built from the owner's repo once it has a licence. It also becomes the check that tells the user when a tweak didn't load.
+3. **Tweaks load weakly** by default, with that check behind them. Strong is an option.
+4. **Injected tweaks are bundle-ID-patched** like every other nested dylib, as in Python.
+5. **The Tweak Depot is part of the Library** (Apps | Tweaks), and GitHub tweak repos are in the Sources tab. There's no fifth tab.
+6. **ElleKit** comes from its pinned release `.deb`.
+7. **Extraction only copies** to the depot. Removing tweaks from an IPA is a separate action.
+8. **The depot is Rust**, in `warpsign-core`, shared by the app (through FFI) and the CLI.
 
-## Recommended first slice
+## Still open
 
-Core and CLI only. Each piece is testable on Windows and Linux without a device, and the Swift UI comes once the core holds up.
+- ForceHideHomeIndicator's source: where it is, and whether it moves into the WarpsignFix repo.
+- The WarpsignFix repo's licence (AGPL-3.0 proposed), and its missing-tweak alert (a change there).
+- Whether the Apps | Tweaks control, or the fallback row, looks right once it's on a phone.
+
+## Order of work
+
+Core and CLI first. Each piece is testable on Windows and Linux without a device, and the Swift UI comes once the core holds up.
 
 1. `macho_edit.rs`: read, add, remove and change load commands and rpaths, fat and thin, with byte-built tests.
-2. `scan.rs` and `warpsign tweaks scan <ipa>`: extraction's detection with reasons, checked against the public ytkace IPAs and described in the doc.
-3. `deb.rs` and `depot.rs`, with `warpsign depot import/list/show` and `warpsign tweaks extract`.
+2. **Parity:** port `--inject-warpsign-fix` and `--hide-home-indicator` (generator cases and fixtures first, then the port), with `remappings.json`. WarpsignFix's binaries come from Python warpsign until its repo has a licence and CI builds it.
+3. `scan.rs` and `warpsign tweaks scan <ipa>`: extraction's detection with reasons, checked against the public ytkace IPAs and described in the doc.
+4. `deb.rs` and `depot.rs`, with `warpsign depot import/list/show` and `warpsign tweaks extract`.
 
-Then injection (`Step::InjectTweaks`, ElleKit built in CI, `--tweak`), tested on a device. Then the app's Tweaks tab and the Library and Signing sections. GitHub sources come last.
+Then injection (the staging and `Step::InjectTweaks`, ElleKit from its `.deb`, `--tweak`, `tweaks.json` and the missing-tweak alert), tested on a device. Then the Library's Tweaks view, and the Library-app and Signing sections. GitHub tweak repos come last.
