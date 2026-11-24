@@ -125,8 +125,9 @@ struct SourceListing: Identifiable, Sendable {
     /// What the listing shows: the best build with the listing's name, or
     /// the best build
     let app: SourceApp
-    /// How many people or groups made the builds
-    let developerCount: Int
+    /// Who made the builds (the developer each lists: often whoever
+    /// tweaked or uploaded it), most builds first
+    let developers: [String]
     private let foldedName: String
     /// Every build's name, subtitle and developer, and the bundle ID,
     /// folded (fold)
@@ -144,7 +145,8 @@ struct SourceListing: Identifiable, Sendable {
         self.name = name
         self.builds = sorted
         self.app = app
-        self.developerCount = Set(builds.compactMap(\.developerName)).count
+        let counts = builds.compactMap(\.developerName).reduce(into: [String: Int]()) { $0[$1, default: 0] += 1 }
+        self.developers = counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.map(\.key)
         self.foldedName = Self.fold(name)
         var fields = Set<String>([app.bundleId])
         for build in builds {

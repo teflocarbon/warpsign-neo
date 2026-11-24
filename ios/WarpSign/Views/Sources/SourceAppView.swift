@@ -39,7 +39,7 @@ struct SourceAppView: View {
             DownloadButton(version: latest, app: app, source: source, large: large)
         } content: {
             AppPageHeader(
-                iconURL: app.iconUrl, name: app.name, subtitle: app.subtitle ?? app.developerName, stats: statItems
+                iconURL: app.iconUrl, name: app.name, subtitle: app.developerName ?? app.subtitle, stats: statItems
             ) {
                 if let sourceURL {
                     NavigationLink {

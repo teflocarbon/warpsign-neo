@@ -69,7 +69,7 @@ struct SourceDetailView: View {
             Section(search.isEmpty ? "Apps" : "") {
                 ForEach(listings(index)) { listing in
                     NavigationLink {
-                        SourceListingDestination(listing: listing, source: source, url: url, search: search)
+                        SourceListingDestination(listing: listing, source: source, url: url)
                     } label: {
                         SourceListingRow(listing: listing)
                     }
@@ -292,15 +292,16 @@ private struct NewsCard: View {
 
 struct SourceAppRow: View {
     let app: SourceApp
-    /// With its date, to tell builds of one app apart
-    var showsDate = false
+    /// As one of an app's builds: who made it, and its date, to tell them
+    /// apart
+    var asBuild = false
 
     var body: some View {
         HStack(spacing: 12) {
             RemoteIconView(url: app.iconUrl)
             VStack(alignment: .leading, spacing: 2) {
                 Text(app.name).font(.headline).lineLimit(1)
-                if let subtitle = app.subtitle ?? app.developerName {
+                if let subtitle = asBuild ? app.developerName ?? app.subtitle : app.subtitle ?? app.developerName {
                     Text(subtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -317,7 +318,7 @@ struct SourceAppRow: View {
     private var versionLine: String {
         let latest = app.versions[0]
         var parts = [latest.version]
-        if showsDate, let date = latest.date.flatMap(SourceDate.parse) {
+        if asBuild, let date = latest.date.flatMap(SourceDate.parse) {
             parts.append(date.formatted(.dateTime.day().month().year()))
         }
         if let size = latest.size {
@@ -356,10 +357,11 @@ struct SourceListingRow: View {
 
     private var buildsLine: String {
         var line = "\(listing.builds.count.formatted()) builds"
-        if listing.developerCount == 1, let developer = listing.app.developerName {
-            line += " · \(developer)"
-        } else if listing.developerCount > 1 {
-            line += " from \(listing.developerCount) developers"
+        let developers = listing.developers
+        if developers.count > 2 {
+            line += " · \(developers[0]), \(developers[1]) and \(developers.count - 2) more"
+        } else if !developers.isEmpty {
+            line += " · " + developers.joined(separator: ", ")
         }
         return line
     }
@@ -371,17 +373,12 @@ struct SourceListingDestination: View {
     let listing: SourceListing
     let source: Source
     let url: String?
-    /// What was searched for, to find the builds that matched it
-    var search = ""
 
     var body: some View {
         if listing.builds.count == 1 {
             SourceAppView(app: listing.app, source: source, sourceURL: url)
         } else {
-            // Found by a build's name or developer, not the app's: those builds
-            let folded = SourceListing.fold(search.trimmingCharacters(in: .whitespaces))
-            let filter = folded.isEmpty || SourceListing.fold(listing.name).contains(folded) ? "" : search
-            SourceBuildsView(listing: listing, source: source, url: url, filter: filter)
+            SourceBuildsView(listing: listing, source: source, url: url)
         }
     }
 }
@@ -391,7 +388,7 @@ struct SourceBuildsView: View {
     let listing: SourceListing
     let source: Source
     let url: String?
-    @State var filter: String
+    @State private var filter = ""
 
     var body: some View {
         let shown = listing.builds(matching: filter)
@@ -401,7 +398,7 @@ struct SourceBuildsView: View {
                     NavigationLink {
                         SourceAppView(app: build, source: source, sourceURL: url)
                     } label: {
-                        SourceAppRow(app: build, showsDate: true)
+                        SourceAppRow(app: build, asBuild: true)
                     }
                     .contextMenu { SourceAppMenu(app: build, source: source) }
                 }

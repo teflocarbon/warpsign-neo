@@ -191,7 +191,7 @@ struct SourcesView: View {
                 Section(source.name) {
                     ForEach(results.listings) { listing in
                         NavigationLink {
-                            SourceListingDestination(listing: listing, source: source, url: results.url, search: query)
+                            SourceListingDestination(listing: listing, source: source, url: results.url)
                         } label: {
                             SourceListingRow(listing: listing)
                         }

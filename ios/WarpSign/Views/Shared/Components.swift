@@ -96,15 +96,27 @@ struct ErrorRow: View {
 }
 
 extension Color {
-    /// From "#RRGGBB" (sources' tint colours)
+    /// From "#RRGGBB" (sources' tint colours). Where it would be hard to
+    /// read on the background, WarpSign's accent colour instead: sources
+    /// pick one colour for both modes, and many pick black.
     init?(hex: String?) {
         guard let hex, let value = UInt32(hex.trimmingCharacters(in: CharacterSet(charactersIn: "#")), radix: 16) else {
             return nil
         }
-        self.init(
-            red: Double((value >> 16) & 0xFF) / 255,
-            green: Double((value >> 8) & 0xFF) / 255,
-            blue: Double(value & 0xFF) / 255
-        )
+        let red = Double((value >> 16) & 0xFF) / 255
+        let green = Double((value >> 8) & 0xFF) / 255
+        let blue = Double(value & 0xFF) / 255
+        let color = UIColor(red: red, green: green, blue: blue, alpha: 1)
+        // WCAG relative luminance, and its contrast with black or white
+        func linear(_ channel: Double) -> Double {
+            channel <= 0.03928 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+        let onBlack = (luminance + 0.05) / 0.05
+        let onWhite = 1.05 / (luminance + 0.05)
+        self.init(uiColor: UIColor { traits in
+            let readable = traits.userInterfaceStyle == .dark ? onBlack >= 3 : onWhite >= 3
+            return readable ? color : (UIColor(named: "AccentColor") ?? .systemBlue)
+        })
     }
 }
