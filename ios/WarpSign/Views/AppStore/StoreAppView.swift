@@ -16,7 +16,7 @@ struct StoreAppView: View {
         AppPage(iconURL: app.iconURL) { large in
             StoreGetButton(app: app, large: large)
         } content: {
-            AppPageHeader(iconURL: app.iconURL, name: app.name, subtitle: app.developer) {
+            AppPageHeader(iconURL: app.iconURL, name: app.name, subtitle: app.developer, stats: stats) {
                 AppOriginLine(systemImage: "bag", text: "App Store · \(countryName)")
             } action: {
                 StoreGetButton(app: app, large: true)
@@ -26,7 +26,6 @@ struct StoreAppView: View {
                 }
                 CopyMenu(title: "Bundle ID", value: app.bundleId)
             }
-            AppStatsStrip(items: stats)
             if let minimum = app.needsNewerSystem {
                 Label {
                     Text("Needs iOS \(minimum) or later, and this \(UIDevice.current.model) has iOS \(UIDevice.current.systemVersion). You can get and sign it, but it won't install.")
@@ -43,7 +42,7 @@ struct StoreAppView: View {
             if let download = store.downloads[app.id] {
                 StoreDownloadRow(download: download)
                     .padding(12)
-                    .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .appCard()
                     .padding(.top, 12)
             }
             InLibrarySection(apps: library.apps.filter { $0.bundleId == app.bundleId })
@@ -73,14 +72,14 @@ struct StoreAppView: View {
         } else if let version = app.version {
             items.append(.version(version, build: nil))
         }
-        if let age = app.contentAdvisoryRating {
-            items.append(AppStat(label: "Age", value: age, detail: "Years Old"))
-        }
-        if let genre = app.primaryGenreName {
-            items.append(AppStat(label: "Category", value: genre, detail: "Category"))
-        }
         if let size = app.size {
             items.append(.size(size))
+        }
+        if let minimum = app.minimumOsVersion {
+            items.append(.requires(minimum))
+        }
+        if let genre = app.primaryGenreName {
+            items.append(AppStat(label: "Category", value: genre, detail: app.contentAdvisoryRating ?? ""))
         }
         return items
     }
@@ -171,6 +170,7 @@ struct StoreVersionsView: View {
     @State private var ids: [String]?
     @State private var error: String?
     @State private var signingIn = false
+    @State private var filter = ""
 
     private var store: AppStoreModel { .shared }
 
@@ -185,16 +185,22 @@ struct StoreVersionsView: View {
                     Button("Sign In") { signingIn = true }
                 }
             } else if let ids {
+                let shown = filtered(ids)
                 List {
                     Section {
-                        ForEach(Array(ids.enumerated()), id: \.element) { index, id in
-                            row(id, latest: index == 0)
+                        ForEach(shown, id: \.self) { id in
+                            row(id, latest: id == ids.first)
                         }
+                    } header: {
+                        Text(filter.isEmpty ? "\(ids.count) versions" : "\(shown.count) of \(ids.count) versions")
+                            .font(.subheadline.weight(.medium))
+                            .textCase(nil)
                     } footer: {
                         Text("As the App Store still has them. Each you get is added to your library beside the others.")
                     }
                 }
-                .listStyle(.plain)
+                .listStyle(.insetGrouped)
+                .searchable(text: $filter, prompt: "Version or Version ID")
             } else if let error {
                 ContentUnavailableView {
                     Label("Couldn't List Versions", systemImage: "exclamationmark.triangle")
@@ -221,15 +227,27 @@ struct StoreVersionsView: View {
         }
     }
 
+    /// Those whose ID, or number once known, has what's typed
+    private func filtered(_ ids: [String]) -> [String] {
+        let filter = filter.trimmingCharacters(in: .whitespaces)
+        guard !filter.isEmpty else { return ids }
+        return ids.filter { id in
+            id.contains(filter) || store.versionInfo[id]?.displayVersion.contains(filter) == true
+        }
+    }
+
     private func row(_ id: String, latest: Bool) -> some View {
         let info = store.versionInfo[id]
-        return HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline) {
+        return HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     if let info {
                         Text("Version \(info.displayVersion)")
+                            .font(.body.weight(.semibold))
                     } else {
-                        Text("Version …").foregroundStyle(.secondary)
+                        Text("Version …")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.secondary)
                     }
                     if latest {
                         Badge("Latest", color: .green)
@@ -237,13 +255,14 @@ struct StoreVersionsView: View {
                 }
                 if let date = info.flatMap({ SourceDate.parse($0.releaseDate) }) {
                     Text(date, format: .dateTime.day().month().year())
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
-                Text("ID \(id)")
-                    .font(.caption.monospaced())
+                Text("Version ID \(id)")
+                    .font(.caption.monospacedDigit())
                     .foregroundStyle(.tertiary)
             }
+            .contextMenu { CopyMenu(title: "Version ID", value: id) }
             Spacer()
             StoreGetButton(app: app, versionId: latest ? nil : id)
         }

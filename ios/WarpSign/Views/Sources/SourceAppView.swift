@@ -38,7 +38,9 @@ struct SourceAppView: View {
         AppPage(iconURL: app.iconUrl, tint: tint) { large in
             DownloadButton(version: latest, app: app, source: source, large: large)
         } content: {
-            AppPageHeader(iconURL: app.iconUrl, name: app.name, subtitle: app.subtitle ?? app.developerName) {
+            AppPageHeader(
+                iconURL: app.iconUrl, name: app.name, subtitle: app.subtitle ?? app.developerName, stats: statItems
+            ) {
                 if let sourceURL {
                     NavigationLink {
                         SourceDetailView(url: sourceURL, showsSource: true)
@@ -54,11 +56,10 @@ struct SourceAppView: View {
             } menu: {
                 SourceAppMenu(app: app, source: source)
             }
-            AppStatsStrip(items: statItems)
             if let download {
                 DownloadRow(item: download)
                     .padding(12)
-                    .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .appCard()
                     .padding(.top, 12)
             }
             InLibrarySection(apps: inLibrary, showsUpdates: true)

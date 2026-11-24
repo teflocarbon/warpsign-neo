@@ -1,10 +1,14 @@
 import SwiftUI
 
-/// The App Store tab: search the store and its charts, see your account and
-/// the apps it has got, and get apps into the library to sign. Browsing
-/// needs no Apple ID; getting apps does, through ipatool.
+/// The App Store tab: search the store, browse its charts and the apps the
+/// account has got, and get apps into the library to sign. Browsing needs
+/// no Apple ID; getting apps does, through ipatool.
+///
+/// One list: a row of chips (which store, and what to show), then that, or
+/// the search's results while there's a search.
 struct AppStoreView: View {
     @Environment(AccountStore.self) private var account
+    @State private var shelf = StoreShelf.free
     @State private var term = ""
     @State private var searchedTerm = ""
     @State private var results: [CatalogApp] = []
@@ -12,37 +16,31 @@ struct AppStoreView: View {
     @State private var foundIn: String?
     @State private var searching = false
     @State private var searchError: String?
-    @State private var chartErrors: [AppStoreCatalog.Chart: String] = [:]
+    @State private var shelfError: String?
     @State private var signingIn = false
+    @State private var showingAccount = false
 
     private var store: AppStoreModel { .shared }
 
     var body: some View {
         NavigationStack {
             Group {
-                if !AppStoreEngine.isAvailable {
+                if AppStoreEngine.isAvailable {
+                    list
+                } else {
                     ContentUnavailableView(
                         "No App Store in This Build",
                         systemImage: "bag",
                         description: Text("This build of WarpSign was made without ipatool.")
                     )
-                } else if !searchedTerm.isEmpty {
-                    searchResults
-                } else {
-                    home
                 }
             }
             .navigationTitle("App Store")
-            .searchable(text: $term, prompt: "Apps, Links, IDs, Bundle IDs")
+            .searchable(text: $term, placement: .navigationBarDrawer(displayMode: .always), prompt: "Apps, Links, IDs, Bundle IDs")
             .searchSuggestions { recentSearches }
             .onSubmit(of: .search) { search(term) }
             .onChange(of: term) { _, term in
-                if term.isEmpty {
-                    searchedTerm = ""
-                    results = []
-                    foundIn = nil
-                    searchError = nil
-                }
+                if term.isEmpty { clearSearch() }
             }
             .onChange(of: store.country) {
                 if !searchedTerm.isEmpty { search(searchedTerm) }
@@ -52,9 +50,8 @@ struct AppStoreView: View {
                     accountButton
                 }
             }
-            .sheet(isPresented: $signingIn) {
-                StoreSignInView()
-            }
+            .sheet(isPresented: $signingIn) { StoreSignInView() }
+            .sheet(isPresented: $showingAccount) { StoreAccountView() }
             .task {
                 if store.account == .unknown {
                     await store.refreshAccount()
@@ -63,37 +60,14 @@ struct AppStoreView: View {
         }
     }
 
-    @ViewBuilder
-    private var accountButton: some View {
-        switch store.account {
-        case .signedIn(let info):
-            Menu {
-                Section(info.email) {
-                    Button(role: .destructive) {
-                        Task { await store.signOut() }
-                    } label: {
-                        Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
-                    }
-                }
-            } label: {
-                Image(systemName: "person.crop.circle.fill")
-            }
-        case .signedOut:
-            Button {
-                signingIn = true
-            } label: {
-                Image(systemName: "person.crop.circle")
-            }
-        case .unknown:
-            EmptyView()
-        }
-    }
-
-    // MARK: Home
-
-    private var home: some View {
+    private var list: some View {
         List {
-            accountSection
+            Section {
+                chips
+            }
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets())
+
             if !store.downloads.isEmpty {
                 Section("Downloading") {
                     ForEach(store.downloads.values.sorted { $0.app.name < $1.app.name }, id: \.app.id) { download in
@@ -105,119 +79,177 @@ struct AppStoreView: View {
                     }
                 }
             }
-            if store.signedInAccount != nil {
-                Section {
-                    NavigationLink {
-                        OwnedAppsView()
-                    } label: {
-                        Label("Purchased", systemImage: "square.stack")
-                    }
-                } footer: {
-                    Text("The apps your Apple ID has got, free or paid.")
-                }
-            }
-            ForEach(AppStoreCatalog.Chart.allCases) { chart in
-                chartSection(chart)
-            }
-            StoreCountrySection()
-            Section {
-                LabeledContent("Emulator", value: emulatorStatus)
-                if let readying = store.readying {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                        Text(readying).foregroundStyle(.secondary)
-                    }
-                }
-            } header: {
-                Text("Getting Apps")
-            } footer: {
-                Text("Signing in and getting apps run Apple's own code in Unicorn, an emulator WarpSign downloads once (about 2 MB) and signs with your development certificate. Searching needs none of this.")
-            }
-        }
-        .refreshable { await loadCharts(refresh: true) }
-        .task(id: store.country) { await loadCharts(refresh: false) }
-    }
 
-    /// The first few of a chart, and the rest a tap away
-    @ViewBuilder
-    private func chartSection(_ chart: AppStoreCatalog.Chart) -> some View {
-        Section {
-            if let apps = store.chart(chart) {
-                ForEach(Array(apps.prefix(5).enumerated()), id: \.element.id) { index, app in
-                    NavigationLink {
-                        StoreAppView(app: app)
-                    } label: {
-                        StoreAppRow(app: app, rank: index + 1)
-                    }
-                }
-                if apps.count > 5 {
-                    NavigationLink("See All") {
-                        StoreChartView(chart: chart)
-                    }
-                }
-            } else if let error = chartErrors[chart] {
-                Label(error, systemImage: "wifi.exclamationmark")
-                    .foregroundStyle(.secondary)
+            if searchedTerm.isEmpty {
+                shelfContent
             } else {
-                ProgressView().frame(maxWidth: .infinity)
+                searchContent
             }
-        } header: {
-            Text("\(chart.title) in \(countryName)")
+        }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(16)
+        .refreshable {
+            if searchedTerm.isEmpty { await loadShelf(refresh: true) }
+        }
+        .task(id: "\(store.country)/\(shelf)/\(store.signedInAccount?.email ?? "")") {
+            if searchedTerm.isEmpty { await loadShelf(refresh: false) }
         }
     }
 
-    private func loadCharts(refresh: Bool) async {
-        for chart in AppStoreCatalog.Chart.allCases {
-            do {
-                try await store.loadChart(chart, refresh: refresh)
-                chartErrors[chart] = nil
-            } catch {
-                chartErrors[chart] = error.localizedDescription
+    // MARK: Chips
+
+    private var chips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                countryChip
+                if searchedTerm.isEmpty {
+                    ForEach(StoreShelf.allCases) { item in
+                        StoreChip(title: item.title, systemImage: item.systemImage, selected: shelf == item) {
+                            shelf = item
+                        }
+                    }
+                }
             }
+            .padding(.vertical, 4)
         }
+        .contentMargins(.horizontal, 20, for: .scrollContent)
     }
 
-    private var emulatorStatus: String {
-        if store.isReady { return "Ready" }
-        if UnicornRuntime.isReady { return "Ready, App Store not loaded yet" }
-        return UnicornRuntime.isDownloaded ? "Sets up when needed" : "Downloads when needed (2 MB)"
+    private var countryChip: some View {
+        Menu {
+            Picker("Store", selection: Binding(
+                get: { store.chosenCountry },
+                set: { store.chosenCountry = $0 }
+            )) {
+                Text("\(store.signedInAccount == nil ? "This iPhone's" : "Your Apple ID's") (\(StoreCountry.name(store.accountCountry)))")
+                    .tag(String?.none)
+                Divider()
+                ForEach(StoreCountry.all, id: \.self) { code in
+                    Text("\(StoreCountry.flag(code)) \(StoreCountry.name(code))").tag(Optional(code))
+                }
+            }
+        } label: {
+            StoreChipLabel(selected: false) {
+                Text(StoreCountry.flag(store.country))
+                Text(StoreCountry.name(store.country))
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
-    private var accountSection: some View {
-        Section {
-            switch store.account {
-            case .unknown:
-                ProgressView()
-            case .signedIn(let info):
-                HStack(spacing: 12) {
-                    Image(systemName: "person.crop.circle.fill")
-                        .font(.system(size: 40))
-                        .foregroundStyle(.tint)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(info.name.isEmpty ? info.email : info.name).font(.headline)
-                        Text(info.email).font(.subheadline).foregroundStyle(.secondary)
-                        Text("\(StoreCountry.name(store.accountCountry)) App Store")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+    private var accountButton: some View {
+        switch store.account {
+        case .signedIn(let info):
+            Button {
+                showingAccount = true
+            } label: {
+                Text(String((info.name.isEmpty ? info.email : info.name).prefix(1)).uppercased())
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 30, height: 30)
+                    .background(Color.gray, in: Circle())
+            }
+            .accessibilityLabel("App Store Account")
+        case .signedOut:
+            Button("Sign In") { signingIn = true }
+        case .unknown:
+            EmptyView()
+        }
+    }
+
+    // MARK: Charts and purchases
+
+    @ViewBuilder
+    private var shelfContent: some View {
+        switch shelf {
+        case .free, .paid:
+            let chart = shelf == .free ? AppStoreCatalog.Chart.free : .paid
+            if let apps = store.chart(chart) {
+                Section {
+                    ForEach(Array(apps.enumerated()), id: \.element.id) { index, app in
+                        appLink(app, rank: index + 1)
                     }
+                } header: {
+                    countHeader("\(chart.title) in \(StoreCountry.name(store.country))")
                 }
-                .padding(.vertical, 4)
-            case .signedOut:
+            } else {
+                loadingOrError
+            }
+        case .purchased:
+            purchasedContent
+        }
+    }
+
+    @ViewBuilder
+    private var purchasedContent: some View {
+        if store.signedInAccount == nil {
+            Section {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Not Signed In").font(.headline)
-                    Text("Sign in with the Apple ID you use in the App Store to get apps into your library. You can search and look at apps without signing in.")
-                        .font(.subheadline)
+                    Text("Sign in with the Apple ID you use in the App Store to see the apps it has got, and get them into your library.")
                         .foregroundStyle(.secondary)
                     Button("Sign In") { signingIn = true }
                         .buttonStyle(.borderedProminent)
                 }
+                .padding(.vertical, 6)
+            }
+        } else if let owned = store.owned {
+            Section {
+                if owned.isEmpty {
+                    Text("Apps your Apple ID gets show up here.").foregroundStyle(.secondary)
+                }
+                ForEach(owned) { app in
+                    appLink(app, country: store.accountCountry)
+                }
+            } header: {
+                countHeader(store.ownedTotal > owned.count
+                            ? "\(owned.count) most recent of \(store.ownedTotal)"
+                            : "\(owned.count) apps")
+            }
+        } else {
+            loadingOrError
+        }
+    }
+
+    @ViewBuilder
+    private var loadingOrError: some View {
+        Section {
+            if let shelfError {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(shelfError, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                    Button("Try Again") { Task { await loadShelf(refresh: true) } }
+                }
                 .padding(.vertical, 4)
+            } else {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text(shelf == .purchased ? (store.readying ?? "Getting your apps") : "Loading")
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
             }
         }
     }
 
-    private var countryName: String { StoreCountry.name(store.country) }
+    private func loadShelf(refresh: Bool) async {
+        shelfError = nil
+        do {
+            switch shelf {
+            case .free: try await store.loadChart(.free, refresh: refresh)
+            case .paid: try await store.loadChart(.paid, refresh: refresh)
+            case .purchased:
+                guard store.signedInAccount != nil, refresh || store.owned == nil else { return }
+                try await store.loadOwned(identity: account.identities[.development]?.data)
+            }
+        } catch {
+            shelfError = error.userMessage
+        }
+    }
 
     // MARK: Search
 
@@ -241,41 +273,37 @@ struct AppStoreView: View {
     }
 
     @ViewBuilder
-    private var searchResults: some View {
+    private var searchContent: some View {
         if searching && results.isEmpty {
-            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            Section {
+                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 8)
+            }
         } else if let searchError {
-            ContentUnavailableView {
-                Label("Couldn't Search", systemImage: "wifi.exclamationmark")
-            } description: {
-                Text(searchError)
-            } actions: {
-                Button("Try Again") { search(searchedTerm) }
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(searchError, systemImage: "wifi.exclamationmark").foregroundStyle(.secondary)
+                    Button("Try Again") { search(searchedTerm) }
+                }
+                .padding(.vertical, 4)
             }
         } else if results.isEmpty {
-            ContentUnavailableView {
-                Label("No Results", systemImage: "magnifyingglass")
-            } description: {
-                Text("Nothing for “\(searchedTerm)” in the \(countryName) App Store. You can also search with an App Store link, an App Store ID or a bundle ID.")
+            Section {
+                Text("Nothing for “\(searchedTerm)” in the \(StoreCountry.name(store.country)) App Store. You can also search with an App Store link, an App Store ID or a bundle ID.")
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 4)
             }
         } else {
-            List {
-                Section {
-                    ForEach(results) { app in
-                        NavigationLink {
-                            StoreAppView(app: app, country: foundIn)
-                        } label: {
-                            StoreAppRow(app: app)
-                        }
-                    }
-                } header: {
-                    if let foundIn {
-                        Text("Not in the \(countryName) App Store. Found in the \(StoreCountry.name(foundIn)) one.")
-                            .textCase(nil)
-                    }
+            Section {
+                ForEach(results) { app in
+                    appLink(app, country: foundIn)
+                }
+            } header: {
+                countHeader(results.count == 1 ? "1 result" : "\(results.count) results")
+            } footer: {
+                if let foundIn {
+                    Text("Not in the \(StoreCountry.name(store.country)) App Store. Found in the \(StoreCountry.name(foundIn)) one.")
                 }
             }
-            .listStyle(.plain)
         }
     }
 
@@ -285,6 +313,7 @@ struct AppStoreView: View {
         searchedTerm = text
         searching = true
         searchError = nil
+        results = []
         store.remember(search: text)
         Task {
             do {
@@ -295,19 +324,182 @@ struct AppStoreView: View {
                 foundIn = found.foundIn
             } catch {
                 guard searchedTerm == text else { return }
-                results = []
                 foundIn = nil
                 searchError = error.localizedDescription
             }
             searching = false
         }
     }
+
+    private func clearSearch() {
+        searchedTerm = ""
+        results = []
+        foundIn = nil
+        searchError = nil
+    }
+
+    // MARK: Pieces
+
+    private func appLink(_ app: CatalogApp, rank: Int? = nil, country: String? = nil) -> some View {
+        NavigationLink {
+            StoreAppView(app: app, country: country)
+        } label: {
+            StoreAppRow(app: app, rank: rank)
+        }
+    }
+
+    private func countHeader(_ text: String) -> some View {
+        Text(text)
+            .font(.subheadline.weight(.medium))
+            .textCase(nil)
+    }
 }
 
-/// Country names for stores
+/// What the tab shows when there's no search
+enum StoreShelf: String, CaseIterable, Identifiable {
+    case free, paid, purchased
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .free: "Top Free"
+        case .paid: "Top Paid"
+        case .purchased: "Purchased"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .free: "chart.line.uptrend.xyaxis"
+        case .paid: "dollarsign.circle"
+        case .purchased: "bag"
+        }
+    }
+}
+
+/// A capsule to choose with, filled when chosen
+struct StoreChip: View {
+    let title: String
+    var systemImage: String? = nil
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            StoreChipLabel(selected: selected) {
+                if let systemImage {
+                    Image(systemName: systemImage).font(.footnote.weight(.semibold))
+                }
+                Text(title)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct StoreChipLabel<Content: View>: View {
+    let selected: Bool
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        HStack(spacing: 5) {
+            content
+        }
+        .font(.subheadline.weight(.medium))
+        .foregroundStyle(selected ? Color(.systemBackground) : .primary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(
+            selected ? AnyShapeStyle(Color.primary) : AnyShapeStyle(Color(.secondarySystemGroupedBackground)),
+            in: Capsule()
+        )
+        .contentShape(Capsule())
+    }
+}
+
+/// The signed-in account, and the emulator getting apps needs
+struct StoreAccountView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private var store: AppStoreModel { .shared }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if let info = store.signedInAccount {
+                    Section {
+                        HStack(spacing: 14) {
+                            Text(String((info.name.isEmpty ? info.email : info.name).prefix(1)).uppercased())
+                                .font(.title2.weight(.semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 52, height: 52)
+                                .background(Color.gray, in: Circle())
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(info.name.isEmpty ? info.email : info.name).font(.headline)
+                                if !info.name.isEmpty {
+                                    Text(info.email).font(.subheadline).foregroundStyle(.secondary)
+                                }
+                                Text("\(StoreCountry.flag(store.accountCountry)) \(StoreCountry.name(store.accountCountry)) App Store")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    } footer: {
+                        Text("Apps are got from this account's store, whichever store you browse.")
+                    }
+                    Section {
+                        Button("Sign Out", role: .destructive) {
+                            Task {
+                                await store.signOut()
+                                dismiss()
+                            }
+                        }
+                    }
+                }
+                Section {
+                    LabeledContent("Emulator", value: emulatorStatus)
+                    if let readying = store.readying {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text(readying).foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Getting Apps")
+                } footer: {
+                    Text("Signing in and getting apps run Apple's own code in Unicorn, an emulator WarpSign downloads once (about 2 MB) and signs with your development certificate. Browsing needs none of this.")
+                }
+            }
+            .navigationTitle("Account")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var emulatorStatus: String {
+        if store.isReady { return "Ready" }
+        if UnicornRuntime.isReady { return "Loaded" }
+        return UnicornRuntime.isDownloaded ? "Sets up when needed" : "Downloads when needed"
+    }
+}
+
+/// Country names and flags for stores
 enum StoreCountry {
     static func name(_ code: String) -> String {
         Locale.current.localizedString(forRegionCode: code) ?? code
+    }
+
+    /// The flag emoji, from the code's letters
+    static func flag(_ code: String) -> String {
+        String(String.UnicodeScalarView(code.uppercased().unicodeScalars.compactMap {
+            UnicodeScalar(0x1F1E6 - 0x41 + $0.value)
+        }))
     }
 
     /// Every store, by name
@@ -316,127 +508,52 @@ enum StoreCountry {
     }
 }
 
-/// Which country's App Store to browse
-struct StoreCountrySection: View {
-    private var store: AppStoreModel { .shared }
-
-    var body: some View {
-        Section {
-            Picker("Store", selection: Binding(
-                get: { store.chosenCountry },
-                set: { store.chosenCountry = $0 }
-            )) {
-                Text(store.signedInAccount == nil
-                     ? "This iPhone's (\(StoreCountry.name(store.accountCountry)))"
-                     : "Your Apple ID's (\(StoreCountry.name(store.accountCountry)))")
-                    .tag(String?.none)
-                ForEach(StoreCountry.all, id: \.self) { code in
-                    Text(StoreCountry.name(code)).tag(Optional(code))
-                }
-            }
-            .pickerStyle(.navigationLink)
-        } footer: {
-            Text("Search and the charts show this country's App Store. Getting an app always uses your Apple ID's own store, which may not have it.")
-        }
-    }
-}
-
-/// A whole chart, up to 100 apps
-struct StoreChartView: View {
-    let chart: AppStoreCatalog.Chart
-    @State private var error: String?
-
-    private var store: AppStoreModel { .shared }
-
-    var body: some View {
-        Group {
-            if let apps = store.chart(chart) {
-                List(Array(apps.enumerated()), id: \.element.id) { index, app in
-                    NavigationLink {
-                        StoreAppView(app: app)
-                    } label: {
-                        StoreAppRow(app: app, rank: index + 1)
-                    }
-                }
-                .listStyle(.plain)
-                .refreshable { await load(refresh: true) }
-            } else if let error {
-                ContentUnavailableView {
-                    Label("Couldn't Get the Chart", systemImage: "wifi.exclamationmark")
-                } description: {
-                    Text(error)
-                } actions: {
-                    Button("Try Again") { Task { await load(refresh: true) } }
-                }
-            } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-        .navigationTitle("\(chart.title) in \(StoreCountry.name(store.country))")
-        .navigationBarTitleDisplayMode(.inline)
-        .task(id: store.country) { await load(refresh: false) }
-    }
-
-    private func load(refresh: Bool) async {
-        error = nil
-        do {
-            try await store.loadChart(chart, refresh: refresh)
-        } catch {
-            self.error = error.localizedDescription
-        }
-    }
-}
-
-/// An app in a list: icon, name, developer, rating, and Get
+/// An app in a list: icon, name, category, version and size, and Get
 struct StoreAppRow: View {
     let app: CatalogApp
     /// Its place in a chart
     var rank: Int? = nil
 
+    private var details: String {
+        var parts: [String] = []
+        if let rating = app.averageUserRating, let count = app.userRatingCount, count > 0 {
+            parts.append("★ \(rating.formatted(.number.precision(.fractionLength(1))))")
+        }
+        if let version = app.version { parts.append("v\(version)") }
+        if let size = app.size { parts.append(ByteCountFormatter.file(size)) }
+        return parts.joined(separator: " · ")
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             if let rank {
                 Text("\(rank)")
-                    .font(.headline.monospacedDigit())
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
                     .foregroundStyle(.secondary)
-                    .frame(minWidth: 24, alignment: .trailing)
+                    .frame(minWidth: 22, alignment: .center)
             }
-            RemoteIconView(url: app.iconURL, size: 60)
+            RemoteIconView(url: app.iconURL, size: 56)
             VStack(alignment: .leading, spacing: 2) {
-                Text(app.name).font(.headline).lineLimit(1)
-                if let developer = app.developer {
-                    Text(developer).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                Text(app.name)
+                    .font(.body.weight(.semibold))
+                    .lineLimit(2)
+                if let subtitle = app.primaryGenreName ?? app.developer {
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-                if let rating = app.averageUserRating, let count = app.userRatingCount, count > 0 {
-                    HStack(spacing: 4) {
-                        StarRating(rating: rating)
-                        Text(count.formatted(.number.notation(.compactName)))
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                } else if let genre = app.primaryGenreName {
-                    Text(genre).font(.caption).foregroundStyle(.secondary)
+                if !details.isEmpty {
+                    Text(details)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
                 }
             }
             Spacer(minLength: 8)
             StoreGetButton(app: app)
         }
-        .padding(.vertical, 2)
-    }
-}
-
-/// Five stars, filled to the rating
-struct StarRating: View {
-    let rating: Double
-
-    var body: some View {
-        HStack(spacing: 1) {
-            ForEach(0..<5) { index in
-                let fill = rating - Double(index)
-                Image(systemName: fill >= 0.75 ? "star.fill" : fill >= 0.25 ? "star.leadinghalf.filled" : "star")
-            }
-        }
-        .imageScale(.small)
+        .padding(.vertical, 4)
     }
 }
 
@@ -574,75 +691,3 @@ struct StoreSignInView: View {
     }
 }
 
-/// The apps the account has got
-struct OwnedAppsView: View {
-    @Environment(AccountStore.self) private var account
-    @State private var error: String?
-    @State private var loading = false
-
-    private var store: AppStoreModel { .shared }
-
-    var body: some View {
-        Group {
-            if let owned = store.owned {
-                if owned.isEmpty {
-                    ContentUnavailableView("No Apps", systemImage: "square.stack", description: Text("Apps your Apple ID gets show up here."))
-                } else {
-                    List {
-                        Section {
-                            ForEach(owned) { app in
-                                NavigationLink {
-                                    StoreAppView(app: app, country: store.accountCountry)
-                                } label: {
-                                    StoreAppRow(app: app)
-                                }
-                            }
-                        } footer: {
-                            if store.ownedTotal > owned.count {
-                                Text("The \(owned.count) most recent of \(store.ownedTotal).")
-                            }
-                        }
-                    }
-                    .listStyle(.plain)
-                }
-            } else if let error {
-                ContentUnavailableView {
-                    Label("Couldn't List Your Apps", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(error)
-                } actions: {
-                    Button("Try Again") { load() }
-                }
-            } else {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text(store.readying ?? "Getting your apps")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-        .navigationTitle("Purchased")
-        .refreshable { await reload() }
-        .onAppear {
-            if store.owned == nil { load() }
-        }
-    }
-
-    private func load() {
-        guard !loading else { return }
-        Task { await reload() }
-    }
-
-    private func reload() async {
-        loading = true
-        error = nil
-        do {
-            try await store.loadOwned(identity: account.identities[.development]?.data)
-        } catch {
-            self.error = error.userMessage
-        }
-        loading = false
-    }
-}

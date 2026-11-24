@@ -1,8 +1,8 @@
 import SwiftUI
 
-// An app's page, laid out like the App Store's: header with Get, the
-// essentials at a glance, what's new, screenshots, the description and
-// information. Sources' apps (SourceAppView) and App Store apps
+// An app's page: a header card with Get and the essentials at a glance,
+// then what's new, screenshots, the description and information, each in
+// a card of its own on the grouped background. Sources' apps (SourceAppView) and App Store apps
 // (StoreAppView) are both built from these pieces, so they look and
 // behave alike.
 
@@ -34,9 +34,10 @@ struct AppPage<Content: View, Action: View>: View {
             VStack(alignment: .leading, spacing: 0) {
                 content
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 16)
             .padding(.bottom, 32)
         }
+        .background(Color(.systemGroupedBackground))
         .modifier(HeaderVisibility(hidden: $headerHidden))
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -54,11 +55,13 @@ struct AppPage<Content: View, Action: View>: View {
     }
 }
 
-/// Icon, name, who makes it, where it's from, and Get
+/// The header card: icon, name, who makes it, where it's from, Get and a
+/// menu, and the essentials at a glance underneath
 struct AppPageHeader<Origin: View, Action: View, Menu: View>: View {
     let iconURL: String?
     let name: String
     let subtitle: String?
+    let stats: [AppStat]
     let origin: Origin
     let action: Action
     let menu: Menu
@@ -67,6 +70,7 @@ struct AppPageHeader<Origin: View, Action: View, Menu: View>: View {
         iconURL: String?,
         name: String,
         subtitle: String?,
+        stats: [AppStat] = [],
         @ViewBuilder origin: () -> Origin,
         @ViewBuilder action: () -> Action,
         @ViewBuilder menu: () -> Menu = { EmptyView() }
@@ -74,33 +78,65 @@ struct AppPageHeader<Origin: View, Action: View, Menu: View>: View {
         self.iconURL = iconURL
         self.name = name
         self.subtitle = subtitle
+        self.stats = stats
         self.origin = origin()
         self.action = action()
         self.menu = menu()
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            RemoteIconView(url: iconURL, size: 112)
-                .contextMenu { menu }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(name)
-                    .font(.title2.weight(.bold))
-                    .lineLimit(2)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 16) {
+                RemoteIconView(url: iconURL, size: 96)
+                    .contextMenu { menu }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(name)
+                        .font(.title2.weight(.bold))
                         .lineLimit(2)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    origin
+                    Spacer(minLength: 10)
+                    HStack {
+                        action
+                        Spacer(minLength: 8)
+                        if Menu.self != EmptyView.self {
+                            SwiftUI.Menu {
+                                menu
+                            } label: {
+                                Image(systemName: "ellipsis")
+                                    .font(.body.weight(.semibold))
+                                    .frame(width: 34, height: 34)
+                                    .background(.fill.tertiary, in: Circle())
+                            }
+                        }
+                    }
                 }
-                origin
-                Spacer(minLength: 8)
-                action
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            .frame(minHeight: 96)
+            if !stats.isEmpty {
+                Divider().padding(.top, 16)
+                AppStatsStrip(items: stats).padding(.top, 12)
+            }
         }
-        .frame(minHeight: 112)
+        .padding(16)
+        .appCard()
         .padding(.top, 8)
+    }
+}
+
+extension View {
+    /// A card on the grouped background, as the app page's sections
+    func appCard() -> some View {
+        background(
+            Color(.secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+        )
     }
 }
 
@@ -179,40 +215,35 @@ struct AppStat {
     }
 }
 
-/// Short values with their units and context underneath, as the App
-/// Store's strip has them
+/// Short values with their units and context underneath, in the header
+/// card
 struct AppStatsStrip: View {
     let items: [AppStat]
 
     var body: some View {
-        VStack(spacing: 0) {
-            Divider().padding(.top, 20)
-            HStack(spacing: 0) {
-                ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                    if index > 0 {
-                        Divider().frame(height: 40)
-                    }
-                    VStack(spacing: 3) {
-                        Text(item.label.uppercased())
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                        Text(item.value)
-                            .font(.title3.weight(.bold))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.6)
-                        Text(item.detail)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 4)
-                    .frame(maxWidth: .infinity)
+        HStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                if index > 0 {
+                    Divider().frame(height: 40)
                 }
+                VStack(spacing: 3) {
+                    Text(item.label)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Text(item.value)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.primary.opacity(0.8))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                    Text(item.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 4)
+                .frame(maxWidth: .infinity)
             }
-            .padding(.vertical, 12)
-            Divider()
         }
     }
 }
@@ -257,7 +288,7 @@ struct AppScreenshots: View {
 
     var body: some View {
         if !urls.isEmpty {
-            AppPageSection("Preview") {
+            AppPageSection("Preview", card: false) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(urls, id: \.self) { url in
@@ -277,8 +308,8 @@ struct AppScreenshots: View {
                     .scrollTargetLayout()
                 }
                 .scrollTargetBehavior(.viewAligned)
-                .padding(.horizontal, -20)
-                .contentMargins(.horizontal, 20, for: .scrollContent)
+                .padding(.horizontal, -16)
+                .contentMargins(.horizontal, 16, for: .scrollContent)
             }
         }
     }
@@ -341,27 +372,56 @@ struct AppGetPill: View {
                 .padding(.horizontal, large ? 18 : 6)
                 .padding(.vertical, large ? 2 : 0)
         }
-        .buttonStyle(.bordered)
         .buttonBorderShape(.capsule)
+        .modifier(GetPillStyle(prominent: large))
     }
 }
 
-/// A titled section, as the App Store's
+/// Filled in the header, quiet in lists
+private struct GetPillStyle: ViewModifier {
+    let prominent: Bool
+
+    func body(content: Content) -> some View {
+        if prominent {
+            content.buttonStyle(.borderedProminent)
+        } else {
+            content.buttonStyle(.bordered)
+        }
+    }
+}
+
+/// A titled section, in a card unless it's one of its own (screenshots)
 struct AppPageSection<Content: View>: View {
     let title: String
+    var card = true
     let content: Content
 
-    init(_ title: String, @ViewBuilder content: () -> Content) {
+    init(_ title: String, card: Bool = true, @ViewBuilder content: () -> Content) {
         self.title = title
+        self.card = card
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.title2.weight(.bold))
+                .font(.title3.weight(.bold))
                 .padding(.top, 24)
-            content
+                .padding(.leading, 4)
+            if card {
+                VStack(alignment: .leading, spacing: 10) {
+                    content
+                }
+                // Rows end in a divider: the last one's is cut off
+                .padding(.bottom, -1)
+                .clipped()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .appCard()
+            } else {
+                content
+            }
         }
     }
 }
