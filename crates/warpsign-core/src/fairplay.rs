@@ -779,7 +779,7 @@ fn with_extension_suffix(path: &Path, suffix: &str) -> PathBuf {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// AES-128-CBC encrypt, no padding (test-only; the module only decrypts).
@@ -840,7 +840,7 @@ mod tests {
 
     /// A thin arm64 Mach-O with one LC_ENCRYPTION_INFO_64; returns the buffer
     /// and the file offset of its `cryptid` field.
-    fn build_macho(cryptoff: usize, cryptsize: usize, subtype: u32) -> (Vec<u8>, usize) {
+    pub(crate) fn build_macho(cryptoff: usize, cryptsize: usize, subtype: u32) -> (Vec<u8>, usize) {
         let mut enc = Vec::new();
         enc.extend(LC_ENCRYPTION_INFO_64.to_le_bytes());
         enc.extend(0x18u32.to_le_bytes()); // cmdsize (24: the struct has a pad word)

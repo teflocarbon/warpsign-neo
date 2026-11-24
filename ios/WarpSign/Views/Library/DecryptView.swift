@@ -16,15 +16,6 @@ struct DecryptView: View {
         decrypt.appId == app.id ? decrypt.phase : nil
     }
 
-    /// Its download into the library, once handed back
-    private var download: DownloadManager.Item? {
-        guard case .received = phase else { return nil }
-        return DownloadManager.shared.items.last {
-            if case .library(let origin, _, _, _, _, _, _, _) = $0.purpose { return origin == OnDeviceDecrypt.origin }
-            return false
-        }
-    }
-
     var body: some View {
         List {
             Section {
@@ -86,12 +77,16 @@ struct DecryptView: View {
                 } footer: {
                     Text("If it stopped with an error, it says why. Most often: the Apple ID that got \(app.displayName) isn't the one signed in to the App Store on this \(UIDevice.current.model).")
                 }
+            case .receiving(let name):
+                Section {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Adding \(name), decrypted, to your library…")
+                    }
+                }
             case .received(let name):
                 Section {
-                    if let download {
-                        DownloadRow(item: download)
-                    }
-                    Label("\(name), decrypted, is being added to your library.", systemImage: "checkmark.circle.fill")
+                    Label("\(name), decrypted, is in your library.", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                     Button("Done") {
                         decrypt.finish()

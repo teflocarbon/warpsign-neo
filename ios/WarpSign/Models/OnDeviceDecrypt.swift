@@ -9,8 +9,13 @@ import UIKit
 /// helper has iOS decrypt the app with its own App Store licence (the Apple
 /// ID that bought it has to be signed in to the App Store here), packs it
 /// and hands it back: it serves the IPA on loopback and opens
-/// `warpsign://decrypted?url=…&name=…`, which WarpSign downloads into the
-/// library.
+/// `warpsign://decrypted?url=…&name=…`. WarpSign fetches it, puts its
+/// binaries into the original IPA, and adds that to the library.
+///
+/// The helper carries only what decrypting needs: the app's layout with its
+/// encrypted binaries, their Info.plists and the licence (SC_Info), not its
+/// images and other resources. So it hands back only the binaries, and the
+/// rest comes from the original.
 ///
 /// One decrypt at a time: the helper is the same app each time, installed
 /// over the last.
@@ -26,7 +31,9 @@ final class OnDeviceDecrypt {
         case ready(helper: URL)
         /// The helper was opened; waiting for it to hand the app back
         case waitingForHelper(helper: URL)
-        /// Handed back: downloading it into the library
+        /// Handed back: fetching it, and putting it into the original
+        case receiving(name: String)
+        /// In the library
         case received(name: String)
         case failed(String)
     }
@@ -41,6 +48,12 @@ final class OnDeviceDecrypt {
     static let origin = "Decrypted on This iPhone"
 
     private init() {}
+
+    @ObservationIgnored private var library: LibraryStore?
+
+    func attach(library: LibraryStore) {
+        self.library = library
+    }
 
     private static var folder: URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("DecryptHelper", isDirectory: true)
@@ -131,11 +144,58 @@ final class OnDeviceDecrypt {
               ["127.0.0.1", "localhost", "::1"].contains(url.host() ?? "")
         else { return false }
         let name = items.first(where: { $0.name == "name" })?.value ?? "App"
-        DownloadManager.shared.download(url, name: name, purpose: .library(
-            origin: Self.origin, sourceURL: nil, sourceAppId: nil, autoUpdate: false, link: nil
-        ))
-        phase = .received(name: name)
+        guard let appId else { return false }
+        phase = .receiving(name: name)
+        Task { await take(url, name: name, appId: appId) }
         return true
+    }
+
+    /// Fetch what the helper decrypted, put its binaries into the original
+    /// IPA, and add that to the library
+    private func take(_ url: URL, name: String, appId: UUID) async {
+        let folder = Self.folder.appendingPathComponent("back", isDirectory: true)
+        do {
+            guard let library, let app = library.app(appId) else {
+                throw WarpsignError.Ipa(message: "\(name) isn't in the library any more.")
+            }
+            try? FileManager.default.removeItem(at: folder)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try DiskSpace.ensure(Int64(clamping: app.installedSize &* 2 &+ app.fileSize), for: "Decrypting \(app.displayName)")
+
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 120
+            let (fetched, response) = try await URLSession.shared.download(for: request)
+            let handedBack = folder.appendingPathComponent("handed-back.ipa")
+            try FileManager.default.moveItem(at: fetched, to: handedBack)
+            if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                throw WarpsignError.Ipa(message: "The helper answered \(http.statusCode) when handing \(name) back. Open it again.")
+            }
+
+            let original = LibraryStore.ipaURL(of: appId)
+            let merged = folder.appendingPathComponent("\(name).ipa")
+            let work = folder.appendingPathComponent("work", isDirectory: true)
+            try await background {
+                _ = try mergeDecryptedIpa(
+                    originalIpaPath: original.path,
+                    decryptedIpaPath: handedBack.path,
+                    outputIpaPath: merged.path,
+                    workDir: work.path
+                )
+            }
+            try? FileManager.default.removeItem(at: work)
+            try? FileManager.default.removeItem(at: handedBack)
+
+            guard await library.importFile(merged, origin: Self.origin, move: true) != nil else {
+                throw WarpsignError.Ipa(message: library.importError ?? "\(name) couldn't be added to the library.")
+            }
+            try? FileManager.default.removeItem(at: folder)
+            guard self.appId == appId else { return }
+            phase = .received(name: name)
+        } catch {
+            try? FileManager.default.removeItem(at: folder)
+            guard self.appId == appId else { return }
+            phase = .failed(error.userMessage)
+        }
     }
 
     /// Done with it: forget the decrypt and its signed helper

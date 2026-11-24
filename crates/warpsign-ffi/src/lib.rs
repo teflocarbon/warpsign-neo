@@ -288,6 +288,28 @@ pub fn build_decrypt_helper(
     })
 }
 
+/// Put the binaries the decrypt helper handed back (its embedded layout,
+/// decrypted) into the original IPA, writing `output_ipa_path`. Fails if any
+/// encrypted binary didn't come back decrypted. Returns how many were replaced.
+#[uniffi::export]
+pub fn merge_decrypted_ipa(
+    original_ipa_path: String,
+    decrypted_ipa_path: String,
+    output_ipa_path: String,
+    work_dir: String,
+) -> Result<u32, WarpsignError> {
+    warpsign_core::decrypt_helper::merge_decrypted_ipa(
+        Path::new(&original_ipa_path),
+        Path::new(&decrypted_ipa_path),
+        Path::new(&output_ipa_path),
+        Path::new(&work_dir),
+    )
+    .map(|count| count as u32)
+    .map_err(|e| WarpsignError::Ipa {
+        message: e.to_string(),
+    })
+}
+
 /// How much `decrypt_ipa` decrypted
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct DecryptSummary {
