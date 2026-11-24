@@ -1,5 +1,6 @@
 //! Core logic for warpsign-neo, shared by the CLI and the iOS app.
 
+pub mod anisette;
 pub mod auth;
 pub mod bundle_mapping;
 pub mod capability_names;

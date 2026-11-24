@@ -1,6 +1,7 @@
 //! `warpsign`: sign iOS apps with your Apple Developer account from Linux,
 //! Windows or macOS.
 
+mod anisette;
 mod store;
 mod transport;
 
@@ -102,6 +103,20 @@ enum Command {
         /// Which device, if more than one is connected
         #[arg(long)]
         udid: Option<String>,
+    },
+    /// Make anisette (the device headers Apple sign-in wants) on this
+    /// computer, with Apple's Android ADI library run in Unicorn. Shows
+    /// which headers came back, never their values. Experimental.
+    Anisette {
+        /// A Unicorn 2 library (unicorn.dll, libunicorn.so or .dylib).
+        /// GPLv2: warpsign doesn't ship it
+        #[arg(long, env = "WARPSIGN_UNICORN")]
+        unicorn: PathBuf,
+        /// A folder with libstoreservicescore.so and libCoreADI.so
+        /// (arm64-v8a) [default: fetched from Apple once, kept in the
+        /// config folder]
+        #[arg(long)]
+        libraries: Option<PathBuf>,
     },
     /// Make a pairing file for WarpSign on a USB-connected iPhone or iPad,
     /// so it can install apps on itself (through LocalDevVPN)
@@ -290,6 +305,7 @@ fn run(cli: Cli) -> Result<()> {
             output,
             lockdown,
         } => pair(udid, output, lockdown),
+        Command::Anisette { unicorn, libraries } => anisette::probe(&store, &unicorn, libraries),
     }
 }
 

@@ -55,5 +55,22 @@ under the MIT License:
   in the Software without restriction. The Software is provided "as is",
   without warranty of any kind.
 
+crates/warpsign-core/src/anisette/ runs Apple's ADI libraries from Apple
+Music for Android (libstoreservicescore.so, libCoreADI.so) to make anisette
+data. The loader, the emulated libc and the ADI and provisioning wrappers
+there are our own code, written from the public interface — the obfuscated
+ADI export names, the error codes and the GrandSlam provisioning flow — as
+documented by Provision by Dadoum (https://github.com/Dadoum/Provision). No
+code was copied from Provision or any related project. Apple's libraries are
+not distributed with WarpSign: each user's device downloads them from Apple
+at run time. Running them needs an AArch64 emulator (Unicorn), which, being
+GPLv2-only, is likewise loaded at run time and never shipped (see the
+Unicorn note where present, and crates/warpsign-core/src/anisette/unicorn.rs).
+
+crates/warpsign-cli/src/apple-root-ca.cer is Apple Inc. Root Certificate,
+published by Apple at https://www.apple.com/certificateauthority/, included
+so the CLI can verify gsa.apple.com, which chains to it. It is Apple's
+certificate, used only to authenticate Apple's own servers.
+
 Rust dependencies keep their own licenses (MIT, Apache-2.0, MPL-2.0 and
 others), listed in each crate's metadata.

@@ -15,6 +15,8 @@ aes = "0.9"
 # Notarization (on by default) pulls in an AWS SDK we don't need
 apple-codesign = { version = "0.29", default-features = false }
 base64 = "0.22"
+# Anisette: Unicorn is GPLv2-only, so it is loaded at run time, never linked
+libloading = "0.8"
 cryptographic-message-syntax = "0.27"
 md-5 = "0.11"
 getrandom = "0.4.3"

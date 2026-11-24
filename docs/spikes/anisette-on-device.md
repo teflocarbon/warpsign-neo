@@ -12,19 +12,25 @@ on the keep-alive branch).
   from AuthKit on iOS holds `com.apple.authkit.client.private`, which a
   development profile can't carry. Nobody has published a test from a stock
   app, though, so this branch adds a probe to settle it on a real device.
-- **The Android ADI libraries in-process (route 2):** works on iOS. SideStore
-  ships it now, through Unicorn's interpreter (no JIT needed). We can't copy
-  that as it is, because Unicorn contains GPLv2-only code.
-- **A remote anisette v3 server (route 3):** the quickest working route.
-  The server never sees the Apple ID, but it does hold this "device's"
-  ADI identity.
+- **The Android ADI libraries in-process (route 2):** the machinery works —
+  this branch has a full Rust port that loads the libraries, runs them and
+  provisions against Apple — **but since about 20 November 2026 Apple
+  rejects the last provisioning step for every Android-ADI identity**, our
+  own included, with error −29003 "environment mismatch". So it can't make
+  usable anisette right now. It needs no JIT (Unicorn's interpreter), and we
+  wrote our own loader rather than copy anyone's GPL/LGPL code.
+- **A remote anisette v3 server (route 3):** the only route that works
+  today, because the servers that still pass Apple's gate derive anisette
+  from a Mac. The server never sees the Apple ID, but it holds this
+  "device's" ADI identity.
 
-**Recommendation:** run the probe first. If AuthKit refuses, as expected,
-start GrandSlam on an opt-in remote v3 server the user chooses, and keep
-route 2 as the on-device goal.
+**Recommendation:** run the probe first. Given Apple's −29003 block on
+Android-ADI, ship GrandSlam on an opt-in **Mac-based** remote v3 server the
+user chooses, and keep the in-process port (route 2) ready for if or when
+Apple reopens that path.
 
-Researched November 2026. Links are to the sources; nothing was copied from
-them.
+Researched and built November 2026. Links are to the sources; no code was
+copied from them.
 
 ## What anisette is
 
@@ -120,7 +126,8 @@ exports (provision, OTP):
   tvOS, visionOS and macOS. SideStore 0.6.4 (September 2026) made it the
   primary anisette source
   ([release](https://github.com/SideStore/SideStore/releases/tag/0.6.4)). So
-  in-process ADI on a stock iPhone is proven.
+  in-process ADI on a stock iPhone is proven to run — though Apple now
+  rejects what it produces at provisioning (see below).
 
 On iOS, there are two ways to run the arm64-v8a library.
 
@@ -159,6 +166,57 @@ Constraints for both:
   log or support bundle (Provision's README gives the same warning).
 - The ADI identity is a fake "Android device". Apple sees a new trusted
   machine, not this iPhone.
+
+### What this branch built, and what Apple does with it
+
+This branch has a from-scratch Rust port of route 2(b) in
+`crates/warpsign-core/src/anisette/`, with no code taken from the projects
+above:
+
+- `elf.rs` — a minimal AArch64 `.so` loader (segments, dynamic symbols,
+  RELA relocations).
+- `machine.rs` — the libraries loaded into Unicorn, with a small emulated
+  libc (files kept in memory, `malloc`, the pthread calls as no-ops, the
+  same ~30 functions Provision provides) reached through a code hook on a
+  page of `ret`s, so the Android code never touches the real system.
+- `adi.rs` — the obfuscated ADI exports wrapped as `start_provisioning`,
+  `end_provisioning`, `request_otp` and the rest.
+- `provisioning.rs` — the GrandSlam provisioning round trips.
+- `apk.rs` — fetching the two libraries from Apple's Apple Music APK with
+  HTTP range requests (a few MB, not the 142 MB APK), so Apple's binaries
+  are never shipped.
+- `mod.rs` — `AnisetteState` (the identity and `adi.pb`, kept secret) and
+  the headers.
+
+`warpsign anisette --unicorn <lib>` runs the whole thing. On a Windows PC
+on 24 November 2026, with Unicorn 2.1.4's interpreter and the arm64-v8a
+libraries, it:
+
+1. loaded both libraries and set up ADI in ~40 ms total;
+2. fetched a fresh `lookup` url-bag from `gsa.apple.com`;
+3. ran `startMachineProvisioning` — Apple **accepted** our emulated ADI's
+   `cpim` (HTTP 200);
+4. ran `finishMachineProvisioning` — Apple returned **HTTP 401, error
+   −29003 "environment mismatch"**.
+
+So the loader, the emulated libc, the ADI calls and two of the three Apple
+round trips all work; the emulator is running Apple's real ADI code and
+Apple's own server took its output through the first step. The wall is at
+the final step, and it isn't ours: SideStore #1745 and its comments
+(November 2026) report that since about 20 November Apple returns −29003 at
+`finishMachineProvisioning` for **every** Android-ADI identity — Dadoum's
+`anisette-v3-server`, `ani.sidestore.zip`, `ani.npeg.us` and self-hosted
+ones alike — while servers that derive anisette from a **Mac** still pass.
+This is the same campaign as the September `com.apple.dt.Xcode` block and
+the 20 November `macOS;`→`Mac OS X;` switch (see "Current GrandSlam quirks"):
+Apple is fingerprinting non-Apple provisioning. Changing the client-info
+string doesn't move −29003; the gate is on the Android ADI identity itself.
+
+Bottom line: in-process ADI is **built and proven up to Apple's gate**, but
+can't mint usable anisette while that gate is closed. The code is worth
+keeping — if Apple reopens the path (as it has wobbled before) it works
+immediately, and it's the only route with no third-party server — but it is
+not shippable today.
 
 ## Route 3 — a remote anisette v3 server
 
@@ -222,22 +280,27 @@ These apply to any GrandSlam client we write:
    AuthKit returns `X-Apple-I-MD` and `X-Apple-I-MD-M`, use it. Those are
    real device headers for this iPhone, the best possible identity.
 2. **If it's refused** (expected), build the GrandSlam client in
-   `warpsign-core` against an `AnisetteProvider` trait, and ship
-   **remote v3** first:
+   `warpsign-core` against an `AnisetteProvider` trait, with the in-process
+   ADI already written as one implementation. Ship **remote v3** first,
+   because Apple's −29003 block means that's the only one that works today:
    - opt-in, with a server URL the user enters;
+   - a **Mac-based** server (e.g. the jkcoxson family): Android-ADI servers
+     are blocked by the same −29003 as our in-process port;
    - client-side provisioning, as xtool does. xtool is MIT, so its client
      can be followed with credit in NOTICE;
    - `adi.pb` kept in the Keychain.
    The CLI can use the same trait. On macOS, omnisette's AOSKit approach
    (MPL-2.0) is available. Its `store_services_core` provider is not,
    because android-loader is unlicensed.
-3. **Route 2 as the on-device goal**, in its own spike:
-   - First, a JIT-native prototype (2a). StikDebug already works here, and
-     it would prove the loader, shims and ABI bridge quickly.
-   - Then decide whether a GPL-free interpreter (2b) is worth building to
-     drop the JIT requirement.
-   - Either way, no Unicorn, and Apple's libraries are downloaded by the
-     user's device, never shipped.
+3. **Keep the in-process ADI port (route 2) warm.** It's built and passes
+   Apple's first provisioning step; retry `finishMachineProvisioning`
+   periodically (the `warpsign anisette` probe is the check) and wire it in
+   as the preferred provider the moment Apple's −29003 gate lifts, since it
+   needs no third-party server. A note: licensing still rules out *shipping*
+   Unicorn (GPLv2-only, see the Unicorn note), so the iOS app would reuse
+   the run-time-downloaded Unicorn it already loads for ipatool, or we build
+   a GPL-free interpreter for the small instruction subset these libraries
+   use.
 4. **Keep the web portal session**, with its keep-alive, as the default
    until a GrandSlam route has been tested against a real account and
    device (AGENTS.md: behaviour that reaches Apple needs that).

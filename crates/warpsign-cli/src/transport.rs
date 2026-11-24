@@ -8,6 +8,30 @@ use std::time::Duration;
 
 use warpsign_core::portal::http::{Request, Response, Transport, TransportError};
 
+/// Apple Root CA (2006), as apple.com/appleca publishes it; SHA-256
+/// b0b1730ecbc7ff4505142c49f1295e6eda6bcaed7e2c68c5be91b5a11001f024.
+/// GrandSlam (gsa.apple.com) chains to it rather than to a public root, as
+/// Apple's devices trust it.
+const APPLE_ROOT_CA: &[u8] = include_bytes!("apple-root-ca.cer");
+
+/// The usual public roots, plus Apple's
+fn tls_config() -> std::sync::Arc<rustls::ClientConfig> {
+    let mut roots = rustls::RootCertStore {
+        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+    };
+    roots
+        .add(rustls::pki_types::CertificateDer::from(APPLE_ROOT_CA))
+        .expect("Apple Root CA is a valid certificate");
+    let provider = std::sync::Arc::new(rustls::crypto::ring::default_provider());
+    std::sync::Arc::new(
+        rustls::ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .expect("ring supports the default TLS versions")
+            .with_root_certificates(roots)
+            .with_no_client_auth(),
+    )
+}
+
 pub struct UreqTransport {
     agent: ureq::Agent,
     log: Option<Mutex<std::fs::File>>,
@@ -18,6 +42,7 @@ impl UreqTransport {
         Self {
             log: None,
             agent: ureq::AgentBuilder::new()
+                .tls_config(tls_config())
                 .redirects(0)
                 .timeout(Duration::from_secs(120))
                 .user_agent(concat!("warpsign/", env!("CARGO_PKG_VERSION")))
