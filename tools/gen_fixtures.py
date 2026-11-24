@@ -7,7 +7,9 @@ and writes its outputs to fixtures/*.json for the Rust tests to compare
 against.
 
 Usage:
-    python tools/gen_fixtures.py /path/to/warpsign
+    python tools/gen_fixtures.py /path/to/warpsign [--warpsign-fix-only]
+
+WarpsignFix and home indicator cases need LIEF, as Python warpsign does.
 """
 
 import base64
@@ -25,7 +27,8 @@ from pathlib import Path
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "fixtures"
 
-if len(sys.argv) != 2:
+ONLY_WARPSIGN_FIX = "--warpsign-fix-only" in sys.argv[2:]
+if len(sys.argv) != 2 + ONLY_WARPSIGN_FIX:
     sys.exit(__doc__)
 
 WARPSIGN_DIR = Path(sys.argv[1]).resolve()
@@ -1217,7 +1220,386 @@ def portal_cases() -> list:
     ]
 
 
+# --- WarpsignFix and ForceHideHomeIndicator injection ----------------------
+#
+# Mach-O binaries are built byte by byte, as in the Rust tests: no real
+# binaries in the repo. Each case runs the orchestrator's _setup_dylibs, then
+# patch_app_binary over the components in _sign_components' order, through
+# LIEF as Python warpsign does, and records every dylib command per slice.
+
+MH_MAGIC_64 = 0xFEEDFACF
+LC_SEGMENT_64 = 0x19
+LC_SYMTAB = 0x2
+LC_DYSYMTAB = 0xB
+LC_LOAD_DYLIB = 0xC
+LC_ID_DYLIB = 0xD
+LC_LOAD_WEAK_DYLIB = 0x80000018
+LC_ENCRYPTION_INFO_64 = 0x2C
+CPU_ARM64 = 0x0100000C
+TEXT_OFFSET = 0x4000
+LINKEDIT_OFFSET = 0x8000
+BINARY_SIZE = 0xC000
+DYLIB_COMMANDS = {LC_LOAD_DYLIB, LC_ID_DYLIB, LC_LOAD_WEAK_DYLIB, 0x8000001F, 0x20, 0x80000023}
+
+
+def _u32(*values) -> bytes:
+    return b"".join(v.to_bytes(4, "little") for v in values)
+
+
+def _u64(*values) -> bytes:
+    return b"".join(v.to_bytes(8, "little") for v in values)
+
+
+def _name16(name: str) -> bytes:
+    return name.encode().ljust(16, b"\0")
+
+
+def _segment(name, vmaddr, fileoff, filesize, section=None) -> bytes:
+    nsects = 1 if section else 0
+    body = _name16(name) + _u64(vmaddr, filesize, fileoff, filesize) + _u32(5, 5, nsects, 0)
+    if section:
+        offset, size = section
+        body += _name16("__text") + _name16(name) + _u64(vmaddr + offset, size)
+        body += _u32(offset, 2, 0, 0, 0x80000400, 0, 0, 0)
+    return _u32(LC_SEGMENT_64, 8 + len(body)) + body
+
+
+def _dylib_command(cmd: int, path: str, timestamp=2, current=0x10000, compat=0x10000) -> bytes:
+    name = path.encode() + b"\0"
+    size = (24 + len(name) + 7) // 8 * 8
+    return (_u32(cmd, size, 24, timestamp, current, compat) + name).ljust(size, b"\0")
+
+
+def macho(loads=(), dylib_id=None, cryptid=None, cpu_subtype=0) -> bytes:
+    """A small arm64 executable (or dylib, given an install name) loading
+    `loads`: (cmd, path) pairs, after libSystem"""
+    stroff = LINKEDIT_OFFSET + 16
+    commands = [
+        _u32(LC_SEGMENT_64, 72) + _name16("__PAGEZERO") + _u64(0, 0x100000000, 0, 0) + _u32(0, 0, 0, 0),
+        _segment("__TEXT", 0x100000000, 0, LINKEDIT_OFFSET, (TEXT_OFFSET, 4)),
+        _segment("__LINKEDIT", 0x100000000 + LINKEDIT_OFFSET, LINKEDIT_OFFSET, BINARY_SIZE - LINKEDIT_OFFSET),
+    ]
+    if dylib_id:
+        commands.append(_dylib_command(LC_ID_DYLIB, dylib_id))
+    commands.append(_u32(LC_SYMTAB, 24, LINKEDIT_OFFSET, 1, stroff, 8))
+    commands.append(_u32(LC_DYSYMTAB, 80, 0, 0, 0, 1, 1, 0) + _u32(*([0] * 12)))
+    if cryptid is not None:
+        commands.append(_u32(LC_ENCRYPTION_INFO_64, 24, TEXT_OFFSET, 0x10, cryptid, 0))
+    commands.append(_dylib_command(LC_LOAD_DYLIB, "/usr/lib/libSystem.B.dylib"))
+    for cmd, path in loads:
+        commands.append(_dylib_command(cmd, path))
+    body = b"".join(commands)
+    filetype = 6 if dylib_id else 2
+    header = _u32(MH_MAGIC_64, CPU_ARM64, cpu_subtype, filetype, len(commands), len(body), 0x00200085, 0)
+    data = bytearray((header + body).ljust(BINARY_SIZE, b"\0"))
+    data[TEXT_OFFSET : TEXT_OFFSET + 4] = bytes([0xC0, 0x03, 0x5F, 0xD6])  # ret
+    # One undefined symbol from libSystem (ordinal 1), named "_x"
+    data[LINKEDIT_OFFSET : LINKEDIT_OFFSET + 16] = _u32(1) + bytes([0x01, 0, 0x00, 0x01]) + _u64(0)
+    data[stroff : stroff + 8] = b"\0_x\0\0\0\0\0"
+    return bytes(data)
+
+
+def fat(*slices) -> bytes:
+    """A FAT binary of (cpu_subtype, thin bytes) slices, 0x4000-aligned"""
+    header = (0xCAFEBABE).to_bytes(4, "big") + len(slices).to_bytes(4, "big")
+    offset, body, entries = 0x4000, b"", b""
+    for subtype, data in slices:
+        for value in (CPU_ARM64, subtype, offset, len(data), 14):
+            entries += value.to_bytes(4, "big")
+        body = body.ljust(offset - 0x4000, b"\0") + data
+        offset = (offset + len(data) + 0x3FFF) // 0x4000 * 0x4000
+    return (header + entries).ljust(0x4000, b"\0") + body
+
+
+class _QuietConsole:
+    def log(self, *args, **kwargs):
+        pass
+
+    def print(self, *args, **kwargs):
+        pass
+
+
+def dylib_commands(path: Path) -> list:
+    """Every dylib command, in order, for each slice: as LIEF reads them"""
+    import lief
+
+    parsed = lief.MachO.parse(str(path))
+    binaries = [parsed.at(i) for i in range(parsed.size)]
+    slices = []
+    for binary in binaries:
+        commands = []
+        for command in binary.commands:
+            if isinstance(command, lief.MachO.DylibCommand):
+                commands.append(
+                    {
+                        "cmd": int(command.command),
+                        "path": command.name,
+                        "timestamp": command.timestamp,
+                        "current_version": list(command.current_version),
+                        "compatibility_version": list(command.compatibility_version),
+                    }
+                )
+        slices.append(commands)
+    return slices
+
+
+def injection_layouts() -> list:
+    weak = LC_LOAD_WEAK_DYLIB
+    load = LC_LOAD_DYLIB
+    return [
+        {
+            "name": "both options, every kind of component",
+            "inject_warpsign_fix": True,
+            "hide_home_indicator": True,
+            "files": {
+                "App": macho([(load, "@rpath/Foo.framework/Foo")]),
+                "Frameworks/Foo.framework/Foo": macho(dylib_id="@rpath/Foo.framework/Foo"),
+                "Frameworks/libbar.dylib": macho(dylib_id="@rpath/libbar.dylib"),
+                "PlugIns/Widget.appex/Widget": macho(),
+                "PlugIns/Widget.appex/Frameworks/Deep.framework/Deep": macho(
+                    dylib_id="@rpath/Deep.framework/Deep"
+                ),
+                "PlugIns/Loose.bundle/Loose": macho(),
+            },
+            # (executable, is_primary, is_main), in _sign_components' order:
+            # secondary components (deepest first), then primary ones
+            "components": [
+                ("PlugIns/Widget.appex/Frameworks/Deep.framework/Deep", False, False),
+                ("Frameworks/Foo.framework/Foo", False, False),
+                ("Frameworks/libbar.dylib", False, False),
+                ("PlugIns/Loose.bundle/Loose", False, False),
+                ("Frameworks/WarpsignFix.dylib", False, False),
+                ("Frameworks/WarpsignFixUI.dylib", False, False),
+                ("Frameworks/ForceHideHomeIndicator.dylib", False, False),
+                ("PlugIns/Widget.appex/Widget", True, False),
+                ("App", True, True),
+            ],
+        },
+        {
+            "name": "conflicting fix-ups and a re-sign",
+            "inject_warpsign_fix": True,
+            "hide_home_indicator": False,
+            "files": {
+                # Two conflicting loads: only the first goes. Already loads
+                # WarpsignFix from an earlier sign.
+                "App": fat(
+                    (
+                        0,
+                        macho(
+                            [
+                                (load, "@executable_path/Frameworks/pluginsinject.dylib"),
+                                (weak, "@rpath/zxPluginsInject.dylib"),
+                                (load, "@loader_path/Frameworks/WarpsignFix.dylib"),
+                            ]
+                        ),
+                    ),
+                    (
+                        2,
+                        macho(
+                            [
+                                (weak, "@rpath/zxPluginsInject.dylib"),
+                                (load, "@loader_path/Frameworks/WarpsignFixUI.dylib"),
+                            ],
+                            cpu_subtype=2,
+                        ),
+                    ),
+                ),
+                "Frameworks/pluginsinject.dylib": macho(dylib_id="@rpath/pluginsinject.dylib"),
+                "Frameworks/WarpsignFix.dylib": macho(dylib_id="@rpath/WarpsignFix.dylib"),
+                # A dylib whose own install name matches: LIEF counts LC_ID_DYLIB
+                "Frameworks/Nested/fix.dylib": macho(
+                    [(weak, "/usr/lib/libz.1.dylib")], dylib_id="@rpath/Plugins Inject.dylib"
+                ),
+            },
+            "components": [
+                ("Frameworks/Nested/fix.dylib", False, False),
+                ("Frameworks/WarpsignFix.dylib", False, False),
+                ("Frameworks/WarpsignFixUI.dylib", False, False),
+                ("App", True, True),
+            ],
+        },
+        {
+            "name": "home indicator only",
+            "inject_warpsign_fix": False,
+            "hide_home_indicator": True,
+            "files": {
+                "App": macho([(weak, "@rpath/zxPluginsInject.dylib")]),
+                "Frameworks/zxPluginsInject.dylib": macho(dylib_id="@rpath/zxPluginsInject.dylib"),
+                "PlugIns/Widget.appex/Widget": macho(),
+            },
+            "components": [
+                ("Frameworks/zxPluginsInject.dylib", False, False),
+                ("Frameworks/ForceHideHomeIndicator.dylib", False, False),
+                ("PlugIns/Widget.appex/Widget", True, False),
+                ("App", True, True),
+            ],
+        },
+        {
+            "name": "neither option",
+            "inject_warpsign_fix": False,
+            "hide_home_indicator": False,
+            "files": {"App": macho([(load, "@rpath/pluginsinject.dylib")])},
+            "components": [("App", True, True)],
+        },
+        {
+            "name": "encrypted main binary",
+            "inject_warpsign_fix": True,
+            "hide_home_indicator": False,
+            "files": {"App": macho(cryptid=1)},
+            "components": [("App", True, True)],
+        },
+    ]
+
+
+def injection_cases() -> list:
+    import hashlib
+
+    import lief
+
+    from warpsign.src.core.sign_orchestrator import SignOrchestrator
+
+    cases = []
+    for layout in injection_layouts():
+        with tempfile.TemporaryDirectory() as tmp:
+            app = Path(tmp) / "Payload" / "App.app"
+            for relative, data in layout["files"].items():
+                (app / relative).parent.mkdir(parents=True, exist_ok=True)
+                (app / relative).write_bytes(data)
+
+            options = PatchingOptions(
+                patch_ids=False,
+                inject_warpsign_fix=layout["inject_warpsign_fix"],
+                hide_home_indicator=layout["hide_home_indicator"],
+            )
+            orchestrator = SignOrchestrator.__new__(SignOrchestrator)
+            orchestrator.console = _QuietConsole()
+            orchestrator.patching_options = options
+            orchestrator._setup_dylibs(app)
+
+            patcher = AppPatcher(app, options)
+            patcher.console = _QuietConsole()
+            known = {"WarpsignFix.dylib", "WarpsignFixUI.dylib", "ForceHideHomeIndicator.dylib"}
+            error = None
+            try:
+                for executable, is_primary, is_main in layout["components"]:
+                    path = app / executable
+                    if not path.exists():
+                        continue
+                    if not is_primary and path.name in known:
+                        continue  # signed without patching
+                    if is_primary:
+                        patcher.patch_app_binary(path, None, None, is_main_binary=is_main)
+                    else:
+                        patcher.patch_app_binary(path, None)
+            except Exception as e:  # noqa: BLE001
+                error = str(e)
+
+            files = sorted(
+                str(p.relative_to(app)).replace("\\", "/")
+                for p in app.rglob("*")
+                if p.is_file()
+            )
+            frameworks = (app / "Frameworks").is_dir()
+            binaries = {
+                relative: dylib_commands(app / relative)
+                for relative in files
+                if relative in layout["files"] or Path(relative).name in known
+            }
+            known_hashes = {
+                relative: hashlib.sha256((app / relative).read_bytes()).hexdigest()
+                for relative in files
+                if Path(relative).name in known
+            }
+
+        cases.append(
+            {
+                "name": layout["name"],
+                "inject_warpsign_fix": layout["inject_warpsign_fix"],
+                "hide_home_indicator": layout["hide_home_indicator"],
+                "files": {
+                    k: base64.b64encode(v).decode() for k, v in layout["files"].items()
+                },
+                "components": [
+                    {"executable": e, "is_primary": p, "is_main": m}
+                    for e, p, m in layout["components"]
+                ],
+                "expected": {
+                    "error": error,
+                    "frameworks_dir": frameworks,
+                    "files": files,
+                    "dylib_commands": binaries,
+                    "known_dylib_sha256": known_hashes,
+                },
+            }
+        )
+    return cases, lief.__version__
+
+
+def dylib_path_cases() -> list:
+    patcher = AppPatcher.__new__(AppPatcher)
+    patcher.console = _QuietConsole()
+    app = Path(tempfile.gettempdir()) / "work" / "Payload" / "App.app"
+    executables = [
+        "App",
+        "Frameworks/Foo.framework/Foo",
+        "Frameworks/libbar.dylib",
+        "PlugIns/Widget.appex/Widget",
+        "PlugIns/Widget.appex/Frameworks/Deep.framework/Deep",
+        "PlugIns/Loose.bundle/Loose",
+        "Watch/W.app/W",
+        "Watch/W.app/PlugIns/E.appex/E",
+        "Extensions/Ext.appex/Ext",
+    ]
+    return [
+        {
+            "executable": executable,
+            "name": name,
+            "expected": patcher.get_dylib_path(app / executable, name),
+        }
+        for executable in executables
+        for name in ("WarpsignFix.dylib", "ForceHideHomeIndicator.dylib")
+    ]
+
+
+def remappings_cases() -> list:
+    cases = []
+    for case in mapping_cases():
+        mapper = prepare_mapper(case)[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            app = Path(tmp)
+            patcher = AppPatcher(app, PatchingOptions(inject_warpsign_fix=True), mapper)
+            patcher.console = _QuietConsole()
+            patcher.generate_remappings_json()
+            path = app / "remappings.json"
+            text = path.read_text() if path.exists() else None
+        cases.append({**case, "expected": text})
+    return cases
+
+
+def warpsign_fix_fixture() -> None:
+    injections, lief_version = injection_cases()
+    FIXTURES_DIR.mkdir(exist_ok=True)
+    path = FIXTURES_DIR / "warpsign_fix.json"
+    with open(path, "w") as f:
+        json.dump(
+            {
+                "source": {**source_info(), "lief": lief_version},
+                "dylib_paths": dylib_path_cases(),
+                "remappings": remappings_cases(),
+                "injections": injections,
+            },
+            f,
+            indent=2,
+            sort_keys=True,
+        )
+        f.write("\n")
+    print(f"Wrote {len(injections)} injection cases to {path}")
+
+
 if __name__ == "__main__":
+    if ONLY_WARPSIGN_FIX:
+        warpsign_fix_fixture()
+        sys.exit()
     write("python_random", python_random_cases())
     write("random_ids", random_id_cases())
     write("bundle_mapping", mapping_cases())
@@ -1230,3 +1612,4 @@ if __name__ == "__main__":
     write("info_plist_patching", info_plist_cases())
     write("srp", srp_cases())
     write("portal_requests", portal_cases())
+    warpsign_fix_fixture()

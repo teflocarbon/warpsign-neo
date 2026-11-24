@@ -1,0 +1,6 @@
+framework module WarpsignFixUI {
+  umbrella header "WarpsignFixUI.h"
+  
+  export *
+  module * { export * }
+}

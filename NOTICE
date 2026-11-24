@@ -55,5 +55,14 @@ under the MIT License:
   in the Software without restriction. The Software is provided "as is",
   without warranty of any kind.
 
+ios/WarpsignFix/WarpsignFix and ios/WarpsignFix/WarpsignFixUI come from WarpsignFix
+(https://github.com/teflocarbon/WarpsignFix), by the same author, under the
+same license. WarpsignFix includes fishhook by Facebook
+(https://github.com/facebook/fishhook), used under the BSD 3-Clause License,
+whose full text is at the top of ios/WarpsignFix/WarpsignFix/fishhook.c and .h:
+
+  Copyright (c) 2013, Facebook, Inc.
+  All rights reserved.
+
 Rust dependencies keep their own licenses (MIT, Apache-2.0, MPL-2.0 and
 others), listed in each crate's metadata.

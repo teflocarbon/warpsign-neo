@@ -20,6 +20,7 @@ use crate::profile_reuse::{NotReusable, ProfileCache, check, portal_date, ungran
 use crate::progress::{ProgressObserver, Step, StepLog, run_step};
 use crate::signature;
 use crate::signing::{BundleEntitlements, SigningError, sign_app_bundle};
+use crate::warpsign_fix::{self, FixOptions, WarpsignFixError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PipelineError {
@@ -41,6 +42,8 @@ pub enum PipelineError {
     PpqRisk(#[from] PpqRisk),
     #[error(transparent)]
     Signing(#[from] SigningError),
+    #[error(transparent)]
+    WarpsignFix(#[from] WarpsignFixError),
     #[error("FairPlay decryption failed: {0}")]
     Decrypt(#[from] crate::fairplay::FairplayError),
     #[error("{path}: {source}")]
@@ -82,6 +85,17 @@ pub fn inspect_ipa(
     work_dir: &Path,
     observer: &dyn ProgressObserver,
 ) -> Result<InspectedApp, PipelineError> {
+    extract_and_inspect(ipa, work_dir, observer, None)
+}
+
+/// `inspect_ipa`, and for a sign, the fix dylibs put in place before the
+/// components are listed (as Python warpsign's `_setup_dylibs`)
+fn extract_and_inspect(
+    ipa: &Path,
+    work_dir: &Path,
+    observer: &dyn ProgressObserver,
+    fixes: Option<(FixOptions, Option<&Path>)>,
+) -> Result<InspectedApp, PipelineError> {
     let app_dir = run_step(observer, Step::Extract, |log| {
         let size = std::fs::metadata(ipa).map(|m| m.len()).unwrap_or_default();
         log.log(format!(
@@ -96,6 +110,9 @@ pub fn inspect_ipa(
         ));
         for removed in remove_unsupported_apps(&app_dir)? {
             log.log(format!("Removed {removed}"));
+        }
+        if let Some((fixes, dylibs)) = fixes {
+            warpsign_fix::stage(&app_dir, fixes, dylibs, &mut |message| log.log(message))?;
         }
         Ok::<_, PipelineError>(app_dir)
     })?;
@@ -189,6 +206,23 @@ pub struct SignOptions {
     /// App Store app you own is usable after re-signing). None leaves any
     /// encryption in place. A per-account secret: never logged or persisted.
     pub credential: Option<[u8; 16]>,
+    /// Python warpsign's `--inject-warpsign-fix`: WarpsignFix (keychain,
+    /// app group and iCloud remapping at runtime) and its settings screen
+    pub inject_warpsign_fix: bool,
+    /// Python warpsign's `--hide-home-indicator`
+    pub hide_home_indicator: bool,
+    /// The folder of fix dylibs to inject from (`WarpsignFix.dylib` and so on,
+    /// built from `ios/WarpsignFix`); needed only if one is injected
+    pub fix_dylibs: Option<PathBuf>,
+}
+
+impl SignOptions {
+    pub fn fix_options(&self) -> FixOptions {
+        FixOptions {
+            inject_warpsign_fix: self.inject_warpsign_fix,
+            hide_home_indicator: self.hide_home_indicator,
+        }
+    }
 }
 
 impl Default for SignOptions {
@@ -200,6 +234,9 @@ impl Default for SignOptions {
             profile_cache: None,
             pretend_not_granted: false,
             credential: None,
+            inject_warpsign_fix: false,
+            hide_home_indicator: false,
+            fix_dylibs: None,
         }
     }
 }
@@ -434,7 +471,12 @@ pub fn sign_ipa(
     let force_original_id = options.patching.force_original_id;
     let mut warnings = Vec::new();
 
-    let app = inspect_ipa(ipa, work_dir, observer)?;
+    let app = extract_and_inspect(
+        ipa,
+        work_dir,
+        observer,
+        Some((options.fix_options(), options.fix_dylibs.as_deref())),
+    )?;
     let main = app.main();
 
     // _analyze_components
@@ -890,9 +932,25 @@ pub fn sign_ipa(
                 source,
             })?;
         }
+        let fixes = options.fix_options();
+        if fixes.inject_warpsign_fix {
+            // generate_remappings_json, before any binary is patched
+            if let Some(json) = warpsign_fix::remappings_json(&mapping) {
+                let path = app.app_dir.join("remappings.json");
+                std::fs::write(&path, json).map_err(|source| PipelineError::Io {
+                    path: path.display().to_string(),
+                    source,
+                })?;
+                log.log("Wrote remappings.json for WarpsignFix");
+            }
+        }
         for component in &app.components {
             let executable = app.app_dir.join(&component.executable);
             if !executable.is_file() {
+                continue;
+            }
+            // Python warpsign's own dylibs are signed as they are
+            if !component.is_primary && warpsign_fix::is_known_dylib(&component.executable) {
                 continue;
             }
             let count = patcher.patch_binary(&executable, &mapping)?;
@@ -902,6 +960,13 @@ pub fn sign_ipa(
                     slash_path(&component.executable)
                 ));
             }
+            warpsign_fix::patch_binary(
+                &app.app_dir,
+                &component.executable,
+                component.is_main_app(),
+                fixes,
+                &mut |message| log.log(message),
+            )?;
         }
         Ok::<_, PipelineError>(())
     })?;

@@ -130,6 +130,15 @@ struct SignOptionsView: View {
                 Text("Adds get-task-allow, so debuggers can attach. Needs a development certificate.")
             }
 
+            Section {
+                Toggle("WarpsignFix", isOn: $options.injectWarpsignFix)
+                Toggle("Hide Home Indicator", isOn: $options.hideHomeIndicator)
+            } header: {
+                Text("Injected Fixes")
+            } footer: {
+                Text("WarpsignFix points keychain groups, app groups and iCloud containers at your team's while the app runs, and removes other sideloading fixes that conflict with it. Both need a decrypted app.")
+            }
+
             if app.isEncrypted {
                 Section {
                     Label("This IPA is still encrypted: it will crash on launch once signed.", systemImage: "lock.fill")

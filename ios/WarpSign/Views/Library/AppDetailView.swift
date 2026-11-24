@@ -340,6 +340,8 @@ private struct SigningOptionsSummary: View {
                 }
                 Section {
                     row("Allow Debugging", options.patchDebug)
+                    row("WarpsignFix", options.injectWarpsignFix)
+                    row("Hide Home Indicator", options.hideHomeIndicator)
                 }
             } else {
                 Text("The options weren't recorded.").foregroundStyle(.secondary)
