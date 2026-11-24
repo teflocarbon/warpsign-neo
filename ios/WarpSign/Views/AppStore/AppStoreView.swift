@@ -1,15 +1,18 @@
 import SwiftUI
 
-/// The App Store tab: search the store, see your account and the apps it
-/// has got, and get apps into the library to sign. Browsing needs no Apple
-/// ID; getting apps does, through ipatool.
+/// The App Store tab: search the store and its charts, see your account and
+/// the apps it has got, and get apps into the library to sign. Browsing
+/// needs no Apple ID; getting apps does, through ipatool.
 struct AppStoreView: View {
     @Environment(AccountStore.self) private var account
     @State private var term = ""
     @State private var searchedTerm = ""
     @State private var results: [CatalogApp] = []
+    /// The store an app named by link or ID was found in, when not this one
+    @State private var foundIn: String?
     @State private var searching = false
     @State private var searchError: String?
+    @State private var chartErrors: [AppStoreCatalog.Chart: String] = [:]
     @State private var signingIn = false
 
     private var store: AppStoreModel { .shared }
@@ -30,14 +33,19 @@ struct AppStoreView: View {
                 }
             }
             .navigationTitle("App Store")
-            .searchable(text: $term, prompt: "Apps")
-            .onSubmit(of: .search, search)
+            .searchable(text: $term, prompt: "Apps, Links, IDs, Bundle IDs")
+            .searchSuggestions { recentSearches }
+            .onSubmit(of: .search) { search(term) }
             .onChange(of: term) { _, term in
                 if term.isEmpty {
                     searchedTerm = ""
                     results = []
+                    foundIn = nil
                     searchError = nil
                 }
+            }
+            .onChange(of: store.country) {
+                if !searchedTerm.isEmpty { search(searchedTerm) }
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -108,6 +116,10 @@ struct AppStoreView: View {
                     Text("The apps your Apple ID has got, free or paid.")
                 }
             }
+            ForEach(AppStoreCatalog.Chart.allCases) { chart in
+                chartSection(chart)
+            }
+            StoreCountrySection()
             Section {
                 LabeledContent("Emulator", value: emulatorStatus)
                 if let readying = store.readying {
@@ -120,6 +132,47 @@ struct AppStoreView: View {
                 Text("Getting Apps")
             } footer: {
                 Text("Signing in and getting apps run Apple's own code in Unicorn, an emulator WarpSign downloads once (about 2 MB) and signs with your development certificate. Searching needs none of this.")
+            }
+        }
+        .refreshable { await loadCharts(refresh: true) }
+        .task(id: store.country) { await loadCharts(refresh: false) }
+    }
+
+    /// The first few of a chart, and the rest a tap away
+    @ViewBuilder
+    private func chartSection(_ chart: AppStoreCatalog.Chart) -> some View {
+        Section {
+            if let apps = store.chart(chart) {
+                ForEach(Array(apps.prefix(5).enumerated()), id: \.element.id) { index, app in
+                    NavigationLink {
+                        StoreAppView(app: app)
+                    } label: {
+                        StoreAppRow(app: app, rank: index + 1)
+                    }
+                }
+                if apps.count > 5 {
+                    NavigationLink("See All") {
+                        StoreChartView(chart: chart)
+                    }
+                }
+            } else if let error = chartErrors[chart] {
+                Label(error, systemImage: "wifi.exclamationmark")
+                    .foregroundStyle(.secondary)
+            } else {
+                ProgressView().frame(maxWidth: .infinity)
+            }
+        } header: {
+            Text("\(chart.title) in \(countryName)")
+        }
+    }
+
+    private func loadCharts(refresh: Bool) async {
+        for chart in AppStoreCatalog.Chart.allCases {
+            do {
+                try await store.loadChart(chart, refresh: refresh)
+                chartErrors[chart] = nil
+            } catch {
+                chartErrors[chart] = error.localizedDescription
             }
         }
     }
@@ -144,7 +197,9 @@ struct AppStoreView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(info.name.isEmpty ? info.email : info.name).font(.headline)
                         Text(info.email).font(.subheadline).foregroundStyle(.secondary)
-                        Text("\(countryName) App Store").font(.caption).foregroundStyle(.secondary)
+                        Text("\(StoreCountry.name(store.accountCountry)) App Store")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .padding(.vertical, 4)
@@ -162,43 +217,86 @@ struct AppStoreView: View {
         }
     }
 
-    private var countryName: String {
-        Locale.current.localizedString(forRegionCode: store.country) ?? store.country
-    }
+    private var countryName: String { StoreCountry.name(store.country) }
 
     // MARK: Search
+
+    @ViewBuilder
+    private var recentSearches: some View {
+        if term.isEmpty && !store.recentSearches.isEmpty {
+            Section("Recent") {
+                ForEach(store.recentSearches, id: \.self) { recent in
+                    Button {
+                        term = recent
+                        search(recent)
+                    } label: {
+                        Label(recent, systemImage: "clock.arrow.circlepath")
+                    }
+                }
+                Button("Clear Recent Searches", role: .destructive) {
+                    store.clearRecentSearches()
+                }
+            }
+        }
+    }
 
     @ViewBuilder
     private var searchResults: some View {
         if searching && results.isEmpty {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let searchError {
-            ContentUnavailableView("Couldn't Search", systemImage: "wifi.exclamationmark", description: Text(searchError))
+            ContentUnavailableView {
+                Label("Couldn't Search", systemImage: "wifi.exclamationmark")
+            } description: {
+                Text(searchError)
+            } actions: {
+                Button("Try Again") { search(searchedTerm) }
+            }
         } else if results.isEmpty {
-            ContentUnavailableView.search(text: searchedTerm)
+            ContentUnavailableView {
+                Label("No Results", systemImage: "magnifyingglass")
+            } description: {
+                Text("Nothing for “\(searchedTerm)” in the \(countryName) App Store. You can also search with an App Store link, an App Store ID or a bundle ID.")
+            }
         } else {
-            List(results) { app in
-                NavigationLink {
-                    StoreAppView(app: app)
-                } label: {
-                    StoreAppRow(app: app)
+            List {
+                Section {
+                    ForEach(results) { app in
+                        NavigationLink {
+                            StoreAppView(app: app, country: foundIn)
+                        } label: {
+                            StoreAppRow(app: app)
+                        }
+                    }
+                } header: {
+                    if let foundIn {
+                        Text("Not in the \(countryName) App Store. Found in the \(StoreCountry.name(foundIn)) one.")
+                            .textCase(nil)
+                    }
                 }
             }
             .listStyle(.plain)
         }
     }
 
-    private func search() {
-        let term = term.trimmingCharacters(in: .whitespaces)
-        guard !term.isEmpty else { return }
-        searchedTerm = term
+    private func search(_ text: String) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        searchedTerm = text
         searching = true
         searchError = nil
+        store.remember(search: text)
         Task {
             do {
-                results = try await AppStoreCatalog.search(term, country: store.country)
+                let found = try await store.find(text)
+                // A newer search may have started meanwhile
+                guard searchedTerm == text else { return }
+                results = found.apps
+                foundIn = found.foundIn
             } catch {
+                guard searchedTerm == text else { return }
                 results = []
+                foundIn = nil
                 searchError = error.localizedDescription
             }
             searching = false
@@ -206,12 +304,103 @@ struct AppStoreView: View {
     }
 }
 
+/// Country names for stores
+enum StoreCountry {
+    static func name(_ code: String) -> String {
+        Locale.current.localizedString(forRegionCode: code) ?? code
+    }
+
+    /// Every store, by name
+    static let all: [String] = AppStoreCatalog.allCountries.sorted {
+        name($0).localizedStandardCompare(name($1)) == .orderedAscending
+    }
+}
+
+/// Which country's App Store to browse
+struct StoreCountrySection: View {
+    private var store: AppStoreModel { .shared }
+
+    var body: some View {
+        Section {
+            Picker("Store", selection: Binding(
+                get: { store.chosenCountry },
+                set: { store.chosenCountry = $0 }
+            )) {
+                Text(store.signedInAccount == nil
+                     ? "This iPhone's (\(StoreCountry.name(store.accountCountry)))"
+                     : "Your Apple ID's (\(StoreCountry.name(store.accountCountry)))")
+                    .tag(String?.none)
+                ForEach(StoreCountry.all, id: \.self) { code in
+                    Text(StoreCountry.name(code)).tag(Optional(code))
+                }
+            }
+            .pickerStyle(.navigationLink)
+        } footer: {
+            Text("Search and the charts show this country's App Store. Getting an app always uses your Apple ID's own store, which may not have it.")
+        }
+    }
+}
+
+/// A whole chart, up to 100 apps
+struct StoreChartView: View {
+    let chart: AppStoreCatalog.Chart
+    @State private var error: String?
+
+    private var store: AppStoreModel { .shared }
+
+    var body: some View {
+        Group {
+            if let apps = store.chart(chart) {
+                List(Array(apps.enumerated()), id: \.element.id) { index, app in
+                    NavigationLink {
+                        StoreAppView(app: app)
+                    } label: {
+                        StoreAppRow(app: app, rank: index + 1)
+                    }
+                }
+                .listStyle(.plain)
+                .refreshable { await load(refresh: true) }
+            } else if let error {
+                ContentUnavailableView {
+                    Label("Couldn't Get the Chart", systemImage: "wifi.exclamationmark")
+                } description: {
+                    Text(error)
+                } actions: {
+                    Button("Try Again") { Task { await load(refresh: true) } }
+                }
+            } else {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .navigationTitle("\(chart.title) in \(StoreCountry.name(store.country))")
+        .navigationBarTitleDisplayMode(.inline)
+        .task(id: store.country) { await load(refresh: false) }
+    }
+
+    private func load(refresh: Bool) async {
+        error = nil
+        do {
+            try await store.loadChart(chart, refresh: refresh)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
+
 /// An app in a list: icon, name, developer, rating, and Get
 struct StoreAppRow: View {
     let app: CatalogApp
+    /// Its place in a chart
+    var rank: Int? = nil
 
     var body: some View {
         HStack(spacing: 12) {
+            if let rank {
+                Text("\(rank)")
+                    .font(.headline.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 24, alignment: .trailing)
+            }
             RemoteIconView(url: app.iconURL, size: 60)
             VStack(alignment: .leading, spacing: 2) {
                 Text(app.name).font(.headline).lineLimit(1)
@@ -403,7 +592,7 @@ struct OwnedAppsView: View {
                         Section {
                             ForEach(owned) { app in
                                 NavigationLink {
-                                    StoreAppView(app: app)
+                                    StoreAppView(app: app, country: store.accountCountry)
                                 } label: {
                                     StoreAppRow(app: app)
                                 }

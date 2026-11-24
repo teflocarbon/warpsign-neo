@@ -5,12 +5,12 @@ import SwiftUI
 struct StoreAppView: View {
     @Environment(LibraryStore.self) private var library
     let app: CatalogApp
+    /// The store it's from, when not the one being browsed
+    var country: String? = nil
 
     private var store: AppStoreModel { .shared }
 
-    private var countryName: String {
-        Locale.current.localizedString(forRegionCode: store.country) ?? store.country
-    }
+    private var countryName: String { StoreCountry.name(country ?? store.country) }
 
     var body: some View {
         AppPage(iconURL: app.iconURL) { large in
@@ -27,6 +27,19 @@ struct StoreAppView: View {
                 CopyMenu(title: "Bundle ID", value: app.bundleId)
             }
             AppStatsStrip(items: stats)
+            if let minimum = app.needsNewerSystem {
+                Label {
+                    Text("Needs iOS \(minimum) or later, and this \(UIDevice.current.model) has iOS \(UIDevice.current.systemVersion). You can get and sign it, but it won't install.")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                }
+                .font(.subheadline)
+                .foregroundStyle(.orange)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(.top, 12)
+            }
             if let download = store.downloads[app.id] {
                 StoreDownloadRow(download: download)
                     .padding(12)

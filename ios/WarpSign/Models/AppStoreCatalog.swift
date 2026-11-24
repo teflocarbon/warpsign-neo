@@ -42,6 +42,14 @@ struct CatalogApp: Codable, Hashable, Identifiable {
         return phone.isEmpty ? (ipadScreenshotUrls ?? []) : phone
     }
 
+    /// The iOS version it needs, when that's newer than this device's
+    var needsNewerSystem: String? {
+        guard let minimum = minimumOsVersion else { return nil }
+        let system = ProcessInfo.processInfo.operatingSystemVersion
+        let current = "\(system.majorVersion).\(system.minorVersion).\(system.patchVersion)"
+        return minimum.compare(current, options: .numeric) == .orderedDescending ? minimum : nil
+    }
+
     /// What Get says: Get, or the price
     var getTitle: String {
         isFree ? "Get" : (formattedPrice ?? price.map { String(format: "%.2f", $0) } ?? "Buy")
@@ -95,6 +103,122 @@ enum AppStoreCatalog {
         }
         return found
     }
+
+    /// The app with this bundle ID, if the country's store lists it
+    static func lookup(bundleId: String, country: String) async throws -> CatalogApp? {
+        try await fetch("lookup", [
+            URLQueryItem(name: "bundleId", value: bundleId),
+            URLQueryItem(name: "country", value: country),
+        ]).first
+    }
+
+    // MARK: Charts
+
+    enum Chart: String, CaseIterable, Identifiable {
+        case free = "top-free"
+        case paid = "top-paid"
+
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .free: "Top Free"
+            case .paid: "Top Paid"
+            }
+        }
+    }
+
+    private struct Feed: Decodable {
+        struct Body: Decodable {
+            let results: [Item]
+        }
+        struct Item: Decodable {
+            let id: String
+        }
+        let feed: Body
+    }
+
+    /// The country's chart, in order: Apple's public chart feed lists the
+    /// IDs (100 at most), and the catalog describes them
+    static func chart(_ chart: Chart, country: String) async throws -> [CatalogApp] {
+        let url = URL(string: "https://rss.marketingtools.apple.com/api/v2/\(country.lowercased())/apps/\(chart.rawValue)/100/apps.json")!
+        let (data, response) = try await URLSession.shared.data(from: url)
+        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+            throw URLError(.badServerResponse)
+        }
+        let ids = try JSONDecoder().decode(Feed.self, from: data).feed.results.compactMap { Int64($0.id) }
+        let apps = try await lookup(ids: ids, country: country)
+        let byId = Dictionary(apps.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return ids.compactMap { byId[$0] }
+    }
+
+    // MARK: What was typed
+
+    /// What a search box holds: words to search for, or one app named by an
+    /// App Store link, its App Store ID or its bundle ID
+    enum Query: Equatable {
+        case term(String)
+        case id(Int64)
+        case bundleId(String)
+
+        init(_ text: String) {
+            let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            // apps.apple.com/gb/app/name/id123456789, itms-apps://…?id=…
+            if text.contains("apple.com") || text.hasPrefix("itms") {
+                if let match = text.firstMatch(of: #/id(\d{5,})/#), let id = Int64(match.1) {
+                    self = .id(id)
+                    return
+                }
+            }
+            if text.wholeMatch(of: #/\d{5,}/#) != nil, let id = Int64(text) {
+                self = .id(id)
+            } else if text.wholeMatch(of: #/[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)+/#) != nil,
+                      text.contains(where: \.isLetter) {
+                // Dotted words, as com.example.app. When no app has that
+                // bundle ID, they're searched for as words instead.
+                self = .bundleId(text)
+            } else {
+                self = .term(text)
+            }
+        }
+    }
+
+    /// Search for what was typed. One app named by link, ID or bundle ID
+    /// comes first; when this country's store hasn't got it, the stores
+    /// in `fallbacks` are tried, and `foundIn` says which had it.
+    static func find(
+        _ text: String, country: String, fallbacks: [String]
+    ) async throws -> (apps: [CatalogApp], foundIn: String?) {
+        let query = Query(text)
+        func one(in country: String) async throws -> CatalogApp? {
+            switch query {
+            case .id(let id): return try await lookup(ids: [id], country: country).first
+            case .bundleId(let bundleId): return try await lookup(bundleId: bundleId, country: country)
+            case .term: return nil
+            }
+        }
+        switch query {
+        case .term(let term):
+            return (try await search(term, country: country), nil)
+        case .id, .bundleId:
+            if let app = try await one(in: country) {
+                var apps = [app]
+                if case .bundleId(let words) = query {
+                    apps += try await search(words, country: country).filter { $0.id != app.id }
+                }
+                return (apps, nil)
+            }
+            for other in fallbacks where other != country {
+                if let app = try await one(in: other) { return ([app], other) }
+            }
+            if case .bundleId(let words) = query {
+                return (try await search(words, country: country), nil)
+            }
+            return ([], nil)
+        }
+    }
+
+    /// Every country with a store, by code
+    static var allCountries: [String] { Array(countries.values) }
 
     private static func fetch(_ path: String, _ query: [URLQueryItem]) async throws -> [CatalogApp] {
         var components = URLComponents(string: "https://itunes.apple.com/\(path)")!

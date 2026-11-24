@@ -41,10 +41,31 @@ final class AppStoreModel {
         if case .signedIn(let info) = account { info } else { nil }
     }
 
-    /// The country whose store to browse: the account's, or the device's
-    var country: String {
+    /// The account's store's country, or the device's when signed out
+    var accountCountry: String {
         signedInAccount.flatMap { AppStoreCatalog.country(storefront: $0.storefront) }
             ?? AppStoreCatalog.deviceCountry
+    }
+
+    /// Another country's store to browse, chosen in the tab
+    var chosenCountry: String? = UserDefaults.standard.string(forKey: Keys.country) {
+        didSet { UserDefaults.standard.set(chosenCountry, forKey: Keys.country) }
+    }
+
+    /// The country whose store to browse: the one chosen, or the account's
+    var country: String { chosenCountry ?? accountCountry }
+
+    /// Searches made, newest first
+    private(set) var recentSearches: [String] = UserDefaults.standard.stringArray(forKey: Keys.recent) ?? [] {
+        didSet { UserDefaults.standard.set(recentSearches, forKey: Keys.recent) }
+    }
+
+    /// The charts, by country and chart, once fetched this launch
+    private(set) var charts: [String: [CatalogApp]] = [:]
+
+    private enum Keys {
+        static let country = "AppStoreCountry"
+        static let recent = "AppStoreRecentSearches"
     }
 
     /// Unicorn is loaded and runs, and ipatool's runtime too, this launch
@@ -80,6 +101,36 @@ final class AppStoreModel {
         ownedTotal = 0
     }
 
+    // MARK: Browsing
+
+    func remember(search: String) {
+        recentSearches.removeAll { $0.caseInsensitiveCompare(search) == .orderedSame }
+        recentSearches.insert(search, at: 0)
+        recentSearches = Array(recentSearches.prefix(10))
+    }
+
+    func clearRecentSearches() {
+        recentSearches = []
+    }
+
+    func chart(_ chart: AppStoreCatalog.Chart) -> [CatalogApp]? {
+        charts["\(country)/\(chart.rawValue)"]
+    }
+
+    /// Fetch the chart for the store being browsed (again, with `refresh`)
+    func loadChart(_ chart: AppStoreCatalog.Chart, refresh: Bool = false) async throws {
+        let key = "\(country)/\(chart.rawValue)"
+        guard refresh || charts[key] == nil else { return }
+        charts[key] = try await AppStoreCatalog.chart(chart, country: country)
+    }
+
+    /// Search the store being browsed. An app named by link, ID or bundle
+    /// ID that it hasn't got is looked for in the account's store and the
+    /// US one; `foundIn` says where it was.
+    func find(_ text: String) async throws -> (apps: [CatalogApp], foundIn: String?) {
+        try await AppStoreCatalog.find(text, country: country, fallbacks: [accountCountry, "US"])
+    }
+
     // MARK: Getting ready
 
     /// Unicorn, then ipatool's runtime and Apple's assets (fetched
@@ -104,7 +155,7 @@ final class AppStoreModel {
     func loadOwned(identity: IdentityData?) async throws {
         try await ready(identity: identity)
         let page = try await background { try AppStoreEngine.client().owned(page: 1, limit: 100) }
-        let country = country
+        let country = accountCountry
         // Icons and the rest from the catalog; those it doesn't list keep
         // what ipatool knows
         let listed = (try? await AppStoreCatalog.lookup(ids: page.apps.map(\.id), country: country)) ?? []
