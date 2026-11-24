@@ -186,12 +186,13 @@ struct StoreGetButton: View {
         }
         Task {
             checking = true
-            if store.owned == nil {
+            if store.owns(app) == nil {
+                // Listed by now, or being listed: this waits for it
                 try? await store.loadOwned(identity: identity)
             }
             checking = false
-            // Not listed among everything the account has: not bought.
-            // Unknown (not all listed, or listing failed): let ipatool try.
+            // Not among everything the account has: not bought. Unknown
+            // (listing failed): let ipatool try.
             if store.owns(app) == false {
                 notBought = true
             } else {

@@ -141,10 +141,7 @@ enum AppStoreCatalog {
     /// IDs (100 at most), and the catalog describes them
     static func chart(_ chart: Chart, country: String) async throws -> [CatalogApp] {
         let url = URL(string: "https://rss.marketingtools.apple.com/api/v2/\(country.lowercased())/apps/\(chart.rawValue)/100/apps.json")!
-        let (data, response) = try await URLSession.shared.data(from: url)
-        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-            throw URLError(.badServerResponse)
-        }
+        let data = try await get(url)
         let ids = try JSONDecoder().decode(Feed.self, from: data).feed.results.compactMap { Int64($0.id) }
         let apps = try await lookup(ids: ids, country: country)
         let byId = Dictionary(apps.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -223,11 +220,38 @@ enum AppStoreCatalog {
     private static func fetch(_ path: String, _ query: [URLQueryItem]) async throws -> [CatalogApp] {
         var components = URLComponents(string: "https://itunes.apple.com/\(path)")!
         components.queryItems = query
-        let (data, response) = try await URLSession.shared.data(from: components.url!)
-        if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-            throw URLError(.badServerResponse)
-        }
+        let data = try await get(components.url!)
         return try JSONDecoder().decode(Results.self, from: data).results.compactMap(\.app)
+    }
+
+    /// Apple's catalog services now and then answer slowly, or with an
+    /// error (403, 429 or 5xx), and a moment later answer fine. Each
+    /// request has a time limit, and is tried up to three times.
+    private static func get(_ url: URL) async throws -> Data {
+        let request = URLRequest(url: url, timeoutInterval: 12)
+        var attempt = 0
+        while true {
+            attempt += 1
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 200
+                if status == 200 { return data }
+                if attempt >= 3 || !(status == 403 || status == 429 || status >= 500) {
+                    throw CatalogError(status: status)
+                }
+            } catch let error as URLError
+                where attempt < 3 && [.timedOut, .networkConnectionLost, .cannotConnectToHost].contains(error.code) {
+                // Tried again below
+            }
+            try await Task.sleep(for: .milliseconds(attempt == 1 ? 500 : 1500))
+        }
+    }
+
+    struct CatalogError: LocalizedError {
+        let status: Int
+        var errorDescription: String? {
+            "Apple's App Store catalog isn't answering properly right now (HTTP \(status)). Try again in a moment."
+        }
     }
 
     /// The country code ("US") of a storefront as Apple writes it

@@ -75,6 +75,10 @@ struct AppStoreView: View {
                 lastCrash = AppStoreEngine.lastCrash
             }
             .onAppear { lastCrash = AppStoreEngine.lastCrash }
+            // What the account has bought, so paid apps it has show Get
+            .task(id: store.signedInAccount?.email) {
+                await store.refreshOwnership(identity: account.identities[.development]?.data)
+            }
         }
     }
 
@@ -96,7 +100,9 @@ struct AppStoreView: View {
         .refreshable {
             if searchedTerm.isEmpty { await loadShelf(refresh: true) }
         }
-        .task(id: "\(store.country)/\(shelf)/\(store.signedInAccount?.email ?? "")") {
+        // The account only matters to Purchased: signing in as the app
+        // starts restarted (and cancelled) the charts' fetch
+        .task(id: "\(store.country)/\(shelf)/\(shelf == .purchased ? store.signedInAccount?.email ?? "" : "")") {
             if searchedTerm.isEmpty { await loadShelf(refresh: false) }
         }
     }
@@ -283,6 +289,11 @@ struct AppStoreView: View {
                 try await store.loadOwned(identity: account.identities[.development]?.data)
             }
         } catch {
+            // Replaced by another load (another shelf, or the store
+            // changed), which shows its own outcome
+            if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
+                return
+            }
             shelfError = error.userMessage
         }
     }

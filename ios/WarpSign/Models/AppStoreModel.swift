@@ -66,6 +66,7 @@ final class AppStoreModel {
     private enum Keys {
         static let country = "AppStoreCountry"
         static let recent = "AppStoreRecentSearches"
+        static let ownedIds = "AppStoreOwnedIds"
     }
 
     /// Unicorn is loaded and runs, and ipatool's runtime too, this launch
@@ -90,15 +91,14 @@ final class AppStoreModel {
         let info = try await background {
             try AppStoreEngine.client().login(email: email, password: password, code: code)
         }
+        if signedInAccount?.email != info.email { forgetOwned() }
         account = .signedIn(info)
-        owned = nil
     }
 
     func signOut() async {
         _ = try? await background { try AppStoreEngine.client().logout() }
         account = .signedOut
-        owned = nil
-        ownedTotal = 0
+        forgetOwned()
     }
 
     // MARK: Browsing
@@ -156,24 +156,106 @@ final class AppStoreModel {
 
     // MARK: The account's apps
 
+    /// List the account's apps: all of them, a page at a time (ipatool gives
+    /// 100 at most, fetching the whole list from Apple for each page). One
+    /// listing at a time: asking while one runs waits for it.
     func loadOwned(identity: IdentityData?) async throws {
-        try await ready(identity: identity)
-        let page = try await background { try AppStoreEngine.client().owned(page: 1, limit: 100) }
-        let country = accountCountry
-        // Icons and the rest from the catalog; those it doesn't list keep
-        // what ipatool knows
-        let listed = (try? await AppStoreCatalog.lookup(ids: page.apps.map(\.id), country: country)) ?? []
-        let byId = Dictionary(listed.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        owned = page.apps.map { byId[$0.id] ?? CatalogApp($0) }
-        ownedTotal = Int(page.total)
+        if let ownedLoad {
+            return try await ownedLoad.value
+        }
+        let load = Task { try await listOwned(identity: identity) }
+        ownedLoad = load
+        defer { ownedLoad = nil }
+        try await load.value
     }
 
+    /// The listing running, which others wait on
+    @ObservationIgnored private var ownedLoad: Task<Void, Error>?
+
+    private func listOwned(identity: IdentityData?) async throws {
+        try await ready(identity: identity)
+        guard let email = signedInAccount?.email else { return }
+        let country = accountCountry
+        var apps: [CatalogApp] = []
+        var ids = Set<Int64>()
+        var page: UInt32 = 1
+        while true {
+            let number = page
+            let result = try await background { try AppStoreEngine.client().owned(page: number, limit: 100) }
+            // Icons and the rest from the catalog; those it doesn't list
+            // keep what ipatool knows
+            let listed = (try? await AppStoreCatalog.lookup(ids: result.apps.map(\.id), country: country)) ?? []
+            let byId = Dictionary(listed.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            apps += result.apps.map { byId[$0.id] ?? CatalogApp($0) }
+            ids.formUnion(result.apps.map(\.id))
+            // Shown as each page comes
+            guard signedInAccount?.email == email else { return }
+            owned = apps
+            ownedTotal = Int(result.total)
+            if result.apps.isEmpty || apps.count >= Int(result.total) || page >= 100 { break }
+            page += 1
+        }
+        ownedIds = ids
+        ownedIdsComplete = true
+        Self.saveOwnedIds(ids, account: email)
+    }
+
+    /// The App Store IDs of every app the account has got, as last listed
+    /// (kept between launches, for this account), so Get can show on paid
+    /// apps it has bought before they're listed again
+    private(set) var ownedIds: Set<Int64>?
+    /// ownedIds is the account's whole list (listed this launch, or kept)
+    private var ownedIdsComplete = false
+
     /// Whether the account has got the app: nil when that isn't known
-    /// (its apps not listed yet, or more of them than were listed)
+    /// (its apps not listed yet)
     func owns(_ app: CatalogApp) -> Bool? {
-        guard let owned else { return nil }
-        if owned.contains(where: { $0.id == app.id }) { return true }
-        return ownedTotal > owned.count ? nil : false
+        if ownedIds?.contains(app.id) == true || owned?.contains(where: { $0.id == app.id }) == true {
+            return true
+        }
+        return ownedIdsComplete ? false : nil
+    }
+
+    /// List the account's apps once a launch, quietly, so paid apps it has
+    /// bought show Get. Starts ipatool (and Unicorn) when there's a
+    /// development certificate to sign Unicorn with.
+    func refreshOwnership(identity: IdentityData?) async {
+        guard let email = signedInAccount?.email, identity != nil || UnicornRuntime.isReady,
+              !ownershipChecked else { return }
+        ownershipChecked = true
+        if ownedIds == nil, let kept = Self.keptOwnedIds(account: email) {
+            ownedIds = kept
+            ownedIdsComplete = true
+        }
+        if (try? await loadOwned(identity: identity)) == nil {
+            // Try again next time the tab shows
+            ownershipChecked = false
+        }
+    }
+
+    @ObservationIgnored private var ownershipChecked = false
+
+    private static func saveOwnedIds(_ ids: Set<Int64>, account: String) {
+        UserDefaults.standard.set(
+            ["account": account, "ids": ids.sorted().map(String.init)] as [String: Any],
+            forKey: Keys.ownedIds)
+    }
+
+    private static func keptOwnedIds(account: String) -> Set<Int64>? {
+        guard let kept = UserDefaults.standard.dictionary(forKey: Keys.ownedIds),
+              kept["account"] as? String == account,
+              let ids = kept["ids"] as? [String] else { return nil }
+        return Set(ids.compactMap(Int64.init))
+    }
+
+    /// Forget the account's apps (signed out, or another account)
+    private func forgetOwned() {
+        owned = nil
+        ownedTotal = 0
+        ownedIds = nil
+        ownedIdsComplete = false
+        ownershipChecked = false
+        UserDefaults.standard.removeObject(forKey: Keys.ownedIds)
     }
 
     // MARK: Versions
