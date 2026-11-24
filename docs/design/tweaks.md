@@ -48,11 +48,10 @@ None of this changes the design below, but it does decide the order of work. The
 
 ## Pieces
 
-All the logic goes in `warpsign-core`, so the CLI and the app share it, and in time the depot format too. Proposed modules:
+All the logic goes in `warpsign-core`, so the CLI and the app share it, and in time the depot format too. The Mach-O editor is `src/macho_edit.rs`, at the top level, because the parity flags use it as well as tweaks. The proposed tweak modules are:
 
 ```
 crates/warpsign-core/src/tweaks/
-  macho_edit.rs  load-command editing: add, remove and change dylib paths, add rpaths, all slices
   deb.rs         ar + control.tar.* + data.tar.* (gz, xz, lzma, bz2, zst), control-file parsing
   scan.rs        find the tweaks in an extracted app (extraction)
   inject.rs      put depot tweaks into an extracted app (injection)
@@ -61,17 +60,27 @@ crates/warpsign-core/src/tweaks/
 
 New pure-Rust dependencies, all MIT or Apache: `ar`, `tar`, `flate2` (rust backend), `lzma-rs` or `xz2` (prefer a pure-Rust one, so there's nothing native to cross-compile for iOS), `bzip2-rs`, `ruzstd`. Mach-O parsing stays hand-written, as in `fairplay.rs`. There's little to it, and we need write access, which goblin doesn't give.
 
-### Mach-O editing (`macho_edit.rs`)
+### Mach-O editing (`macho_edit.rs`, built)
 
-Thin and fat, `MH_MAGIC_64` only (arm64 and arm64e slices). Operations:
+The editor handles thin and FAT binaries, with 64-bit and 32-bit little-endian slices (arm64, arm64e and old armv7).
 
-- `load_dylibs(binary)`: every `LC_LOAD_DYLIB`, `LC_LOAD_WEAK_DYLIB`, `LC_REEXPORT_DYLIB` and `LC_LAZY_LOAD_DYLIB`, with its index, ordinal, path and versions, plus `LC_ID_DYLIB` and `LC_RPATH`s.
-- `add_dylib(path, weak)`: written into the header padding. If there isn't room, it fails rather than moving segments.
-- `remove_dylib(path)`: removes the command and shifts the later ones down. Library ordinals of the commands after it change, so this refuses (or warns) when the binary imports symbols from a later library through two-level namespace binds. Injected tweaks are almost always the last loads, so in practice this rarely matters. Feather and Impactor don't check.
-- `change_dylib(old, new)` (`install_name_tool -change`), `add_rpath`, `set_id`.
-- Each operation runs on every slice, and is skipped or refused when a slice is still encrypted (`cryptid != 0`).
+**Reading:** `read` gives each slice's:
 
-The code signature isn't touched: the Sign step replaces it. Testing builds Mach-O bytes in the tests themselves, as `fairplay.rs` does. No real binaries go in the repo.
+- architecture;
+- dylib loads (`LC_LOAD_DYLIB`, `LC_LOAD_WEAK_DYLIB`, `LC_REEXPORT_DYLIB`, `LC_LAZY_LOAD_DYLIB` and `LC_LOAD_UPWARD_DYLIB`), each with its library ordinal, path, versions, and position among the commands;
+- install name (`LC_ID_DYLIB`), rpaths, and the command types in order;
+- whether it's still encrypted, and how much room is left for more load commands.
+
+Each dylib also gets **how many symbols the slice imports from it**. That's counted from chained-fixup imports, from `LC_DYLD_INFO` bind and lazy-bind opcodes, and from undefined symbols in the symbol table. It's the signal extraction relies on most, and the safety check for removing a load.
+
+**Editing:** every edit rewrites the load commands within the header padding, so nothing else in the file moves. It runs on every slice. If any slice fails, the file is left exactly as it was: there's no room, the slice is still encrypted, or a check below fails.
+
+- **`add_dylib` / `add_dylib_with`:** appended after the existing commands, as insert_dylib and Zsign do, so existing ordinals don't change. If the binary already loads that path, only its kind is set. New commands get timestamp 2 and versions 0, unless the versions are given.
+- **`remove_dylib` / `remove_dylibs_where`:** refuses to remove a dylib the binary imports symbols from, and refuses when removing one would renumber a later library it imports from. `RemoveOptions` allows each case; Python's removal of conflicting dylibs needs the second, to keep its behaviour.
+- **`change_dylib`** (`install_name_tool -change`), **`set_id`**, **`add_rpath`** and **`remove_rpath`**.
+- **`edit_file`** runs an edit on a file and writes it back only if something changed.
+
+The code signature isn't touched: the Sign step replaces it. The tests build Mach-O bytes in code: thin and FAT, 32-bit and 64-bit, chained fixups, bind opcodes and the symbol table. No real binaries go in the repo.
 
 ### The tweak runtime
 
@@ -250,7 +259,7 @@ There's no token support at first, so nothing secret is stored. A personal token
 
 Core and CLI first. Each piece is testable on Windows and Linux without a device, and the Swift UI comes once the core holds up.
 
-1. `macho_edit.rs`: read, add, remove and change load commands and rpaths, fat and thin, with byte-built tests.
+1. `macho_edit.rs`: read, add, remove and change load commands and rpaths, fat and thin, with byte-built tests. Done.
 2. **Parity:** port `--inject-warpsign-fix` and `--hide-home-indicator` (generator cases and fixtures first, then the port), with `remappings.json`. WarpsignFix's binaries come from Python warpsign until its repo has a licence and CI builds it.
 3. `scan.rs` and `warpsign tweaks scan <ipa>`: extraction's detection with reasons, checked against the public ytkace IPAs and described in the doc.
 4. `deb.rs` and `depot.rs`, with `warpsign depot import/list/show` and `warpsign tweaks extract`.

@@ -10,6 +10,7 @@ pub mod identity;
 pub mod info_plist;
 pub mod inspect;
 pub mod ipa;
+pub mod macho_edit;
 pub mod metadata;
 pub mod pipeline;
 pub mod portal;
