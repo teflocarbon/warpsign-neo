@@ -47,7 +47,11 @@ struct AppPage<Content: View, Action: View>: View {
                     RemoteIconView(url: iconURL, size: 30)
                 }
                 ToolbarItem(placement: .primaryAction) {
+                    // Filled: the toolbar draws a prominent button as one
+                    // tinted capsule, where a quiet one sat in a second
+                    // bubble of its own (iOS 26)
                     action(false)
+                        .environment(\.getPillProminent, true)
                 }
             }
         }
@@ -361,6 +365,7 @@ struct InLibrarySection: View {
 
 /// The Get button's look: a capsule, larger and bolder in the header
 struct AppGetPill: View {
+    @Environment(\.getPillProminent) private var prominent
     let title: String
     var large = false
     let action: () -> Void
@@ -373,11 +378,23 @@ struct AppGetPill: View {
                 .padding(.vertical, large ? 2 : 0)
         }
         .buttonBorderShape(.capsule)
-        .modifier(GetPillStyle(prominent: large))
+        .modifier(GetPillStyle(prominent: large || prominent))
     }
 }
 
-/// Filled in the header, quiet in lists
+/// Get pills filled even when small (in the toolbar)
+private struct GetPillProminentKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var getPillProminent: Bool {
+        get { self[GetPillProminentKey.self] }
+        set { self[GetPillProminentKey.self] = newValue }
+    }
+}
+
+/// Filled in the header and toolbar, quiet in lists
 private struct GetPillStyle: ViewModifier {
     let prominent: Bool
 

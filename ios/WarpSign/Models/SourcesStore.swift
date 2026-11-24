@@ -8,6 +8,8 @@ final class SourcesStore {
     /// Source URLs, in the order added
     private(set) var urls: [String]
     private(set) var sources: [String: Source] = [:]
+    /// Each source's apps, grouped and ready to search (SourceIndex)
+    private(set) var indexes: [String: SourceIndex] = [:]
     private(set) var errors: [String: String] = [:]
     private(set) var loading: Set<String> = []
     /// A source opened from a link (altstore://, sidestore://, a web page
@@ -44,6 +46,7 @@ final class SourcesStore {
         manualUpdates = []
         urls = Array(demoSources.keys)
         sources = demoSources
+        indexes = demoSources.mapValues(SourceIndex.init)
         isDemo = true
     }
 
@@ -56,9 +59,10 @@ final class SourcesStore {
             throw WarpsignError.Source(message: "That isn't a web address.")
         }
         guard !urls.contains(text) else { return }
-        let source = try await Self.fetch(url)
+        let (source, index) = try await Self.fetch(url)
         urls.append(text)
         sources[text] = source
+        indexes[text] = index
         save()
     }
 
@@ -89,13 +93,15 @@ final class SourcesStore {
         guard let url = URL(string: new) else {
             throw WarpsignError.Source(message: "That isn't a web address.")
         }
-        let source = try await Self.fetch(url)
+        let (source, sourceIndex) = try await Self.fetch(url)
         guard let index = urls.firstIndex(of: old) else { return old }
         urls[index] = new
         if manualUpdates.remove(old) != nil { manualUpdates.insert(new) }
         sources[old] = nil
+        indexes[old] = nil
         errors[old] = nil
         sources[new] = source
+        indexes[new] = sourceIndex
         save()
         return new
     }
@@ -110,6 +116,7 @@ final class SourcesStore {
     func remove(at offsets: IndexSet) {
         for index in offsets {
             sources[urls[index]] = nil
+            indexes[urls[index]] = nil
             errors[urls[index]] = nil
             manualUpdates.remove(urls[index])
         }
@@ -122,7 +129,9 @@ final class SourcesStore {
         loading.insert(text)
         defer { loading.remove(text) }
         do {
-            sources[text] = try await Self.fetch(url)
+            let (source, index) = try await Self.fetch(url)
+            sources[text] = source
+            indexes[text] = index
             errors[text] = nil
         } catch {
             errors[text] = error.userMessage
@@ -137,14 +146,17 @@ final class SourcesStore {
         }
     }
 
-    nonisolated private static func fetch(_ url: URL) async throws -> Source {
+    nonisolated private static func fetch(_ url: URL) async throws -> (Source, SourceIndex) {
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         let (data, response) = try await URLSession.shared.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw WarpsignError.Source(message: "The source returned HTTP \(http.statusCode).")
         }
-        return try await background { try parseSource(data: data) }
+        return try await background {
+            let source = try parseSource(data: data)
+            return (source, SourceIndex(source))
+        }
     }
 
     /// What happens to updates for an older version the user gets

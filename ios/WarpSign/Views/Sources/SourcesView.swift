@@ -20,32 +20,19 @@ struct SourcesView: View {
     @State private var query = ""
     @State private var path: [String] = Demo.isOn && Demo.screen == .sourceDetail ? [Demo.sourceURL] : []
 
-    /// An app found by searching, and where it's from
-    struct Result: Identifiable {
+    /// What the search found in each source (SourceIndex.search), for
+    /// `found.query`, worked out off the main thread
+    @State private var found: (query: String, bySource: [SourceResults])?
+
+    /// One source's apps that the search found
+    struct SourceResults: Sendable {
         let url: String
-        let source: Source
-        let app: SourceApp
-        var id: String { url + "\n" + app.bundleId }
+        let listings: [SourceListing]
     }
 
-    /// Every source's apps matching the search: name matches first
-    private var results: [Result] {
-        let query = query.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return [] }
-        let all = sources.urls.flatMap { url -> [Result] in
-            guard let source = sources.sources[url] else { return [] }
-            return source.apps.compactMap { app in
-                let fields = [app.name, app.subtitle, app.developerName, app.bundleId].compactMap { $0 }
-                guard fields.contains(where: { $0.localizedCaseInsensitiveContains(query) }) else { return nil }
-                return Result(url: url, source: source, app: app)
-            }
-        }
-        return all.sorted { a, b in
-            let aName = a.app.name.localizedCaseInsensitiveContains(query)
-            let bName = b.app.name.localizedCaseInsensitiveContains(query)
-            if aName != bName { return aName }
-            return a.app.name.localizedCaseInsensitiveCompare(b.app.name) == .orderedAscending
-        }
+    /// Each source's index, to search, in the order the sources are listed
+    private var indexes: [(url: String, index: SourceIndex)] {
+        sources.urls.compactMap { url in sources.indexes[url].map { (url, $0) } }
     }
 
     /// The sources, one link per line, to share or copy
@@ -60,9 +47,12 @@ struct SourcesView: View {
                     searchResults
                 }
             }
-            .searchable(text: $query, prompt: "Search all sources")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search all sources")
+            .task(id: "\(indexes.map { $0.index.id.uuidString })|\(query)") {
+                await searchAll()
+            }
             .overlay {
-                if !query.isEmpty && results.isEmpty {
+                if !query.isEmpty, found?.query == query, found?.bySource.isEmpty == true {
                     ContentUnavailableView.search(text: query)
                 } else if sources.urls.isEmpty && !checking && query.isEmpty {
                     ContentUnavailableView {
@@ -195,19 +185,41 @@ struct SourcesView: View {
 
     @ViewBuilder
     private var searchResults: some View {
-        let found = results
         // By source, in the order the sources are listed
-        ForEach(sources.urls.filter { url in found.contains { $0.url == url } }, id: \.self) { url in
-            Section(sources.sources[url]?.name ?? url) {
-                ForEach(found.filter { $0.url == url }) { result in
-                    NavigationLink {
-                        SourceAppView(app: result.app, source: result.source, sourceURL: result.url)
-                    } label: {
-                        SourceAppRow(app: result.app)
+        ForEach(found?.bySource ?? [], id: \.url) { results in
+            if let source = sources.sources[results.url] {
+                Section(source.name) {
+                    ForEach(results.listings) { listing in
+                        NavigationLink {
+                            SourceListingDestination(listing: listing, source: source, url: results.url, search: query)
+                        } label: {
+                            SourceListingRow(listing: listing)
+                        }
+                        .contextMenu { SourceAppMenu(app: listing.app, source: source) }
                     }
-                    .contextMenu { SourceAppMenu(app: result.app, source: result.source) }
                 }
             }
+        }
+    }
+
+    /// Search every source, after a pause in typing
+    private func searchAll() async {
+        let query = query
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
+            found = nil
+            return
+        }
+        try? await Task.sleep(for: .milliseconds(150))
+        guard !Task.isCancelled else { return }
+        let indexes = indexes
+        let bySource = try? await runInBackground {
+            indexes.compactMap { entry -> SourceResults? in
+                let listings = entry.index.search(query)
+                return listings.isEmpty ? nil : SourceResults(url: entry.url, listings: listings)
+            }
+        }
+        if let bySource, !Task.isCancelled {
+            found = (query, bySource)
         }
     }
 

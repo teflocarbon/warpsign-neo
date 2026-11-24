@@ -9,6 +9,9 @@ struct SourceDetailView: View {
     /// Show the source itself, even with only one app ("About This Source")
     var showsSource = false
     @State private var search = ""
+    /// What search found, for `found.query`; worked out off the main
+    /// thread, since a source can have tens of thousands of apps
+    @State private var found: (query: String, listings: [SourceListing])?
 
     var body: some View {
         Group {
@@ -30,23 +33,19 @@ struct SourceDetailView: View {
         .refreshable { await sources.refresh(url) }
     }
 
-    private func apps(_ source: Source) -> [SourceApp] {
-        // Featured apps first, as the source asks
-        let featured = Set(source.featuredApps)
-        let ordered = source.apps.filter { featured.contains($0.bundleId) }
-            + source.apps.filter { !featured.contains($0.bundleId) }
-        guard !search.isEmpty else { return ordered }
-        return ordered.filter {
-            $0.name.localizedCaseInsensitiveContains(search)
-                || ($0.developerName ?? "").localizedCaseInsensitiveContains(search)
-        }
+    /// The listings to show: all of them, or what the search found (the
+    /// last search's results until this one's are in)
+    private func listings(_ index: SourceIndex?) -> [SourceListing] {
+        guard let index else { return [] }
+        return search.isEmpty ? index.listings : (found?.listings ?? [])
     }
 
     private func list(_ source: Source) -> some View {
-        List {
+        let index = sources.indexes[url]
+        return List {
             if search.isEmpty {
                 Section {
-                    SourceHeader(source: source, url: url)
+                    SourceHeader(source: source, url: url, index: index)
                         .listRowInsets(EdgeInsets())
                 }
                 Section {
@@ -68,13 +67,13 @@ struct SourceDetailView: View {
                 }
             }
             Section(search.isEmpty ? "Apps" : "") {
-                ForEach(apps(source), id: \.bundleId) { app in
+                ForEach(listings(index)) { listing in
                     NavigationLink {
-                        SourceAppView(app: app, source: source, sourceURL: url)
+                        SourceListingDestination(listing: listing, source: source, url: url, search: search)
                     } label: {
-                        SourceAppRow(app: app)
+                        SourceListingRow(listing: listing)
                     }
-                    .contextMenu { SourceAppMenu(app: app, source: source) }
+                    .contextMenu { SourceAppMenu(app: listing.app, source: source) }
                 }
             }
             if !source.warnings.isEmpty {
@@ -85,7 +84,29 @@ struct SourceDetailView: View {
                 }
             }
         }
-        .searchable(text: $search, prompt: "Search \(source.name)")
+        // Always shown: hidden until scrolled back to the top, it was out of
+        // reach in a long list
+        .searchable(
+            text: $search, placement: .navigationBarDrawer(displayMode: .always),
+            prompt: "Names, Developers, Bundle IDs")
+        .overlay {
+            if !search.isEmpty, found?.query == search, found?.listings.isEmpty == true {
+                ContentUnavailableView.search(text: search)
+            }
+        }
+        .task(id: "\(index?.id.uuidString ?? "")|\(search)") {
+            guard let index, !search.isEmpty else {
+                found = nil
+                return
+            }
+            // Typing: wait for a pause
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            let query = search
+            if let listings = try? await runInBackground({ index.search(query) }), !Task.isCancelled {
+                found = (query, listings)
+            }
+        }
         .tint(Color(hex: source.tintColor))
     }
 }
@@ -94,6 +115,7 @@ struct SourceDetailView: View {
 private struct SourceHeader: View {
     let source: Source
     let url: String
+    let index: SourceIndex?
     @State private var expanded = false
 
     var body: some View {
@@ -112,7 +134,7 @@ private struct SourceHeader: View {
                             .font(.title3.weight(.bold))
                             .foregroundStyle(.white)
                             .lineLimit(2)
-                        Text("\(source.apps.count) app\(source.apps.count == 1 ? "" : "s") · \(URL(string: url)?.host() ?? url)")
+                        Text("\(countLine) · \(URL(string: url)?.host() ?? url)")
                             .font(.caption)
                             .foregroundStyle(.white.opacity(0.85))
                             .lineLimit(1)
@@ -147,6 +169,16 @@ private struct SourceHeader: View {
             }
             .padding(14)
         }
+    }
+
+    /// "3,598 apps", and how many builds when that's more
+    private var countLine: String {
+        let apps = index?.listings.count ?? source.apps.count
+        var line = "\(apps.formatted()) app\(apps == 1 ? "" : "s")"
+        if let index, index.buildCount > apps {
+            line += " (\(index.buildCount.formatted()) builds)"
+        }
+        return line
     }
 
     @ViewBuilder
@@ -260,6 +292,8 @@ private struct NewsCard: View {
 
 struct SourceAppRow: View {
     let app: SourceApp
+    /// With its date, to tell builds of one app apart
+    var showsDate = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -282,9 +316,115 @@ struct SourceAppRow: View {
 
     private var versionLine: String {
         let latest = app.versions[0]
-        if let size = latest.size {
-            return "\(latest.version) · \(ByteCountFormatter.file(size))"
+        var parts = [latest.version]
+        if showsDate, let date = latest.date.flatMap(SourceDate.parse) {
+            parts.append(date.formatted(.dateTime.day().month().year()))
         }
-        return latest.version
+        if let size = latest.size {
+            parts.append(ByteCountFormatter.file(size))
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// A listing in a source's list: the app, and how many builds of it the
+/// source has
+struct SourceListingRow: View {
+    let listing: SourceListing
+
+    var body: some View {
+        if listing.builds.count == 1 {
+            SourceAppRow(app: listing.app)
+        } else {
+            HStack(spacing: 12) {
+                RemoteIconView(url: listing.app.iconUrl)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(listing.name).font(.headline).lineLimit(1)
+                    Text(buildsLine)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Text("Up to \(listing.app.versions[0].version)")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    private var buildsLine: String {
+        var line = "\(listing.builds.count.formatted()) builds"
+        if listing.developerCount == 1, let developer = listing.app.developerName {
+            line += " · \(developer)"
+        } else if listing.developerCount > 1 {
+            line += " from \(listing.developerCount) developers"
+        }
+        return line
+    }
+}
+
+/// Where a listing goes: straight to its app when there's one build, or to
+/// its builds
+struct SourceListingDestination: View {
+    let listing: SourceListing
+    let source: Source
+    let url: String?
+    /// What was searched for, to find the builds that matched it
+    var search = ""
+
+    var body: some View {
+        if listing.builds.count == 1 {
+            SourceAppView(app: listing.app, source: source, sourceURL: url)
+        } else {
+            // Found by a build's name or developer, not the app's: those builds
+            let folded = SourceListing.fold(search.trimmingCharacters(in: .whitespaces))
+            let filter = folded.isEmpty || SourceListing.fold(listing.name).contains(folded) ? "" : search
+            SourceBuildsView(listing: listing, source: source, url: url, filter: filter)
+        }
+    }
+}
+
+/// Every build of an app a source lists, best first
+struct SourceBuildsView: View {
+    let listing: SourceListing
+    let source: Source
+    let url: String?
+    @State var filter: String
+
+    var body: some View {
+        let shown = listing.builds(matching: filter)
+        List {
+            Section {
+                ForEach(Array(shown.enumerated()), id: \.offset) { _, build in
+                    NavigationLink {
+                        SourceAppView(app: build, source: source, sourceURL: url)
+                    } label: {
+                        SourceAppRow(app: build, showsDate: true)
+                    }
+                    .contextMenu { SourceAppMenu(app: build, source: source) }
+                }
+            } header: {
+                Text(filter.isEmpty
+                     ? "\(listing.builds.count.formatted()) builds"
+                     : "\(shown.count.formatted()) of \(listing.builds.count.formatted()) builds")
+                    .font(.subheadline.weight(.medium))
+                    .textCase(nil)
+            } footer: {
+                Text("Highest version first. \(source.name) lists each as an app of its own, all with the bundle ID \(listing.bundleId).")
+            }
+        }
+        .searchable(
+            text: $filter, placement: .navigationBarDrawer(displayMode: .always),
+            prompt: "Names, Developers, Versions")
+        .overlay {
+            if shown.isEmpty {
+                ContentUnavailableView.search(text: filter)
+            }
+        }
+        .navigationTitle(listing.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .tint(Color(hex: source.tintColor))
     }
 }
