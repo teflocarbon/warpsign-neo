@@ -23,7 +23,13 @@ static NSString* remapContainerID(NSString *containerID);
 
 // Forward declarations for our custom implementations
 static CKContainer* (*Original_CKContainer_containerWithIdentifier)(id, SEL, NSString*);
-static id (*Original_CKContainer_initWithIdentifier)(id, SEL, NSString*);
+// -[CKContainerID initWithContainerIdentifier:environment:] (private): every
+// container identifier passes through it, from +containerWithIdentifier:,
+// +defaultContainer and the private -[CKContainer initWithContainerID:]
+// that Core Data's NSPersistentCloudKitContainer uses. CKContainer has no
+// -initWithIdentifier:, so this is where those other paths get remapped.
+static id (*Original_CKContainerID_initWithContainerIdentifier)(id, SEL, NSString*, NSInteger);
+static id WSFContainerIDInit(id self, SEL _cmd, NSString *containerIdentifier, NSInteger environment);
 
 @implementation WSFCloudKitFix
 
@@ -84,20 +90,31 @@ static id (*Original_CKContainer_initWithIdentifier)(id, SEL, NSString*);
          if (loggingEnabled) NSLog(@"WarpsignFix [CloudKit]: Error: Failed to find methods for +[CKContainer containerWithIdentifier:] swizzling.");
     }
 
-    SEL originalInstanceSelector = @selector(initWithIdentifier:);
-    SEL swizzledInstanceSelector = @selector(wsf_initWithIdentifier:);
-    Method originalInstanceMethod = class_getInstanceMethod(containerClass, originalInstanceSelector);
-    Method swizzledInstanceMethod = class_getInstanceMethod(self, swizzledInstanceSelector); // Get from *this* class
-
-    if (originalInstanceMethod && swizzledInstanceMethod) {
-         // Store original implementation before swizzling
-         Original_CKContainer_initWithIdentifier = (id (*)(id, SEL, NSString*))method_getImplementation(originalInstanceMethod);
-
-        method_exchangeImplementations(originalInstanceMethod, swizzledInstanceMethod);
-        if (loggingEnabled) NSLog(@"WarpsignFix [CloudKit]: Swizzled -[CKContainer initWithIdentifier:].");
+    Class containerIDClass = objc_getClass("CKContainerID");
+    SEL idSelector = NSSelectorFromString(@"initWithContainerIdentifier:environment:");
+    Method idMethod = containerIDClass ? class_getInstanceMethod(containerIDClass, idSelector) : NULL;
+    if (idMethod) {
+        Original_CKContainerID_initWithContainerIdentifier =
+            (id (*)(id, SEL, NSString*, NSInteger))method_setImplementation(idMethod, (IMP)WSFContainerIDInit);
+        if (loggingEnabled) NSLog(@"WarpsignFix [CloudKit]: Hooked -[CKContainerID initWithContainerIdentifier:environment:].");
     } else {
-        if (loggingEnabled) NSLog(@"WarpsignFix [CloudKit]: Error: Failed to find methods for -[CKContainer initWithIdentifier:] swizzling.");
+        if (loggingEnabled) NSLog(@"WarpsignFix [CloudKit]: Error: -[CKContainerID initWithContainerIdentifier:environment:] not found; only +containerWithIdentifier: is remapped.");
     }
+}
+
+// Our replacement for -[CKContainerID initWithContainerIdentifier:environment:]:
+// remaps, but never nullifies (an init can't return nil to callers safely).
+// Apple's own containers, which system frameworks create in the app, are
+// left alone: the First Container strategy would otherwise redirect them.
+static id WSFContainerIDInit(id self, SEL _cmd, NSString *containerIdentifier, NSInteger environment) {
+    NSString *remappedID = containerIdentifier;
+    if (![containerIdentifier hasPrefix:@"com.apple."]) {
+        remappedID = remapContainerID(containerIdentifier);
+    }
+    if (loggingEnabled && ![remappedID isEqualToString:containerIdentifier]) {
+        NSLog(@"WarpsignFix [CloudKit]: Remapping container ID %@ -> %@", containerIdentifier, remappedID);
+    }
+    return Original_CKContainerID_initWithContainerIdentifier(self, _cmd, remappedID, environment);
 }
 
 
@@ -108,9 +125,13 @@ static id (*Original_CKContainer_initWithIdentifier)(id, SEL, NSString*);
         return nil;
     }
 
-    NSString *remappedID = remapContainerID(containerIdentifier); // Use static helper
-    if (loggingEnabled && ![remappedID isEqualToString:containerIdentifier]) {
-        NSLog(@"WarpsignFix [CloudKit]: Remapping in +containerWithIdentifier: %@ -> %@", containerIdentifier, remappedID);
+    // Remapped further down, in CKContainerID's init, when that's hooked
+    NSString *remappedID = containerIdentifier;
+    if (!Original_CKContainerID_initWithContainerIdentifier) {
+        remappedID = remapContainerID(containerIdentifier);
+        if (loggingEnabled && ![remappedID isEqualToString:containerIdentifier]) {
+            NSLog(@"WarpsignFix [CloudKit]: Remapping in +containerWithIdentifier: %@ -> %@", containerIdentifier, remappedID);
+        }
     }
 
     // Call the ORIGINAL implementation using the stored function pointer
@@ -123,35 +144,6 @@ static id (*Original_CKContainer_initWithIdentifier)(id, SEL, NSString*);
          // return [self wsf_containerWithIdentifier:remappedID];
          return nil; // Safer fallback
     }
-}
-
-// Our replacement for -[CKContainer initWithIdentifier:]
-- (id)wsf_initWithIdentifier:(NSString *)containerIdentifier {
-     if (cloudKitStrategy == WSFCloudKitStrategyNullify) {
-        if (loggingEnabled) NSLog(@"WarpsignFix [CloudKit]: Nullifying -[CKContainer initWithIdentifier:%@]", containerIdentifier);
-        // Need to decide how to handle nil return from init. Often causes crashes.
-        // Maybe return an uninitialized object or handle differently?
-        // For now, let's proceed but log heavily.
-        NSLog(@"WarpsignFix [CloudKit]: Warning: Nullifying init might lead to unstable behavior.");
-        // return nil; // This will likely crash the caller
-    }
-
-    NSString *remappedID = remapContainerID(containerIdentifier); // Use static helper
-    if (loggingEnabled && ![remappedID isEqualToString:containerIdentifier]) {
-        NSLog(@"WarpsignFix [CloudKit]: Remapping in -initWithIdentifier: %@ -> %@", containerIdentifier, remappedID);
-    }
-
-    // Call the ORIGINAL implementation using the stored function pointer
-    // Note: We call the original implementation directly, not via selector to avoid infinite loop
-     if (Original_CKContainer_initWithIdentifier) {
-        // 'self' here refers to the CKContainer instance being initialized
-        return Original_CKContainer_initWithIdentifier(self, @selector(initWithIdentifier:), remappedID);
-     } else {
-         NSLog(@"WarpsignFix [CloudKit]: Error: Original -initWithIdentifier implementation not found!");
-         // Fallback attempt (might cause loop if swizzling failed badly) - less safe
-         // return [self wsf_initWithIdentifier:remappedID];
-         return nil; // Safer fallback
-     }
 }
 
 + (NSString *)firstCloudKitContainer {
