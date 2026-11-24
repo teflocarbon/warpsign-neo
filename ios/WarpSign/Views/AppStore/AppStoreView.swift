@@ -4,8 +4,9 @@ import SwiftUI
 /// account has got, and get apps into the library to sign. Browsing needs
 /// no Apple ID; getting apps does, through ipatool.
 ///
-/// One list: a row of chips (which store, and what to show), then that, or
-/// the search's results while there's a search.
+/// A row of chips under the search field (which store, and what to show),
+/// then one list: that, or the search's results while there's a search,
+/// or recent searches while the search field is empty and in use.
 struct AppStoreView: View {
     @Environment(AccountStore.self) private var account
     @State private var shelf = StoreShelf.free
@@ -19,6 +20,10 @@ struct AppStoreView: View {
     @State private var shelfError: String?
     @State private var signingIn = false
     @State private var showingAccount = false
+    /// The list's side margin, which its cards and the chips line up with
+    @State private var margin: CGFloat = 20
+    /// Go's report of the last crash, once ipatool has started
+    @State private var lastCrash: String?
 
     private var store: AppStoreModel { .shared }
 
@@ -26,7 +31,13 @@ struct AppStoreView: View {
         NavigationStack {
             Group {
                 if AppStoreEngine.isAvailable {
-                    list
+                    SearchingReader { isSearching in
+                        let showsRecents = isSearching && term.isEmpty && !store.recentSearches.isEmpty
+                        list(showsRecents: showsRecents)
+                            .safeAreaInset(edge: .top, spacing: 0) {
+                                if !showsRecents { chips }
+                            }
+                    }
                 } else {
                     ContentUnavailableView(
                         "No App Store in This Build",
@@ -37,7 +48,6 @@ struct AppStoreView: View {
             }
             .navigationTitle("App Store")
             .searchable(text: $term, placement: .navigationBarDrawer(displayMode: .always), prompt: "Apps, Links, IDs, Bundle IDs")
-            .searchSuggestions { recentSearches }
             .onSubmit(of: .search) { search(term) }
             .onChange(of: term) { _, term in
                 if term.isEmpty { clearSearch() }
@@ -56,43 +66,64 @@ struct AppStoreView: View {
                 if store.account == .unknown {
                     await store.refreshAccount()
                 }
+                // Starting ipatool (refreshAccount) kept the last crash's report
+                lastCrash = AppStoreEngine.lastCrash
             }
+            .onAppear { lastCrash = AppStoreEngine.lastCrash }
         }
     }
 
-    private var list: some View {
+    private func list(showsRecents: Bool) -> some View {
         List {
-            Section {
-                chips
-            }
-            .listRowBackground(Color.clear)
-            .listRowInsets(EdgeInsets())
-
-            if !store.downloads.isEmpty {
-                Section("Downloading") {
-                    ForEach(store.downloads.values.sorted { $0.app.name < $1.app.name }, id: \.app.id) { download in
-                        NavigationLink {
-                            StoreAppView(app: download.app)
-                        } label: {
-                            StoreDownloadRow(download: download, showsApp: true)
-                        }
-                    }
-                }
-            }
-
-            if searchedTerm.isEmpty {
-                shelfContent
+            if showsRecents {
+                recentSearches
             } else {
-                searchContent
+                content
             }
         }
         .listStyle(.insetGrouped)
         .listSectionSpacing(16)
+        .contentMargins(.top, 4, for: .scrollContent)
+        // UIKit's margins: 20 points on the widest iPhones, 16 on the rest
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+            margin = width > 400 ? 20 : 16
+        }
         .refreshable {
             if searchedTerm.isEmpty { await loadShelf(refresh: true) }
         }
         .task(id: "\(store.country)/\(shelf)/\(store.signedInAccount?.email ?? "")") {
             if searchedTerm.isEmpty { await loadShelf(refresh: false) }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let crash = lastCrash {
+            Section {
+                NavigationLink {
+                    StoreCrashView(report: crash)
+                } label: {
+                    Label("The App Store stopped WarpSign last time", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+        if !store.downloads.isEmpty {
+            Section("Downloading") {
+                ForEach(store.downloads.values.sorted { $0.app.name < $1.app.name }, id: \.app.id) { download in
+                    NavigationLink {
+                        StoreAppView(app: download.app)
+                    } label: {
+                        StoreDownloadRow(download: download, showsApp: true)
+                    }
+                }
+            }
+        }
+
+        if searchedTerm.isEmpty {
+            shelfContent
+        } else {
+            searchContent
         }
     }
 
@@ -110,9 +141,11 @@ struct AppStoreView: View {
                     }
                 }
             }
-            .padding(.vertical, 4)
         }
-        .contentMargins(.horizontal, 20, for: .scrollContent)
+        .contentMargins(.horizontal, margin, for: .scrollContent)
+        .padding(.top, 4)
+        .padding(.bottom, 8)
+        .background(Color(.systemGroupedBackground))
     }
 
     private var countryChip: some View {
@@ -253,21 +286,34 @@ struct AppStoreView: View {
 
     // MARK: Search
 
-    @ViewBuilder
     private var recentSearches: some View {
-        if term.isEmpty && !store.recentSearches.isEmpty {
-            Section("Recent") {
-                ForEach(store.recentSearches, id: \.self) { recent in
-                    Button {
-                        term = recent
-                        search(recent)
-                    } label: {
-                        Label(recent, systemImage: "clock.arrow.circlepath")
+        Section {
+            ForEach(store.recentSearches, id: \.self) { recent in
+                Button {
+                    term = recent
+                    search(recent)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "clock")
+                            .foregroundStyle(.secondary)
+                        Text(recent)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Spacer()
+                        Image(systemName: "arrow.up.left")
+                            .font(.footnote)
+                            .foregroundStyle(.tertiary)
                     }
                 }
-                Button("Clear Recent Searches", role: .destructive) {
-                    store.clearRecentSearches()
-                }
+            }
+            .onDelete { store.forgetSearches(at: $0) }
+        } header: {
+            HStack {
+                countHeader("Recent Searches")
+                Spacer()
+                Button("Clear") { store.clearRecentSearches() }
+                    .font(.subheadline)
+                    .textCase(nil)
             }
         }
     }
@@ -352,6 +398,46 @@ struct AppStoreView: View {
         Text(text)
             .font(.subheadline.weight(.medium))
             .textCase(nil)
+    }
+}
+
+/// Whether the search field is in use, which only views inside
+/// `.searchable` can tell
+struct SearchingReader<Content: View>: View {
+    @Environment(\.isSearching) private var isSearching
+    @ViewBuilder let content: (Bool) -> Content
+
+    var body: some View {
+        content(isSearching)
+    }
+}
+
+/// Go's report of the last crash in ipatool or Unicorn, to share
+struct StoreCrashView: View {
+    @Environment(\.dismiss) private var dismiss
+    let report: String
+
+    var body: some View {
+        ScrollView {
+            Text(report)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+        }
+        .navigationTitle("Last Crash")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                ShareLink(item: report)
+            }
+            ToolbarItem(placement: .bottomBar) {
+                Button("Forget It", role: .destructive) {
+                    AppStoreEngine.forgetLastCrash()
+                    dismiss()
+                }
+            }
+        }
     }
 }
 

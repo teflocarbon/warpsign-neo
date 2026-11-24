@@ -22,6 +22,7 @@ enum AppStoreEngine {
         defer { lock.unlock() }
         if let shared { return shared }
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        keepLastCrash()
         let client = try AppStoreClient(
             home: home.path,
             passphrase: try secret(passphraseKey) { randomBytes(32).base64EncodedString() },
@@ -29,6 +30,28 @@ enum AppStoreEngine {
         )
         shared = client
         return client
+    }
+
+    /// Go's report of the last time ipatool or Unicorn crashed the app,
+    /// which iOS keeps no report of (bridge.go)
+    static var lastCrash: String? {
+        guard let text = try? String(contentsOf: lastCrashFile, encoding: .utf8) else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func forgetLastCrash() {
+        try? FileManager.default.removeItem(at: lastCrashFile)
+    }
+
+    private static var lastCrashFile: URL { home.appendingPathComponent("last-crash.log") }
+
+    /// Before the bridge starts writing a new one
+    private static func keepLastCrash() {
+        let crash = home.appendingPathComponent("ipatool/crash.log")
+        guard let size = (try? crash.resourceValues(forKeys: [.fileSizeKey]))?.fileSize, size > 0 else { return }
+        try? FileManager.default.removeItem(at: lastCrashFile)
+        try? FileManager.default.moveItem(at: crash, to: lastCrashFile)
     }
 
     /// A value kept in the Keychain, made the first time

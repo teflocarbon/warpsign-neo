@@ -109,6 +109,10 @@ final class AppStoreModel {
         recentSearches = Array(recentSearches.prefix(10))
     }
 
+    func forgetSearches(at offsets: IndexSet) {
+        recentSearches.remove(atOffsets: offsets)
+    }
+
     func clearRecentSearches() {
         recentSearches = []
     }
@@ -170,7 +174,10 @@ final class AppStoreModel {
     func versions(of app: CatalogApp, identity: IdentityData?) async throws -> [String] {
         try await ready(identity: identity)
         let id = String(app.id)
-        return try await background { try AppStoreEngine.client().versions(app: id) }.reversed()
+        let ids = try await background { try AppStoreEngine.client().versions(app: id) }
+        // Each once: the list shows them by ID
+        var seen = Set<String>()
+        return ids.reversed().filter { seen.insert($0).inserted }
     }
 
     /// Fills in versionInfo for one version. Lookups take turns (ipatool

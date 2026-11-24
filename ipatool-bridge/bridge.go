@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"time"
 	"unsafe"
@@ -182,6 +183,15 @@ func configure(req request) (reply, error) {
 	dir := filepath.Join(req.Home, "ipatool")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
+	}
+
+	// A crash Go can't turn into an error (a panic on another goroutine, a
+	// signal inside Unicorn) ends the app with no iOS crash report, and
+	// stderr goes nowhere on a device: keep Go's report in a file too. The
+	// app moves the last one aside before configuring, to show it.
+	if f, err := os.OpenFile(filepath.Join(dir, "crash.log"), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600); err == nil {
+		_ = debug.SetCrashOutput(f, debug.CrashOptions{})
+		f.Close() // SetCrashOutput keeps its own copy
 	}
 
 	jar, err := cookiejar.New(&cookiejar.Options{Filename: filepath.Join(dir, "cookies")})
