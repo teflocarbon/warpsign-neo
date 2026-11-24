@@ -121,15 +121,19 @@ struct StoreAppView: View {
 }
 
 /// Get: downloads the app (or a version) into the library, showing
-/// progress. Asks to sign in first.
+/// progress. Asks to sign in first. A paid app is only downloaded when the
+/// account has bought it: WarpSign can't buy apps, so otherwise it says so.
 struct StoreGetButton: View {
     @Environment(LibraryStore.self) private var library
     @Environment(AccountStore.self) private var account
+    @Environment(\.openURL) private var openURL
     let app: CatalogApp
     /// An older version; the latest when nil
     var versionId: String? = nil
     var large = false
     @State private var signingIn = false
+    @State private var checking = false
+    @State private var notBought = false
 
     private var store: AppStoreModel { .shared }
 
@@ -137,9 +141,15 @@ struct StoreGetButton: View {
         store.downloads[app.id].flatMap { $0.isActive && $0.versionId == versionId ? $0 : nil }
     }
 
+    /// Get for apps the account can download; the price for paid ones it
+    /// hasn't (as far as known) bought
+    private var title: String {
+        app.isFree || versionId != nil || store.owns(app) == true ? "Get" : app.getTitle
+    }
+
     var body: some View {
-        if let download {
-            if let fraction = download.fraction {
+        if download != nil || checking {
+            if let fraction = download?.fraction {
                 ProgressView(value: fraction)
                     .progressViewStyle(.circular)
                     .frame(width: 28, height: 28)
@@ -147,17 +157,45 @@ struct StoreGetButton: View {
                 ProgressView().frame(width: 28, height: 28)
             }
         } else {
-            AppGetPill(title: versionId == nil ? app.getTitle : "Get", large: large) {
+            AppGetPill(title: title, large: large) {
                 if store.signedInAccount == nil {
                     signingIn = true
                 } else {
-                    store.download(
-                        app, versionId: versionId, library: library,
-                        identity: account.identities[.development]?.data)
+                    get()
                 }
             }
             .sheet(isPresented: $signingIn) {
                 StoreSignInView()
+            }
+            .alert("Not Bought", isPresented: $notBought) {
+                if let link = app.trackViewUrl, let url = URL(string: link) {
+                    Button("Open in App Store") { openURL(url) }
+                }
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("\(app.name) costs \(app.getTitle), and your Apple ID hasn't bought it. WarpSign can't buy apps: buy it in the App Store with the same Apple ID, then get it here.")
+            }
+        }
+    }
+
+    private func get() {
+        let identity = account.identities[.development]?.data
+        guard !app.isFree else {
+            store.download(app, versionId: versionId, library: library, identity: identity)
+            return
+        }
+        Task {
+            checking = true
+            if store.owned == nil {
+                try? await store.loadOwned(identity: identity)
+            }
+            checking = false
+            // Not listed among everything the account has: not bought.
+            // Unknown (not all listed, or listing failed): let ipatool try.
+            if store.owns(app) == false {
+                notBought = true
+            } else {
+                store.download(app, versionId: versionId, library: library, identity: identity)
             }
         }
     }

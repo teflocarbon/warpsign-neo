@@ -35,7 +35,9 @@ struct AppStoreView: View {
                         let showsRecents = isSearching && term.isEmpty && !store.recentSearches.isEmpty
                         list(showsRecents: showsRecents)
                             .safeAreaInset(edge: .top, spacing: 0) {
-                                if !showsRecents { chips }
+                                // Not over search results: the store they're
+                                // from is in their header
+                                if !showsRecents && searchedTerm.isEmpty { chips }
                             }
                     }
                 } else {
@@ -47,6 +49,9 @@ struct AppStoreView: View {
                 }
             }
             .navigationTitle("App Store")
+            // Inline: a large title above the always-shown search field and
+            // the chips left a blank band at the top
+            .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $term, placement: .navigationBarDrawer(displayMode: .always), prompt: "Apps, Links, IDs, Bundle IDs")
             .onSubmit(of: .search) { search(term) }
             .onChange(of: term) { _, term in
@@ -133,11 +138,9 @@ struct AppStoreView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 countryChip
-                if searchedTerm.isEmpty {
-                    ForEach(StoreShelf.allCases) { item in
-                        StoreChip(title: item.title, systemImage: item.systemImage, selected: shelf == item) {
-                            shelf = item
-                        }
+                ForEach(StoreShelf.allCases) { item in
+                    StoreChip(title: item.title, systemImage: item.systemImage, selected: shelf == item) {
+                        shelf = item
                     }
                 }
             }
@@ -344,7 +347,8 @@ struct AppStoreView: View {
                     appLink(app, country: foundIn)
                 }
             } header: {
-                countHeader(results.count == 1 ? "1 result" : "\(results.count) results")
+                countHeader((results.count == 1 ? "1 result" : "\(results.count) results")
+                    + " in \(StoreCountry.name(foundIn ?? store.country))")
             } footer: {
                 if let foundIn {
                     Text("Not in the \(StoreCountry.name(store.country)) App Store. Found in the \(StoreCountry.name(foundIn)) one.")

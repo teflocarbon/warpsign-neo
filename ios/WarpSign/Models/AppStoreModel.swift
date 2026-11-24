@@ -168,6 +168,14 @@ final class AppStoreModel {
         ownedTotal = Int(page.total)
     }
 
+    /// Whether the account has got the app: nil when that isn't known
+    /// (its apps not listed yet, or more of them than were listed)
+    func owns(_ app: CatalogApp) -> Bool? {
+        guard let owned else { return nil }
+        if owned.contains(where: { $0.id == app.id }) { return true }
+        return ownedTotal > owned.count ? nil : false
+    }
+
     // MARK: Versions
 
     /// External version IDs, newest first
