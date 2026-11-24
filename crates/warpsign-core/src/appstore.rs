@@ -82,6 +82,26 @@ impl std::fmt::Display for AppRef {
 pub struct StoreAccount {
     pub name: String,
     pub email: String,
+    /// The store it uses, as Apple writes it ("143441-1,29"): the number
+    /// before the dash names the country. Empty when not given (ipatool's
+    /// CLI doesn't print it).
+    pub storefront: String,
+}
+
+/// A page of the apps an account has got
+#[derive(Debug, Clone, PartialEq)]
+pub struct OwnedApps {
+    pub apps: Vec<StoreApp>,
+    /// How many the account has in all
+    pub total: u64,
+}
+
+/// What an external version ID stands for
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VersionMetadata {
+    pub display_version: String,
+    /// RFC 3339, or empty when the store gives none
+    pub release_date: String,
 }
 
 /// A search result
@@ -270,15 +290,42 @@ pub mod ipatool {
         Ok(StoreAccount {
             name: string(&line, "name"),
             email: string(&line, "email"),
+            storefront: string(&line, "storefront"),
         })
     }
 
     pub fn parse_search(stdout: &str) -> Result<Vec<StoreApp>, StoreError> {
         let line = result(stdout, "apps")?;
-        let apps = line
-            .get("apps")
-            .and_then(Value::as_array)
-            .ok_or_else(|| StoreError::Output("`apps` isn't a list".into()))?;
+        apps(&line, "apps")
+    }
+
+    /// The bridge's `owned` reply (ipatool's CLI has no such command)
+    pub fn parse_owned(stdout: &str) -> Result<OwnedApps, StoreError> {
+        let line = result(stdout, "owned")?;
+        let apps = apps(&line, "owned")?;
+        let total = line
+            .get("totalCount")
+            .and_then(Value::as_u64)
+            .unwrap_or(apps.len() as u64);
+        Ok(OwnedApps { apps, total })
+    }
+
+    /// The bridge's `version_metadata` reply
+    pub fn parse_version_metadata(stdout: &str) -> Result<VersionMetadata, StoreError> {
+        let line = result(stdout, "displayVersion")?;
+        Ok(VersionMetadata {
+            display_version: string(&line, "displayVersion"),
+            release_date: string(&line, "releaseDate"),
+        })
+    }
+
+    fn apps(line: &Map<String, Value>, key: &str) -> Result<Vec<StoreApp>, StoreError> {
+        let apps = match line.get(key) {
+            Some(Value::Array(apps)) => apps,
+            // zerolog writes a nil slice as null
+            Some(Value::Null) => return Ok(Vec::new()),
+            _ => return Err(StoreError::Output(format!("`{key}` isn't a list"))),
+        };
         Ok(apps
             .iter()
             .filter_map(Value::as_object)
@@ -409,6 +456,41 @@ pub mod bridge {
         pub fn logout(&self) -> Result<(), StoreError> {
             let reply = self.send(json!({"op": "logout"}));
             ipatool::result(&reply, "success").map(|_| ())
+        }
+
+        /// The apps the account has got, most recent first: `page` from 1,
+        /// `limit` a page (at most 100)
+        pub fn owned(
+            &self,
+            page: u32,
+            limit: u32,
+            platform: Option<Platform>,
+        ) -> Result<OwnedApps, StoreError> {
+            let reply = self.send(json!({
+                "op": "owned",
+                "page": page,
+                "limit": limit,
+                "platform": platform_name(platform),
+            }));
+            ipatool::parse_owned(&reply)
+        }
+
+        /// The version string and release date of an external version ID
+        pub fn version_metadata(
+            &self,
+            app: &AppRef,
+            version_id: &str,
+            platform: Option<Platform>,
+        ) -> Result<VersionMetadata, StoreError> {
+            let (bundle_id, app_id) = app_fields(app);
+            let reply = self.send(json!({
+                "op": "version_metadata",
+                "bundle_id": bundle_id,
+                "app_id": app_id,
+                "version_id": version_id,
+                "platform": platform_name(platform),
+            }));
+            ipatool::parse_version_metadata(&reply)
         }
     }
 
@@ -598,6 +680,62 @@ mod tests {
         let account = parse_account(out).unwrap();
         assert_eq!(account.name, "Test User");
         assert_eq!(account.email, "test@example.com");
+    }
+
+    #[test]
+    fn account_storefront() {
+        let out = r#"{"level":"info","name":"Test User","email":"test@example.com","storefront":"143441-1,29","success":true}"#;
+        assert_eq!(parse_account(out).unwrap().storefront, "143441-1,29");
+    }
+
+    #[test]
+    fn owned() {
+        let out = r#"{"level":"info","owned":[{"id":111,"bundleID":"com.example.one","name":"One","version":"1.2","price":0}],"count":1,"totalCount":40,"success":true}"#;
+        let owned = parse_owned(out).unwrap();
+        assert_eq!(owned.apps.len(), 1);
+        assert_eq!(owned.apps[0].name, "One");
+        assert_eq!(owned.total, 40);
+        let none = r#"{"level":"info","owned":null,"count":0,"totalCount":0,"success":true}"#;
+        assert!(parse_owned(none).unwrap().apps.is_empty());
+    }
+
+    #[test]
+    fn version_metadata() {
+        let out = r#"{"level":"info","displayVersion":"1.2","releaseDate":"2026-10-01T07:00:00Z","success":true}"#;
+        let metadata = parse_version_metadata(out).unwrap();
+        assert_eq!(metadata.display_version, "1.2");
+        assert_eq!(metadata.release_date, "2026-10-01T07:00:00Z");
+    }
+
+    #[test]
+    fn bridge_owned_and_metadata_requests() {
+        use std::cell::RefCell;
+
+        let sent = RefCell::new(Vec::<serde_json::Value>::new());
+        let bridge = bridge::Bridge::new(|request: &str| {
+            let request: serde_json::Value = serde_json::from_str(request).unwrap();
+            let reply = match request["op"].as_str().unwrap() {
+                "owned" => r#"{"level":"info","owned":[],"totalCount":0,"success":true}"#,
+                _ => r#"{"level":"info","displayVersion":"2.0","releaseDate":"","success":true}"#,
+            };
+            sent.borrow_mut().push(request);
+            reply.to_string()
+        });
+        assert!(bridge.owned(2, 25, None).unwrap().apps.is_empty());
+        let metadata = bridge
+            .version_metadata(
+                &AppRef::BundleId("com.example.one".into()),
+                "800000002",
+                None,
+            )
+            .unwrap();
+        assert_eq!(metadata.display_version, "2.0");
+
+        let sent = sent.borrow();
+        assert_eq!(sent[0]["page"], 2);
+        assert_eq!(sent[0]["limit"], 25);
+        assert_eq!(sent[1]["bundle_id"], "com.example.one");
+        assert_eq!(sent[1]["version_id"], "800000002");
     }
 
     #[test]

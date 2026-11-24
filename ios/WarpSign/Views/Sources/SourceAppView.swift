@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// An app in a source, laid out like the App Store and TestFlight: header
-/// with Get, the essentials at a glance, what's new, screenshots, the
+/// An app in a source, on the shared app page (AppPage.swift): header with
+/// Get, the essentials at a glance, what's new, screenshots, the
 /// description, information, and the permissions the source lists, by
 /// name
 struct SourceAppView: View {
@@ -16,7 +16,6 @@ struct SourceAppView: View {
     var isOnlyApp = false
 
     @State private var names = EntitlementNames()
-    @State private var headerHidden = false
 
     private var latest: AppVersion { app.versions[0] }
     private var tint: Color { Color(hex: app.tintColor) ?? Color(hex: source.tintColor) ?? .accentColor }
@@ -36,59 +35,10 @@ struct SourceAppView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                header
-                stats
-                if let download {
-                    DownloadRow(item: download)
-                        .padding(12)
-                        .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .padding(.top, 12)
-                }
-                if !inLibrary.isEmpty { libraryRows }
-                whatsNew
-                screenshots
-                if let description = app.description { about(description) }
-                information
-                permissions
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 32)
-        }
-        .modifier(HeaderVisibility(hidden: $headerHidden))
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if headerHidden {
-                ToolbarItem(placement: .principal) {
-                    RemoteIconView(url: app.iconUrl, size: 30)
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    DownloadButton(version: latest, app: app, source: source)
-                }
-            }
-        }
-        .tint(tint)
-        .task { names = await account.cachedEntitlementNames() }
-    }
-
-    // MARK: Header
-
-    private var header: some View {
-        HStack(alignment: .top, spacing: 16) {
-            RemoteIconView(url: app.iconUrl, size: 112)
-                .contextMenu { SourceAppMenu(app: app, source: source) }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(app.name)
-                    .font(.title2.weight(.bold))
-                    .lineLimit(2)
-                if let subtitle = app.subtitle ?? app.developerName {
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
+        AppPage(iconURL: app.iconUrl, tint: tint) { large in
+            DownloadButton(version: latest, app: app, source: source, large: large)
+        } content: {
+            AppPageHeader(iconURL: app.iconUrl, name: app.name, subtitle: app.subtitle ?? app.developerName) {
                 if let sourceURL {
                     NavigationLink {
                         SourceDetailView(url: sourceURL, showsSource: true)
@@ -99,199 +49,64 @@ struct SourceAppView: View {
                 } else {
                     sourceLine
                 }
-                Spacer(minLength: 8)
+            } action: {
                 DownloadButton(version: latest, app: app, source: source, large: true)
+            } menu: {
+                SourceAppMenu(app: app, source: source)
             }
-            Spacer(minLength: 0)
+            AppStatsStrip(items: statItems)
+            if let download {
+                DownloadRow(item: download)
+                    .padding(12)
+                    .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .padding(.top, 12)
+            }
+            InLibrarySection(apps: inLibrary, showsUpdates: true)
+            WhatsNewSection(
+                version: latest.version,
+                date: latest.date.flatMap(SourceDate.parse),
+                notes: latest.notes
+            ) {
+                if app.versions.count > 1 {
+                    NavigationLink("Version History") {
+                        SourceVersionsView(app: app, source: source)
+                    }
+                }
+            }
+            AppScreenshots(urls: app.screenshotUrls)
+            if let description = app.description {
+                AppPageSection("Description") {
+                    ExpandableText(description)
+                }
+            }
+            information
+            permissions
         }
-        .frame(minHeight: 112)
-        .padding(.top, 8)
+        .task { names = await account.cachedEntitlementNames() }
     }
 
-    /// Where it's from, quietly: the source (and that it's its only app,
-    /// when it opened straight here), to open the source itself
+    /// The source (and that it's its only app, when it opened straight
+    /// here), to open the source itself
     private var sourceLine: some View {
-        HStack(spacing: 5) {
-            RemoteIconView(url: source.iconUrl, size: 16)
-            Text(isOnlyApp ? "\(source.name) · only app" : source.name)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            if sourceURL != nil {
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .padding(.top, 2)
+        AppOriginLine(
+            iconURL: source.iconUrl,
+            text: isOnlyApp ? "\(source.name) · only app" : source.name,
+            opens: sourceURL != nil
+        )
     }
 
-    private struct Stat {
-        let label: String
-        let value: String
-        /// The unit or context, under the value
-        let detail: String
-    }
-
-    /// Short values with their units and context underneath, as the App
-    /// Store's strip has them
-    private var statItems: [Stat] {
-        var items = [Stat(
-            label: "Version",
-            value: latest.version,
-            detail: latest.build.flatMap { $0 == latest.version ? nil : "Build \($0)" } ?? "Latest"
-        )]
-        if let size = latest.size {
-            let count = ByteCountFormatter()
-            count.countStyle = .file
-            count.includesUnit = false
-            let unit = ByteCountFormatter()
-            unit.countStyle = .file
-            unit.includesCount = false
-            items.append(Stat(
-                label: "Size",
-                value: count.string(fromByteCount: Int64(clamping: size)),
-                detail: unit.string(fromByteCount: Int64(clamping: size))
-            ))
-        }
-        if let minOs = latest.minOs {
-            let short = minOs.hasSuffix(".0") ? String(minOs.dropLast(2)) : minOs
-            items.append(Stat(label: "Requires", value: "iOS \(short)", detail: "or later"))
-        }
-        if let date = latest.date.flatMap(SourceDate.parse) {
-            items.append(Stat(
-                label: "Updated",
-                value: date.formatted(.dateTime.day().month()),
-                detail: date.formatted(.dateTime.year())
-            ))
-        }
+    private var statItems: [AppStat] {
+        var items = [AppStat.version(latest.version, build: latest.build)]
+        if let size = latest.size { items.append(.size(size)) }
+        if let minOs = latest.minOs { items.append(.requires(minOs)) }
+        if let date = latest.date.flatMap(SourceDate.parse) { items.append(.updated(date)) }
         return items
-    }
-
-    private var stats: some View {
-        VStack(spacing: 0) {
-            Divider().padding(.top, 20)
-            HStack(spacing: 0) {
-                ForEach(Array(statItems.enumerated()), id: \.offset) { index, item in
-                    if index > 0 {
-                        Divider().frame(height: 40)
-                    }
-                    VStack(spacing: 3) {
-                        Text(item.label.uppercased())
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(.secondary)
-                        Text(item.value)
-                            .font(.title3.weight(.bold))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                        Text(item.detail)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 4)
-                    .frame(maxWidth: .infinity)
-                }
-            }
-            .padding(.vertical, 12)
-            Divider()
-        }
-    }
-
-    private var libraryRows: some View {
-        SourceSection("In Your Library") {
-            ForEach(inLibrary) { libraryApp in
-                NavigationLink {
-                    AppDetailView(appId: libraryApp.id)
-                } label: {
-                    HStack(spacing: 12) {
-                        AppIconView(image: library.icon(for: libraryApp.id), size: 40)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(libraryApp.displayName).font(.headline).foregroundStyle(.primary)
-                            Text(libraryApp.versionText).font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        if let update = Updater.shared.available[libraryApp.id] {
-                            Text("\(update.version.version) available").font(.subheadline).foregroundStyle(.tint)
-                        } else if let skipped = libraryApp.skippedVersion,
-                                  skipped == Updater.shared.sourceVersion(of: libraryApp)?.version.version {
-                            Text("Skipping \(skipped)").font(.subheadline).foregroundStyle(.secondary)
-                        } else {
-                            Text("Up to date").font(.subheadline).foregroundStyle(.green)
-                        }
-                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-        }
     }
 
     // MARK: Sections
 
-    private var whatsNew: some View {
-        SourceSection("What's New") {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Version \(latest.version)").font(.headline)
-                Spacer()
-                if let date = latest.date.flatMap(SourceDate.parse) {
-                    Text(date, format: .dateTime.day().month().year())
-                        .foregroundStyle(.secondary)
-                }
-            }
-            if let notes = latest.notes {
-                ExpandableText(notes)
-            }
-            if app.versions.count > 1 {
-                NavigationLink {
-                    SourceVersionsView(app: app, source: source)
-                } label: {
-                    Text("Version History")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .padding(.top, 4)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var screenshots: some View {
-        if !app.screenshotUrls.isEmpty {
-            SourceSection("Preview") {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(app.screenshotUrls, id: \.self) { url in
-                            AsyncImage(url: URL(string: url)) { image in
-                                image.resizable().scaledToFit()
-                            } placeholder: {
-                                Color.gray.opacity(0.15).aspectRatio(9.0 / 19.5, contentMode: .fit)
-                            }
-                            .frame(height: 420)
-                            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                    .strokeBorder(.quaternary, lineWidth: 0.5)
-                            }
-                        }
-                    }
-                    .scrollTargetLayout()
-                }
-                .scrollTargetBehavior(.viewAligned)
-                .padding(.horizontal, -20)
-                .contentMargins(.horizontal, 20, for: .scrollContent)
-            }
-        }
-    }
-
-    private func about(_ description: String) -> some View {
-        SourceSection("Description") {
-            ExpandableText(description)
-        }
-    }
-
     private var information: some View {
-        SourceSection("Information") {
+        AppPageSection("Information") {
             VStack(spacing: 0) {
                 InfoRow("Bundle ID", app.bundleId, monospaced: true)
                 InfoRow("Version", latest.build.map { $0 == latest.version ? latest.version : "\(latest.version) (\($0))" } ?? latest.version)
@@ -328,12 +143,7 @@ struct SourceAppView: View {
                     InfoRow("Source", source.name)
                 }
                 if let website = source.website, let url = URL(string: website) {
-                    HStack {
-                        Text("Website").foregroundStyle(.secondary)
-                        Spacer()
-                        Link(url.host() ?? website, destination: url)
-                    }
-                    .padding(.vertical, 12)
+                    InfoLinkRow(label: "Website", url: url)
                 }
             }
         }
@@ -342,7 +152,7 @@ struct SourceAppView: View {
     @ViewBuilder
     private var permissions: some View {
         if !app.entitlements.isEmpty || !app.privacy.isEmpty {
-            SourceSection("Permissions") {
+            AppPageSection("Permissions") {
                 if !app.entitlements.isEmpty {
                     Text("Capabilities")
                         .font(.subheadline.weight(.semibold))
@@ -387,146 +197,6 @@ struct SourceAppView: View {
         app.entitlements.sorted {
             (names[$0]?.name ?? EntitlementTitle.guess($0))
                 .localizedCaseInsensitiveCompare(names[$1]?.name ?? EntitlementTitle.guess($1)) == .orderedAscending
-        }
-    }
-}
-
-// MARK: - Pieces
-
-/// A titled section, as the App Store's
-private struct SourceSection<Content: View>: View {
-    let title: String
-    let content: Content
-
-    init(_ title: String, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.content = content()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.title2.weight(.bold))
-                .padding(.top, 24)
-            content
-        }
-    }
-}
-
-private struct InfoRow: View {
-    let label: String
-    let value: String
-    var monospaced = false
-
-    init(_ label: String, _ value: String, monospaced: Bool = false) {
-        self.label = label
-        self.value = value
-        self.monospaced = monospaced
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .firstTextBaseline, spacing: 16) {
-                Text(label).foregroundStyle(.secondary)
-                Spacer(minLength: 8)
-                Text(value)
-                    .font(monospaced ? .body.monospaced() : .body)
-                    .multilineTextAlignment(.trailing)
-            }
-            .padding(.vertical, 12)
-            .contentShape(Rectangle())
-            .contextMenu { CopyMenu(title: label, value: value) }
-            Divider()
-        }
-    }
-}
-
-private struct PermissionRow: View {
-    let symbol: String
-    let title: String
-    let detail: String
-    var monospacedDetail = false
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: symbol)
-                .font(.body)
-                .foregroundStyle(.tint)
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                Text(detail)
-                    .font(monospacedDetail ? .caption.monospaced() : .callout)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.vertical, 8)
-        .contentShape(Rectangle())
-        .contextMenu {
-            CopyMenu(title: "Name", value: title)
-            CopyMenu(title: monospacedDetail ? "Key" : "Reason", value: detail)
-        }
-    }
-}
-
-/// Long text, cut to a few lines until "more" is tapped. "more" shows
-/// only when the text really is cut: it's measured at full height
-/// against the height it's cut to.
-struct ExpandableText: View {
-    let text: String
-    var lines = 4
-    var secondary = true
-    @State private var expanded = false
-    @State private var shownHeight: CGFloat = 0
-    @State private var fullHeight: CGFloat = 0
-
-    init(_ text: String, lines: Int = 4, secondary: Bool = true) {
-        self.text = text
-        self.lines = lines
-        self.secondary = secondary
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(text)
-                .foregroundStyle(secondary ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
-                .lineLimit(expanded ? nil : lines)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shownHeight = $0 }
-                .background(alignment: .top) {
-                    // The whole text, unseen, at the same width
-                    Text(text)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .hidden()
-                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
-                }
-            if !expanded && fullHeight > shownHeight + 1 {
-                Button("more") {
-                    withAnimation(.easeInOut(duration: 0.2)) { expanded = true }
-                }
-                .font(.subheadline.weight(.semibold))
-                .buttonStyle(.borderless)
-            }
-        }
-    }
-}
-
-/// Shows the app in the navigation bar once its header scrolls away
-/// (iOS 18 can tell; on iOS 17 the bar stays plain)
-private struct HeaderVisibility: ViewModifier {
-    @Binding var hidden: Bool
-
-    func body(content: Content) -> some View {
-        if #available(iOS 18.0, *) {
-            content.onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentOffset.y + geometry.contentInsets.top > 150
-            } action: { _, hidden in
-                withAnimation(.easeInOut(duration: 0.2)) { self.hidden = hidden }
-            }
-        } else {
-            content
         }
     }
 }
@@ -652,14 +322,7 @@ struct DownloadButton: View {
     }
 
     private func pill(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(large ? .headline.weight(.bold) : .subheadline.weight(.bold))
-                .padding(.horizontal, large ? 18 : 6)
-                .padding(.vertical, large ? 2 : 0)
-        }
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.capsule)
+        AppGetPill(title: title, large: large, action: action)
     }
 }
 

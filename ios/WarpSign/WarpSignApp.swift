@@ -29,7 +29,7 @@ struct WarpSignApp: App {
     }
 
     enum AppTab: Hashable {
-        case library, sources, settings
+        case library, sources, appStore, settings
     }
 
     var body: some Scene {
@@ -41,6 +41,9 @@ struct WarpSignApp: App {
                 SourcesView()
                     .tabItem { Label("Sources", systemImage: "globe") }
                     .tag(AppTab.sources)
+                AppStoreView()
+                    .tabItem { Label("App Store", systemImage: "bag") }
+                    .tag(AppTab.appStore)
                 settingsTab
                     .tabItem { Label("Settings", systemImage: "gearshape") }
                     .tag(AppTab.settings)

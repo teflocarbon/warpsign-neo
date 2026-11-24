@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/byteness/keyring"
@@ -56,6 +57,12 @@ type request struct {
 	Version  string `json:"version"`
 	Output   string `json:"output"`
 	Purchase bool   `json:"purchase"`
+
+	// owned
+	Page int64 `json:"page"`
+
+	// version_metadata
+	VersionID string `json:"version_id"`
 
 	Platform string `json:"platform"`
 }
@@ -142,14 +149,14 @@ func dispatch(req request) (reply, error) {
 			return nil, err
 		}
 
-		return reply{"name": out.Account.Name, "email": out.Account.Email}, nil
+		return accountReply(out.Account), nil
 	case "account":
 		info, err := store.AccountInfo()
 		if err != nil {
 			return nil, err
 		}
 
-		return reply{"name": info.Account.Name, "email": info.Account.Email}, nil
+		return accountReply(info.Account), nil
 	case "logout":
 		return reply{}, store.Revoke()
 	case "search":
@@ -158,6 +165,10 @@ func dispatch(req request) (reply, error) {
 		return versions(req, platform)
 	case "download":
 		return download(req, platform)
+	case "owned":
+		return owned(req, platform)
+	case "version_metadata":
+		return versionMetadata(req, platform)
 	default:
 		return nil, fmt.Errorf("unknown op %q", req.Op)
 	}
@@ -230,10 +241,7 @@ func search(req request, platform appstore.Platform) (reply, error) {
 
 	apps := make([]reply, 0, len(out.Results))
 	for _, app := range out.Results {
-		apps = append(apps, reply{
-			"id": app.ID, "bundleID": app.BundleID, "name": app.Name,
-			"version": app.Version, "price": app.Price,
-		})
+		apps = append(apps, appReply(app))
 	}
 
 	return reply{"count": out.Count, "apps": apps}, nil
@@ -337,4 +345,67 @@ func lookup(acc appstore.Account, req request, platform appstore.Platform) (apps
 	}
 
 	return out.App, nil
+}
+
+// The storefront ("143441-1,29") says which country's store the account
+// uses, for the app's catalog lookups
+func accountReply(acc appstore.Account) reply {
+	return reply{"name": acc.Name, "email": acc.Email, "storefront": acc.StoreFront}
+}
+
+func appReply(app appstore.App) reply {
+	return reply{
+		"id": app.ID, "bundleID": app.BundleID, "name": app.Name,
+		"version": app.Version, "price": app.Price,
+	}
+}
+
+// The apps the account has got, most recently got first, a page at a time
+// (from 1; ipatool fetches them all each time and pages them itself)
+func owned(req request, platform appstore.Platform) (reply, error) {
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+
+	return withAccount(func(acc appstore.Account) (reply, error) {
+		out, err := store.OwnedApps(appstore.OwnedAppsInput{
+			Account: acc, Page: int(req.Page), Limit: int(limit), Platform: platform,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		apps := make([]reply, 0, len(out.Results))
+		for _, app := range out.Results {
+			apps = append(apps, appReply(app))
+		}
+
+		return reply{"owned": apps, "count": out.Count, "totalCount": out.TotalCount}, nil
+	})
+}
+
+// The version string and release date behind an external version ID
+func versionMetadata(req request, platform appstore.Platform) (reply, error) {
+	return withAccount(func(acc appstore.Account) (reply, error) {
+		app, err := lookup(acc, req, platform)
+		if err != nil {
+			return nil, err
+		}
+
+		out, err := store.GetVersionMetadata(appstore.GetVersionMetadataInput{
+			Context: context.Background(), Account: acc, App: app,
+			VersionID: req.VersionID, Platform: platform,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		released := ""
+		if !out.ReleaseDate.IsZero() {
+			released = out.ReleaseDate.UTC().Format(time.RFC3339)
+		}
+
+		return reply{"displayVersion": out.DisplayVersion, "releaseDate": released}, nil
+	})
 }

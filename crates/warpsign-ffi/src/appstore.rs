@@ -10,7 +10,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
 use warpsign_core::appstore::bridge::Bridge;
-use warpsign_core::appstore::{AppRef, AppStore, DownloadRequest, StoreError};
+use warpsign_core::appstore::{
+    AppRef, AppStore, DownloadRequest, StoreAccount, StoreApp, StoreError,
+};
 
 use crate::WarpsignError;
 
@@ -89,6 +91,45 @@ pub fn app_store_available() -> bool {
 pub struct StoreAccountInfo {
     pub name: String,
     pub email: String,
+    /// The store it uses, as Apple writes it ("143441-1,29"): the number
+    /// before the dash names the country
+    pub storefront: String,
+}
+
+impl From<StoreAccount> for StoreAccountInfo {
+    fn from(account: StoreAccount) -> Self {
+        Self {
+            name: account.name,
+            email: account.email,
+            storefront: account.storefront,
+        }
+    }
+}
+
+impl From<StoreApp> for StoreAppInfo {
+    fn from(app: StoreApp) -> Self {
+        Self {
+            id: app.id,
+            bundle_id: app.bundle_id,
+            name: app.name,
+            version: app.version,
+            price: app.price,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct StoreOwnedPage {
+    pub apps: Vec<StoreAppInfo>,
+    /// How many the account has in all
+    pub total: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct StoreVersionInfo {
+    pub display_version: String,
+    /// RFC 3339, or empty when the store gives none
+    pub release_date: String,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -164,23 +205,16 @@ impl AppStoreClient {
         password: String,
         code: Option<String>,
     ) -> Result<StoreAccountInfo, WarpsignError> {
-        let account = self
-            .bridge
+        self.bridge
             .login(&email, &password, code.as_deref())
-            .map_err(store_error)?;
-        Ok(StoreAccountInfo {
-            name: account.name,
-            email: account.email,
-        })
+            .map(Into::into)
+            .map_err(store_error)
     }
 
     /// The signed-in account, or None
     pub fn account(&self) -> Result<Option<StoreAccountInfo>, WarpsignError> {
         match self.bridge.account() {
-            Ok(account) => Ok(Some(StoreAccountInfo {
-                name: account.name,
-                email: account.email,
-            })),
+            Ok(account) => Ok(Some(account.into())),
             Err(StoreError::NotSignedIn) => Ok(None),
             Err(error) => Err(store_error(error)),
         }
@@ -195,16 +229,34 @@ impl AppStoreClient {
             .bridge
             .search(&term, limit, None)
             .map_err(store_error)?;
-        Ok(apps
-            .into_iter()
-            .map(|app| StoreAppInfo {
-                id: app.id,
-                bundle_id: app.bundle_id,
-                name: app.name,
-                version: app.version,
-                price: app.price,
-            })
-            .collect())
+        Ok(apps.into_iter().map(Into::into).collect())
+    }
+
+    /// The apps the account has got, most recent first, `limit` (at most
+    /// 100) at a time from `page` 1
+    pub fn owned(&self, page: u32, limit: u32) -> Result<StoreOwnedPage, WarpsignError> {
+        let owned = self.bridge.owned(page, limit, None).map_err(store_error)?;
+        Ok(StoreOwnedPage {
+            apps: owned.apps.into_iter().map(Into::into).collect(),
+            total: owned.total,
+        })
+    }
+
+    /// The version string and release date of an external version ID
+    /// (from `versions`). `app`: bundle ID or App Store ID.
+    pub fn version_metadata(
+        &self,
+        app: String,
+        version_id: String,
+    ) -> Result<StoreVersionInfo, WarpsignError> {
+        let metadata = self
+            .bridge
+            .version_metadata(&app_ref(&app)?, &version_id, None)
+            .map_err(store_error)?;
+        Ok(StoreVersionInfo {
+            display_version: metadata.display_version,
+            release_date: metadata.release_date,
+        })
     }
 
     /// External version IDs, oldest first. `app`: bundle ID or App Store ID.
