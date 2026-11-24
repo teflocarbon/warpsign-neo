@@ -31,6 +31,25 @@ static CKContainer* (*Original_CKContainer_containerWithIdentifier)(id, SEL, NSS
 static id (*Original_CKContainerID_initWithContainerIdentifier)(id, SEL, NSString*, NSInteger);
 static id WSFContainerIDInit(id self, SEL _cmd, NSString *containerIdentifier, NSInteger environment);
 
+// Nullify. Without the com.apple.developer.icloud-services entitlement,
+// CloudKit stops the app (a brk trap) as soon as it makes a container, and
+// +defaultContainer throws without a container entitlement. So for
+// Nullify, -[CKEntitlements cloudServices] (private) reports CloudKit,
+// and +defaultContainer makes one for iCloud.<bundle ID> if there's no
+// container to default to. The app then runs: cloudd, which checks the
+// real entitlements, answers each request with CKErrorMissingEntitlement,
+// and the account status with CKAccountStatusCouldNotDetermine, which
+// apps already handle as iCloud being unavailable. (Seen on macOS 27.)
+@protocol WSFCKEntitlements <NSObject>
+- (instancetype)initWithCurrentProcess;
+- (id)valueForEntitlement:(NSString *)entitlement;
+- (id)cloudServices;
+@end
+static id (*Original_CKEntitlements_cloudServices)(id, SEL);
+static id WSFCloudServices(id self, SEL _cmd);
+static CKContainer* (*Original_CKContainer_defaultContainer)(id, SEL);
+static CKContainer* WSFDefaultContainer(id self, SEL _cmd);
+
 @implementation WSFCloudKitFix
 
 + (void)load { // Use +load for automatic execution when library loads
@@ -100,6 +119,55 @@ static id WSFContainerIDInit(id self, SEL _cmd, NSString *containerIdentifier, N
     } else {
         if (loggingEnabled) NSLog(@"WarpsignFix [CloudKit]: Error: -[CKContainerID initWithContainerIdentifier:environment:] not found; only +containerWithIdentifier: is remapped.");
     }
+
+    if (cloudKitStrategy == WSFCloudKitStrategyNullify) {
+        Method services = class_getInstanceMethod(objc_getClass("CKEntitlements"), @selector(cloudServices));
+        if (services) {
+            Original_CKEntitlements_cloudServices = (id (*)(id, SEL))method_setImplementation(services, (IMP)WSFCloudServices);
+            if (loggingEnabled) NSLog(@"WarpsignFix [CloudKit]: Hooked -[CKEntitlements cloudServices].");
+        } else {
+            if (loggingEnabled) NSLog(@"WarpsignFix [CloudKit]: Error: -[CKEntitlements cloudServices] not found; CloudKit may still stop the app.");
+        }
+        Method defaultContainer = class_getClassMethod(containerClass, @selector(defaultContainer));
+        if (defaultContainer) {
+            Original_CKContainer_defaultContainer = (CKContainer* (*)(id, SEL))method_setImplementation(defaultContainer, (IMP)WSFDefaultContainer);
+            if (loggingEnabled) NSLog(@"WarpsignFix [CloudKit]: Hooked +[CKContainer defaultContainer].");
+        }
+    }
+}
+
+// Our replacement for -[CKEntitlements cloudServices] (Nullify): the real
+// services, with CloudKit added if it isn't there
+static id WSFCloudServices(id self, SEL _cmd) {
+    id services = Original_CKEntitlements_cloudServices(self, _cmd);
+    NSArray *list = [services isKindOfClass:[NSArray class]] ? services : @[];
+    if ([list containsObject:@"CloudKit"] || [list containsObject:@"CloudKit-Anonymous"]) {
+        return services;
+    }
+    return [list arrayByAddingObject:@"CloudKit"];
+}
+
+// Our replacement for +[CKContainer defaultContainer] (Nullify): the real
+// one if the app has a container to default to, else iCloud.<bundle ID>
+static CKContainer* WSFDefaultContainer(id self, SEL _cmd) {
+    Class entitlementsClass = objc_getClass("CKEntitlements");
+    id<WSFCKEntitlements> entitlements = [entitlementsClass instancesRespondToSelector:@selector(initWithCurrentProcess)]
+        ? [(id<WSFCKEntitlements>)[entitlementsClass alloc] initWithCurrentProcess]
+        : nil;
+    id containers = [entitlements respondsToSelector:@selector(valueForEntitlement:)]
+        ? [entitlements valueForEntitlement:@"com.apple.developer.icloud-container-identifiers"]
+        : nil;
+    if (!entitlements || ([containers isKindOfClass:[NSArray class]] && [containers count] > 0)) {
+        return Original_CKContainer_defaultContainer(self, _cmd);
+    }
+    static CKContainer *container = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSString *identifier = [@"iCloud." stringByAppendingString:[[NSBundle mainBundle] bundleIdentifier] ?: @"unknown"];
+        if (loggingEnabled) NSLog(@"WarpsignFix [CloudKit]: Nullify: no container to default to, using %@", identifier);
+        container = [CKContainer containerWithIdentifier:identifier];
+    });
+    return container;
 }
 
 // Our replacement for -[CKContainerID initWithContainerIdentifier:environment:]:
@@ -120,10 +188,9 @@ static id WSFContainerIDInit(id self, SEL _cmd, NSString *containerIdentifier, N
 
 // Our replacement for +[CKContainer containerWithIdentifier:]
 + (CKContainer *)wsf_containerWithIdentifier:(NSString *)containerIdentifier {
-    if (cloudKitStrategy == WSFCloudKitStrategyNullify) {
-        if (loggingEnabled) NSLog(@"WarpsignFix [CloudKit]: Nullifying +[CKContainer containerWithIdentifier:%@]", containerIdentifier);
-        return nil;
-    }
+    // Nullify used to return nil here, which crashes Swift callers
+    // (CKContainer(identifier:) isn't optional). The container is made, and
+    // CloudKit fails each request instead (see WSFCloudServices).
 
     // Remapped further down, in CKContainerID's init, when that's hooked
     NSString *remappedID = containerIdentifier;
