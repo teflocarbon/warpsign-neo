@@ -188,6 +188,25 @@ struct StoreVersionsView: View {
                 let shown = filtered(ids)
                 List {
                     Section {
+                        // A field in the list, not .searchable: adding a
+                        // search field once the versions arrive crashed
+                        HStack(spacing: 8) {
+                            Image(systemName: "line.3.horizontal.decrease")
+                                .foregroundStyle(.secondary)
+                            TextField("Filter by Version or Version ID", text: $filter)
+                                .autocorrectionDisabled()
+                                .textInputAutocapitalization(.never)
+                            if !filter.isEmpty {
+                                Button {
+                                    filter = ""
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    Section {
                         ForEach(shown, id: \.self) { id in
                             row(id, latest: id == ids.first)
                         }
@@ -200,7 +219,7 @@ struct StoreVersionsView: View {
                     }
                 }
                 .listStyle(.insetGrouped)
-                .searchable(text: $filter, prompt: "Version or Version ID")
+                .scrollDismissesKeyboard(.immediately)
             } else if let error {
                 ContentUnavailableView {
                     Label("Couldn't List Versions", systemImage: "exclamationmark.triangle")

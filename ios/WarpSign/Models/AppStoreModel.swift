@@ -181,7 +181,10 @@ final class AppStoreModel {
     }
 
     /// Fills in versionInfo for one version. Lookups take turns (ipatool
-    /// runs one call at a time), in the order asked.
+    /// runs one call at a time), in the order asked. One whose row has gone
+    /// (cancelled) is skipped when its turn comes: otherwise a long list
+    /// scrolled past, or left, holds up everything after it, such as the
+    /// next app's versions.
     func loadVersionInfo(_ versionId: String, of app: CatalogApp) async {
         guard versionInfo[versionId] == nil else { return }
         let id = String(app.id)
@@ -196,7 +199,11 @@ final class AppStoreModel {
             }
         }
         versionLookups = lookup
-        await lookup.value
+        await withTaskCancellationHandler {
+            await lookup.value
+        } onCancel: {
+            lookup.cancel()
+        }
     }
 
     // MARK: Downloads
