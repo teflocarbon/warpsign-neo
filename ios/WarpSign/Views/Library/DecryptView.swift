@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Decrypt an encrypted library app, either with a key (DecryptionKeys),
 /// or on this device (OnDeviceDecrypt): make the helper, install it, open
-/// it. Either way the decrypted app goes into the library.
+/// it. Either way the app is decrypted in place in the library.
 struct DecryptView: View {
     @Environment(AccountStore.self) private var account
     @Environment(LibraryStore.self) private var library
@@ -28,7 +28,7 @@ struct DecryptView: View {
 
             Section {
                 Label {
-                    Text("\(app.displayName) is decrypted on this \(UIDevice.current.model) with its App Store licence, so the Apple ID that got it has to be signed in to the App Store here. WarpSign puts it in a small helper app, which you install and open: it decrypts \(app.displayName) and hands it back to your library.")
+                    Text("\(app.displayName) is decrypted on this \(UIDevice.current.model) with its App Store licence, so the Apple ID that got it has to be signed in to the App Store here. WarpSign puts it in a small helper app, which you install and open: it decrypts \(app.displayName) and hands it back to WarpSign.")
                 } icon: {
                     Image(systemName: "lock.open.fill").foregroundStyle(.tint)
                 }
@@ -91,18 +91,18 @@ struct DecryptView: View {
                 Section {
                     HStack(spacing: 10) {
                         ProgressView()
-                        Text("Adding \(name), decrypted, to your library…")
+                        Text("Putting \(name), decrypted, in your library…")
                     }
                 }
             case .received(let name):
                 Section {
-                    Label("\(name), decrypted, is in your library.", systemImage: "checkmark.circle.fill")
+                    Label("\(name) is decrypted.", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                     Button("Done") {
                         decrypt.finish()
                     }
                 } footer: {
-                    Text("You can delete the Decrypt helper from the Home Screen. Sign the decrypted copy, not this one.")
+                    Text("You can delete the Decrypt helper from the Home Screen.")
                 }
             case .failed(let message):
                 Section {
@@ -135,7 +135,7 @@ struct DecryptView: View {
                     Label("Add a Decryption Key", systemImage: "key")
                 }
             } else if let keyDone {
-                Label("Decrypted with \(keyDone), and added to your library.", systemImage: "checkmark.circle.fill")
+                Label("Decrypted with \(keyDone).", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             } else if keyDecrypting {
                 ProgressView(value: keyProgress) {

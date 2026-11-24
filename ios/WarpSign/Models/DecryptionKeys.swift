@@ -21,8 +21,6 @@ final class DecryptionKeys {
 
     private(set) var keys: [Key] = []
 
-    /// Where decrypted apps say they're from in the library
-    static let origin = "Decrypted with Key"
     private static let listKey = "DecryptionKeys"
 
     private init() {
@@ -97,8 +95,9 @@ final class DecryptionKeys {
         return parse(text)
     }
 
-    /// Decrypt `app` with whichever key fits, and add the decrypted copy to
-    /// the library. Returns the name of the key that fitted.
+    /// Decrypt `app` with whichever key fits, in place in the library (the
+    /// encrypted IPA is no use after). Returns the name of the key that
+    /// fitted.
     func decrypt(_ app: LibraryApp, library: LibraryStore, observer: StepRecorder) async throws -> String {
         let entries = keys.compactMap { key in
             Keychain.data(for: Self.keychainName(key.id)).map { (key, $0) }
@@ -123,9 +122,7 @@ final class DecryptionKeys {
                 observer: observer
             )
         }
-        guard await library.importFile(output, origin: Self.origin, move: true) != nil else {
-            throw WarpsignError.Ipa(message: library.importError ?? "The decrypted copy couldn't be added to the library.")
-        }
+        _ = try await library.replaceIPA(of: app, with: output)
         let index = Int(summary.keyIndex)
         return entries.indices.contains(index) ? entries[index].0.name : "your key"
     }

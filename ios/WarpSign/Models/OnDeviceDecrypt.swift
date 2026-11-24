@@ -9,8 +9,9 @@ import UIKit
 /// helper has iOS decrypt the app with its own App Store licence (the Apple
 /// ID that bought it has to be signed in to the App Store here), packs it
 /// and hands it back: it serves the IPA on loopback and opens
-/// `warpsign://decrypted?url=…&name=…`. WarpSign fetches it, puts its
-/// binaries into the original IPA, and adds that to the library.
+/// `warpsign://decrypted?url=…&name=…`. WarpSign fetches it and puts its
+/// binaries into the app's IPA, in place: an encrypted IPA is no use once
+/// there's a decrypted one.
 ///
 /// The helper carries only what decrypting needs: the app's layout with its
 /// encrypted binaries, their Info.plists and the licence (SC_Info), not its
@@ -33,7 +34,7 @@ final class OnDeviceDecrypt {
         case waitingForHelper(helper: URL)
         /// Handed back: fetching it, and putting it into the original
         case receiving(name: String)
-        /// In the library
+        /// Decrypted, in place in the library
         case received(name: String)
         case failed(String)
     }
@@ -44,8 +45,6 @@ final class OnDeviceDecrypt {
 
     /// The scheme the helper answers to (ios/project.yml)
     static let helperScheme = "warpsign-decrypt"
-    /// Where decrypted apps say they're from in the library
-    static let origin = "Decrypted on This iPhone"
 
     private init() {}
 
@@ -151,7 +150,7 @@ final class OnDeviceDecrypt {
     }
 
     /// Fetch what the helper decrypted, put its binaries into the original
-    /// IPA, and add that to the library
+    /// IPA, and put that in its place in the library
     private func take(_ url: URL, name: String, appId: UUID) async {
         let folder = Self.folder.appendingPathComponent("back", isDirectory: true)
         do {
@@ -185,10 +184,9 @@ final class OnDeviceDecrypt {
             try? FileManager.default.removeItem(at: work)
             try? FileManager.default.removeItem(at: handedBack)
 
-            guard await library.importFile(merged, origin: Self.origin, move: true) != nil else {
-                throw WarpsignError.Ipa(message: library.importError ?? "\(name) couldn't be added to the library.")
-            }
-            try? FileManager.default.removeItem(at: folder)
+            _ = try await library.replaceIPA(of: app, with: merged)
+            // The signed helper too: it's done its job
+            try? FileManager.default.removeItem(at: Self.folder)
             guard self.appId == appId else { return }
             phase = .received(name: name)
         } catch {
