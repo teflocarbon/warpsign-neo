@@ -56,7 +56,7 @@ struct AppDetailView: View {
                     NavigationLink {
                         DecryptView(app: app)
                     } label: {
-                        Label("Decrypt on This \(UIDevice.current.model)", systemImage: "lock.open")
+                        Label("Decrypt", systemImage: "lock.open")
                     }
                 }
             }

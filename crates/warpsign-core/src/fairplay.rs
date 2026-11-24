@@ -750,6 +750,26 @@ pub fn decrypt_ipa(
     Ok(summary)
 }
 
+/// `decrypt_ipa` with whichever of `credentials` decodes this app's licence
+/// (each is one Apple ID's). Returns that credential's index too. Fails with
+/// `WrongCredential` if none does.
+pub fn decrypt_ipa_with_any(
+    ipa: &Path,
+    output: &Path,
+    credentials: &[[u8; 16]],
+    mut on_binary: impl FnMut(usize, usize, &str, usize),
+) -> Result<(usize, DecryptSummary), FairplayError> {
+    for (index, credential) in credentials.iter().enumerate() {
+        // The licence is checked before anything is written, so a wrong
+        // credential leaves no output behind
+        match decrypt_ipa(ipa, output, credential, &mut on_binary) {
+            Err(FairplayError::WrongCredential) => continue,
+            result => return result.map(|summary| (index, summary)),
+        }
+    }
+    Err(FairplayError::WrongCredential)
+}
+
 fn read_entry<R: Read + std::io::Seek>(
     archive: &mut ZipArchive<R>,
     name: &str,
@@ -1074,6 +1094,55 @@ pub(crate) mod tests {
             .read_to_end(&mut info)
             .unwrap();
         assert_eq!(info, b"<plist/>");
+    }
+
+    #[test]
+    fn decrypt_ipa_with_any_finds_the_credential_that_fits() {
+        let (encrypted, sinf, supf, expected) = encrypted_sample(1);
+        let credential: [u8; 16] =
+            std::array::from_fn(|i| (i as u8).wrapping_mul(5).wrapping_add(2));
+
+        let dir = tempfile::tempdir().unwrap();
+        let ipa_path = dir.path().join("app.ipa");
+        {
+            let mut zip = ZipWriter::new(File::create(&ipa_path).unwrap());
+            let opt = SimpleFileOptions::default();
+            for (name, data) in [
+                ("Payload/Test.app/Test", &encrypted[..]),
+                ("Payload/Test.app/SC_Info/Test.sinf", &sinf[..]),
+                ("Payload/Test.app/SC_Info/Test.supf", &supf[..]),
+            ] {
+                zip.start_file(name, opt).unwrap();
+                zip.write_all(data).unwrap();
+            }
+            zip.finish().unwrap();
+        }
+
+        // Another account's credential: refused, nothing written
+        let out_path = dir.path().join("out.ipa");
+        assert!(matches!(
+            decrypt_ipa_with_any(&ipa_path, &out_path, &[[9; 16]], |_, _, _, _| {}),
+            Err(FairplayError::WrongCredential)
+        ));
+        assert!(!out_path.exists());
+
+        let (index, summary) = decrypt_ipa_with_any(
+            &ipa_path,
+            &out_path,
+            &[[9; 16], credential],
+            |_, _, _, _| {},
+        )
+        .unwrap();
+        assert_eq!((index, summary.binaries), (1, 1));
+        let mut got = Vec::new();
+        use std::io::Read as _;
+        ZipArchive::new(File::open(&out_path).unwrap())
+            .unwrap()
+            .by_name("Payload/Test.app/Test")
+            .unwrap()
+            .read_to_end(&mut got)
+            .unwrap();
+        assert_eq!(got, expected);
     }
 
     #[test]

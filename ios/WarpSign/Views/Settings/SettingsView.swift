@@ -125,6 +125,11 @@ struct SettingsView: View {
                     } label: {
                         Label("Storage", systemImage: "internaldrive")
                     }
+                    NavigationLink {
+                        DecryptionKeysView()
+                    } label: {
+                        Label("Decryption Keys", systemImage: "key")
+                    }
                 }
 
                 Section("Diagnostics") {

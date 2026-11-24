@@ -355,6 +355,60 @@ pub fn decrypt_ipa(
     })
 }
 
+/// What `decrypt_ipa_with_keys` decrypted, and with which key
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct KeyDecryptSummary {
+    /// Index into the keys given
+    pub key_index: u32,
+    pub binaries: u32,
+    pub pages: u64,
+}
+
+/// `decrypt_ipa` with whichever of `credentials` (16 bytes each, one per
+/// Apple ID) decodes the app's licence. Fails if none does. They're secrets:
+/// don't log them.
+#[uniffi::export]
+pub fn decrypt_ipa_with_keys(
+    ipa_path: String,
+    output_path: String,
+    credentials: Vec<Vec<u8>>,
+    observer: Arc<dyn StepObserver>,
+) -> Result<KeyDecryptSummary, WarpsignError> {
+    let keys = credentials
+        .iter()
+        .map(|key| <[u8; 16]>::try_from(key.as_slice()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| WarpsignError::Ipa {
+            message: "Each key must be exactly 16 bytes.".to_string(),
+        })?;
+    let bridge = ObserverBridge(observer);
+    progress::run_step(&bridge, progress::Step::Decrypt, |log| {
+        let (index, summary) = warpsign_core::fairplay::decrypt_ipa_with_any(
+            Path::new(&ipa_path),
+            Path::new(&output_path),
+            &keys,
+            |n, total, path, pages| {
+                log.log(format!("[{n}/{total}] {pages} pages  {path}"));
+                log.progress(n as f64 / total.max(1) as f64);
+            },
+        )?;
+        Ok::<_, warpsign_core::fairplay::FairplayError>(KeyDecryptSummary {
+            key_index: index as u32,
+            binaries: summary.binaries as u32,
+            pages: summary.pages as u64,
+        })
+    })
+    .map_err(|e| WarpsignError::Ipa {
+        message: match e {
+            warpsign_core::fairplay::FairplayError::WrongCredential => {
+                "None of your keys fit this app: add the key for the Apple ID that got it."
+                    .to_string()
+            }
+            e => e.to_string(),
+        },
+    })
+}
+
 /// Extract an IPA into `work_dir` (which must be empty or not exist) and
 /// describe the app inside it, reporting each step to `observer`
 #[uniffi::export]
