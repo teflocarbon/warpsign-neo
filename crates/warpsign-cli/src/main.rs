@@ -412,8 +412,24 @@ fn choose_team<'a>(teams: &'a [Team], wanted: Option<&str>) -> Result<&'a Team> 
         .context("no such team")
 }
 
-/// The saved session, for the saved team
+/// The saved session, for the saved team, reopening the portal if it has
+/// gone unused long enough for its own half-hour session to lapse (Python
+/// warpsign reopened it before every command)
 fn portal(store: &Store) -> Result<(Authenticator, Portal)> {
+    let (auth, portal) = saved_portal(store)?;
+    match auth.keep_alive() {
+        Ok(true) => store.save_session(&auth.session())?,
+        Ok(false) => {}
+        Err(AuthError::SessionExpired) => {
+            bail!("the saved session has expired: run `warpsign login`")
+        }
+        Err(error) => return Err(error.into()),
+    }
+    Ok((auth, portal))
+}
+
+/// The saved session, for the saved team, as it is
+fn saved_portal(store: &Store) -> Result<(Authenticator, Portal)> {
     let session = store
         .session()
         .context("not signed in: run `warpsign login`")?;
@@ -432,7 +448,7 @@ fn status(store: &Store) -> Result<()> {
     match store.session() {
         None => println!("Not signed in."),
         Some(_) => {
-            let (auth, portal) = portal(store)?;
+            let (auth, portal) = saved_portal(store)?;
             match auth.restore() {
                 Ok(teams) => {
                     store.save_session(&auth.session())?;

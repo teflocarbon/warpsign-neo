@@ -51,6 +51,8 @@ final class AccountStore {
     @ObservationIgnored var onSignIn: (@MainActor () -> Void)?
     /// A silent sign-in under way, which concurrent calls wait for
     @ObservationIgnored private var reauthentication: Task<Bool, Never>?
+    /// The last restore couldn't reach Apple, so its session wasn't checked
+    @ObservationIgnored private var restoreWasOffline = false
     /// Screenshots: certificate details without real certificates
     @ObservationIgnored private var demoInfos: [CertificateType: IdentityInfo] = [:]
     @ObservationIgnored private let transport = URLSessionTransport()
@@ -144,6 +146,7 @@ final class AccountStore {
               let json = String(data: data, encoding: .utf8)
         else { return }
         phase = .restoring
+        restoreWasOffline = false
         do {
             let account = try AppleAccount.restore(transport: transport, sessionJson: json)
             let teams = try await background { try account.checkSession() }
@@ -151,6 +154,11 @@ final class AccountStore {
         } catch {
             if Self.isExpired(error), await reauthenticate() { return }
             phase = .signedOut
+            if case WarpsignError.Offline = error {
+                // Not signed out: the saved session is tried again when
+                // WarpSign next comes to the foreground
+                restoreWasOffline = true
+            }
             sessionProblem = sessionProblem ?? error.userMessage
         }
     }
@@ -261,27 +269,77 @@ final class AccountStore {
         }
     }
 
-    /// Run a portal call. If Apple has ended the session and the password
-    /// is remembered, sign in again and run it once more.
+    /// Run a portal call. If Apple turns it away as signed out, reopen the
+    /// portal from the Apple ID sign-in or, failing that, sign in again with
+    /// the remembered password, and run it once more.
     private func portalCall<T: Sendable>(
         _ work: @escaping @Sendable (AppleAccount) throws -> T
     ) async throws -> T {
         guard let account else { throw WarpsignError.Portal(message: "Sign in first.") }
         do {
-            let result = try await background { try work(account) }
-            saveSession()
-            return result
+            return try await run(work, on: account)
         } catch {
-            guard Self.isExpired(error), await reauthenticate(), let account = self.account else {
+            guard Self.isExpired(error), await renew(account), let account = self.account else {
                 throw handle(error)
             }
             do {
-                let result = try await background { try work(account) }
-                saveSession()
-                return result
+                return try await run(work, on: account)
             } catch {
                 throw handle(error)
             }
+        }
+    }
+
+    /// Portal work, reopening the portal first if it has gone unused long
+    /// enough for its half-hour session to lapse. Whatever cookies Apple
+    /// sent are kept, whether or not the work succeeded.
+    private func run<T: Sendable>(
+        _ work: @escaping @Sendable (AppleAccount) throws -> T,
+        on account: AppleAccount
+    ) async throws -> T {
+        defer { saveSession() }
+        return try await background {
+            do {
+                _ = try account.keepAlive()
+            } catch let error where Self.isExpired(error) {
+                throw error
+            } catch {
+                // Couldn't reopen it (offline, say): the work reports that
+            }
+            return try work(account)
+        }
+    }
+
+    /// Apple turned a request away as signed out. First reopen the portal
+    /// from the Apple ID sign-in, which outlives the portal's own session
+    /// and needs nothing from the user; only if that has ended too, sign in
+    /// again with the remembered password.
+    private func renew(_ account: AppleAccount) async -> Bool {
+        if let teams = try? await background({ try account.checkSession() }), self.account === account {
+            self.teams = teams
+            saveSession()
+            return true
+        }
+        return await reauthenticate()
+    }
+
+    /// Back in the foreground: keep the portal open while signed in, or try
+    /// again a restore that failed for want of a connection
+    func resume() async {
+        switch phase {
+        case .signedIn:
+            guard let account else { return }
+            do {
+                if try await background({ try account.keepAlive() }) { saveSession() }
+            } catch let error where Self.isExpired(error) {
+                if !(await renew(account)) { _ = handle(error) }
+            } catch {
+                // Offline, say: the next portal call tries again
+            }
+        case .signedOut where restoreWasOffline:
+            await restore()
+        default:
+            break
         }
     }
 

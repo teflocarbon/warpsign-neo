@@ -650,6 +650,15 @@ impl AppleAccount {
             .collect())
     }
 
+    /// Reopen the portal if it has gone unused for 25 minutes, renewing its
+    /// half-hour session from the Apple ID sign-in (no password, no code).
+    /// Sends nothing when recently used, so call it before portal work.
+    /// True if it reopened; `SessionExpired` if the Apple ID sign-in has
+    /// ended too. Save `session_json()` afterwards.
+    pub fn keep_alive(&self) -> Result<bool, WarpsignError> {
+        self.auth.keep_alive().map_err(auth_error)
+    }
+
     /// The session to keep in the Keychain. Secret.
     pub fn session_json(&self) -> String {
         serde_json::to_string(&self.auth.session()).expect("sessions serialize")

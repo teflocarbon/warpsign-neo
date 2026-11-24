@@ -177,9 +177,31 @@ pub struct SessionState {
     /// The portal's anti-CSRF tokens, required on changes
     pub csrf: Option<String>,
     pub csrf_ts: Option<String>,
+    /// When the portal (developer.apple.com) last answered a request
+    /// successfully, in seconds since 1970. Its own session lasts only
+    /// half an hour from then (see [`PORTAL_IDLE_REFRESH`]).
+    pub portal_used_at: Option<u64>,
 }
 
+/// How long the portal can go unused before it's reopened, in seconds.
+///
+/// developer.apple.com's own session cookie (`dqsid`, reported with
+/// `Max-Age=1800` and renewed by each response) lapses after 30 idle
+/// minutes, while the Apple ID sign-in behind it (`myacinfo`) lasts much
+/// longer. Opening the portal page again with `myacinfo`, as a browser
+/// does and as Python warpsign does before every command, gets a new one
+/// without a password. A few minutes short of 30, so it happens before
+/// Apple turns a request away.
+pub const PORTAL_IDLE_REFRESH: u64 = 25 * 60;
+
 impl SessionState {
+    /// Whether the portal has gone unused long enough (or has never been
+    /// used) that it should be reopened before the next request
+    pub fn portal_idle(&self, now: u64) -> bool {
+        self.portal_used_at
+            .is_none_or(|used| now.saturating_sub(used) >= PORTAL_IDLE_REFRESH)
+    }
+
     pub fn cookie(&self, name: &str) -> Option<&str> {
         self.cookies
             .iter()
@@ -266,6 +288,8 @@ pub struct HttpClient {
 }
 
 const MAX_REDIRECTS: usize = 10;
+/// Whose successful responses count as using the portal
+const PORTAL_HOST: &str = "developer.apple.com";
 
 impl HttpClient {
     pub fn new(transport: Arc<dyn Transport>) -> Self {
@@ -314,6 +338,9 @@ impl HttpClient {
 
             let response = self.transport.send(&outgoing)?;
             self.remember(&url, &response, now);
+            if url.host == PORTAL_HOST && response.is_success() {
+                self.lock().portal_used_at = Some(now);
+            }
 
             let location = response.header("Location").map(String::from);
             match (response.status, location) {
@@ -360,7 +387,7 @@ impl HttpClient {
     }
 }
 
-fn now() -> u64 {
+pub(crate) fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())

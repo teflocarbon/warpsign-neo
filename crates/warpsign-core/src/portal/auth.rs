@@ -16,7 +16,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde_json::{Value, json};
 
 use super::api::{Team, fetch_teams};
-use super::http::{HttpClient, Method, Request, Response, SessionState, Transport};
+use super::http::{HttpClient, Method, Request, Response, SessionState, Transport, now};
 use super::{PortalError, apple_error_message};
 use crate::auth::hashcash;
 use crate::auth::srp::{Protocol, SrpClient, SrpError, derive_password};
@@ -132,6 +132,27 @@ impl Authenticator {
     /// Check a saved session still works, without a password
     pub fn restore(&self) -> Result<Vec<Team>, AuthError> {
         self.finish()
+    }
+
+    /// Reopen the portal if it has gone unused for
+    /// [`PORTAL_IDLE_REFRESH`](super::http::PORTAL_IDLE_REFRESH): renews
+    /// its half-hour session from the longer-lived Apple ID sign-in, with
+    /// no password and no code. Call before portal requests (cheap when
+    /// recently used: nothing is sent). Returns whether it reopened.
+    ///
+    /// [`AuthError::SessionExpired`] means the Apple ID sign-in has ended
+    /// too, and a new sign-in is needed.
+    pub fn keep_alive(&self) -> Result<bool, AuthError> {
+        self.keep_alive_at(now())
+    }
+
+    #[doc(hidden)]
+    pub fn keep_alive_at(&self, now: u64) -> Result<bool, AuthError> {
+        if !self.http.state().portal_idle(now) {
+            return Ok(false);
+        }
+        self.finish()?;
+        Ok(true)
     }
 
     pub fn sign_in(&self, account: &str, password: &str) -> Result<SignInOutcome, AuthError> {

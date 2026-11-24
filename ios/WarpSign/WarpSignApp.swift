@@ -56,7 +56,12 @@ struct WarpSignApp: App {
             .onChange(of: scenePhase) { _, phase in
                 switch phase {
                 case .active:
-                    Task { await Updater.shared.checkIfDue() }
+                    Task {
+                        // Keep the portal open (it lapses after half an
+                        // hour unused), or retry a restore that was offline
+                        await account.resume()
+                        await Updater.shared.checkIfDue()
+                    }
                 case .background:
                     BackgroundUpdates.scheduleRefresh()
                     if Updater.shared.automatic && !Updater.shared.automaticIds.isEmpty {

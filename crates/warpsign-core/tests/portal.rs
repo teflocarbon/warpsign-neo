@@ -606,6 +606,105 @@ fn restores_or_expires_saved_sessions() {
     assert_eq!(error, AuthError::SessionExpired);
 }
 
+#[test]
+fn keeps_the_portal_open_without_a_password() {
+    use warpsign_core::portal::http::PORTAL_IDLE_REFRESH;
+
+    let saved = SessionState {
+        cookies: vec![warpsign_core::portal::http::Cookie {
+            name: "myacinfo".into(),
+            value: "signed-in".into(),
+            domain: "apple.com".into(),
+            host_only: false,
+            path: "/".into(),
+            expires: None,
+        }],
+        ..Default::default()
+    };
+
+    // Never used (a session saved before this was tracked): reopened
+    let mock = MockApple::new();
+    script_portal(&mock, one_team());
+    let auth = Authenticator::with_session(mock.clone(), saved.clone());
+    assert!(auth.keep_alive().unwrap());
+    mock.assert_done();
+    let used = auth.session().portal_used_at.expect("marked as used");
+    // Kept when saved
+    let json = serde_json::to_string(&auth.session()).unwrap();
+    assert_eq!(
+        serde_json::from_str::<SessionState>(&json)
+            .unwrap()
+            .portal_used_at,
+        Some(used)
+    );
+
+    // Recently used: nothing is sent (the mock has nothing scripted)
+    assert!(!auth.keep_alive_at(used + PORTAL_IDLE_REFRESH - 1).unwrap());
+
+    // Idle for too long: reopened, picking up the portal's new cookies
+    mock.expect(ACCOUNT_URL, |request| {
+        assert!(header(request, "Cookie").contains("myacinfo=signed-in"));
+        response(
+            200,
+            &[(
+                "Set-Cookie",
+                "dqsid=renewed; Path=/; Max-Age=1800; Secure; HttpOnly",
+            )],
+            "<html>portal</html>",
+        )
+    });
+    mock.expect(TEAMS_URL, |request| {
+        assert!(header(request, "Cookie").contains("dqsid=renewed"));
+        json_response(200, json!({"resultCode": 0, "teams": one_team()}))
+    });
+    assert!(auth.keep_alive_at(used + PORTAL_IDLE_REFRESH).unwrap());
+    mock.assert_done();
+    assert_eq!(auth.session().cookie("dqsid"), Some("renewed"));
+
+    // The Apple ID sign-in has ended too: a new sign-in is needed
+    let mock = MockApple::new();
+    mock.respond(
+        ACCOUNT_URL,
+        response(302, &[("Location", "https://idmsa.apple.com/signin")], ""),
+    );
+    mock.respond(
+        "https://idmsa.apple.com/signin",
+        response(200, &[], "<html>sign in</html>"),
+    );
+    mock.respond(TEAMS_URL, response(401, &[], ""));
+    let auth = Authenticator::with_session(mock.clone(), saved);
+    assert_eq!(auth.keep_alive().unwrap_err(), AuthError::SessionExpired);
+    // A sign-in page isn't the portal answering
+    assert_eq!(auth.session().portal_used_at, None);
+}
+
+#[test]
+fn portal_requests_mark_the_portal_used() {
+    let mock = MockApple::new();
+    let http = Arc::new(HttpClient::new(mock.clone()));
+    let portal = Portal::new(http.clone(), "ZZZZZ99999");
+
+    // Turned away: not a use
+    mock.respond(
+        "https://developer.apple.com/services-account/v1/devices",
+        response(401, &[], ""),
+    );
+    assert!(portal.devices().is_err());
+    assert_eq!(http.state().portal_used_at, None);
+
+    mock.respond(
+        "https://developer.apple.com/services-account/v1/devices",
+        json_response(200, json!({"data": []})),
+    );
+    portal.devices().unwrap();
+    assert!(http.state().portal_used_at.is_some());
+    assert!(
+        !http
+            .state()
+            .portal_idle(http.state().portal_used_at.unwrap())
+    );
+}
+
 // Portal behaviour beyond Python warpsign
 
 fn portal(mock: &Arc<MockApple>, csrf: bool) -> Portal {

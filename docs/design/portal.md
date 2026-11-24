@@ -11,7 +11,8 @@ Decisions and known pitfalls for porting Python warpsign's portal client. Agreed
 - **Fetch the CSRF tokens after 2FA too.** Python warpsign only worked because it logged in twice, and the second login (from the saved session) is what fetched them.
 - **Reject free accounts at login**, with a clear message. They aren't supported (see README).
 - **Keep the two-factor trust across sign-ins.** After a code, `2sv/trust` sets a `DES…` cookie (about a month). Sent at sign-in, it lets Apple skip the code. It's quoted (`DES…="…"`) and only accepted back with its quotes, as browsers, Python's cookiejar and fastlane send it. A new sign-in starts from the last session's trust cookies (`SessionState::trust`), even when that session has expired; only signing out forgets them.
-- **Portal sessions can be short** (one ended within a day in October 2026), unlike the trust. With Remember Password on, the app signs in again by itself when a portal call says the session has ended, and runs that call once more; with the trust cookie, that needs no code. A refused or failed silent sign-in forgets the password and is never retried by itself.
+- **The portal's own session lasts half an hour unused; the Apple ID sign-in lasts much longer** (details and options: [portal-session.md](portal-session.md)). Before a portal request, if the portal hasn't answered for 25 minutes (`SessionState::portal_used_at`), `Authenticator::keep_alive` opens the portal page again with `myacinfo`, as a browser does and as Python warpsign does before every command: no password, no code. The app also does it on coming to the foreground, and when a request is turned away anyway, it tries that first.
+- **Only then a new sign-in.** With Remember Password on, the app signs in again by itself when the Apple ID sign-in has ended too, and runs the call once more; with the trust cookie, that needs no code. A refused or failed silent sign-in pauses silent sign-ins until the user signs in.
 
 ## API
 
