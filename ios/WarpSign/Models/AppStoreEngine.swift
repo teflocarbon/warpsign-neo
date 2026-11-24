@@ -68,8 +68,10 @@ enum AppStoreEngine {
                 do {
                     try loadUnicorn(path: arguments[index + 1])
                     report("unicorn: loaded")
-                    try setUpJit(throughDebugger: false)
-                    report("unicorn: JIT memory set up")
+                    if !emulatorState().interpreter {
+                        try setUpJit(throughDebugger: false)
+                        report("unicorn: JIT memory set up")
+                    }
                     report("unicorn: check gave \(try checkUnicorn()) (expected 3000)")
                 } catch {
                     report("unicorn failed: \(error.userMessage)")

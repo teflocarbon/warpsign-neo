@@ -119,7 +119,7 @@ struct AppStoreView: View {
             } header: {
                 Text("Getting Apps")
             } footer: {
-                Text("Signing in and getting apps run Apple's own code in Unicorn, which WarpSign downloads once, signs with your development certificate, and loads with JIT from StikDebug each time WarpSign opens. Searching needs none of this.")
+                Text("Signing in and getting apps run Apple's own code in Unicorn, an emulator WarpSign downloads once (about 2 MB) and signs with your development certificate. Searching needs none of this.")
             }
         }
     }
@@ -352,7 +352,7 @@ struct StoreSignInView: View {
                         Text(error).font(.footnote).foregroundStyle(.red)
                     }
                 } footer: {
-                    Text("Signing in runs Apple's code in Unicorn, which needs JIT: StikDebug opens to enable it the first time each launch. Come back to WarpSign once it has.")
+                    Text("Signing in runs Apple's code in Unicorn, an emulator WarpSign downloads once (about 2 MB) and signs with your development certificate.")
                 }
             }
             .navigationTitle("App Store Account")

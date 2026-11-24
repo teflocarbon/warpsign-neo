@@ -17,14 +17,42 @@ can't be combined in one program, so WarpSign doesn't contain Unicorn:
 
 ## What's here
 
-- `build.sh`: builds `target/unicorn/{iphoneos,iphonesimulator}/libunicorn.dylib`
-  from Unicorn 2.1.4 (checked by hash), ipatool's iOS patch
+- `build.sh`: builds `libunicorn.dylib` for iOS devices and arm64
+  simulators from Unicorn 2.1.4 (checked by hash), ipatool's iOS patch
   (`tools/patches/unicorn-ios.patch` in ipatool's Go module, MIT-licensed
-  changes to GPLv2 code) and `splitwx.patch`. Only arm64 guests are built:
-  ipatool's emulator runs arm64 code since 2.8.0.
-- `splitwx.patch`: split W^X for iOS 26 and later, below.
+  changes to GPLv2 code) and one of the patches below: `MODE=interpreter`
+  (what WarpSign uses) into `target/unicorn-interpreter/`, or `MODE=jit`
+  into `target/unicorn/`. Only arm64 guests are built: ipatool's emulator
+  runs arm64 code since 2.8.0.
+- `interpreter.patch`: QEMU's interpreter, no JIT at all. Below.
+- `splitwx.patch`: split W^X JIT for iOS 26 and later, with StikDebug. Below.
+
+## Interpreter
+
+Unicorn normally translates guest code into host code as it runs (QEMU's
+TCG), which needs JIT: on iOS 26 and later, only from a debugger
+(StikDebug). `interpreter.patch` uses QEMU's TCG interpreter (TCI) instead.
+It translates guest code into bytecode, which it reads and runs, so no
+memory is ever executable and nothing beyond loading the library is needed.
+
+Unicorn 2 removed the interpreter. The patch brings back QEMU 5.0's, as
+[Naville/unicorn](https://github.com/Naville/unicorn) ports it to Unicorn 2
+(the `UNICORN_INTERPRETER` CMake option). It adds what that port lacks:
+`GETPC()` returns the interpreter's place in the bytecode (per thread), as
+QEMU 5 does, so faults inside helpers find their translation block;
+ipatool's write-protect toggle does nothing, since the code buffer is only
+read; and `uc_interpreter()` is exported, so WarpSign can tell the build
+apart.
+
+Apple's signing code is short, so interpreting it costs little. On a Mac
+(Apple silicon, November 2026), ipatool's live SAP test (Apple's SAP setup
+plus two signatures, no Apple ID) took 0.82 to 0.86 s with this build and
+0.59 to 1.12 s with Unicorn's own JIT build. Unicorn's `test_arm64` passes
+in full with it.
 
 ## Split W^X
+
+Not used by WarpSign since the interpreter; kept for comparison.
 
 Unicorn translates guest code into host code as it runs (QEMU's TCG), so it
 needs JIT. ipatool's iOS patch flips its code buffer between writable and

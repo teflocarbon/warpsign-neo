@@ -6,19 +6,23 @@ import UIKit
 /// download. It's GPLv2-only, so WarpSign doesn't ship it
 /// (ipatool-bridge/unicorn/README.md): it's downloaded once, checked
 /// against the hash here, signed with the user's development certificate
-/// (iOS only loads code signed by the app's own team) and loaded, then given
-/// JIT memory through StikDebug. See crates/warpsign-ffi/src/emulator.rs.
+/// (iOS only loads code signed by the app's own team) and loaded.
+///
+/// The build is Unicorn with QEMU's interpreter (interpreter.patch): it runs
+/// Apple's code without JIT, so nothing else is needed. A JIT build (split
+/// W^X, splitwx.patch) would also load, and then asks StikDebug for JIT
+/// memory. See crates/warpsign-ffi/src/emulator.rs.
 enum UnicornRuntime {
-    /// Unicorn's version, then the split W^X patch's
-    static let version = "2.1.4-wx1"
+    /// Unicorn's version, then the interpreter patch's
+    static let version = "2.1.4-tci1"
 
     /// The build for this platform: built by ipatool-bridge/unicorn/build.sh
     /// and published with the release named after the version
     private static let file: (name: String, sha256: String) = {
         #if targetEnvironment(simulator)
-        ("libunicorn-iphonesimulator.dylib", "bc5b2d17f5f91b67a41ced7025d31478d47ded73ecc556e9e8be74a9c2d7994c")
+        ("libunicorn-iphonesimulator.dylib", "77c4c595f949249a04e88dec8c1e89aeddb7682811073ce11f7f193dd2af45ed")
         #else
-        ("libunicorn-iphoneos.dylib", "09ea9c35a2bc4ed810275cc4521ebfc9b16b24ff61b082a96a8f11dc15abac2e")
+        ("libunicorn-iphoneos.dylib", "e9925081eebdfbffe4cbf1e9dd8797ee26ad393da6cff7dd79aca7d6a08f03bf")
         #endif
     }()
 
@@ -43,6 +47,7 @@ enum UnicornRuntime {
         case noStikDebug
         case noDebugger
         case wrongResult(UInt64)
+        case notLoaded(String)
 
         var errorDescription: String? {
             switch self {
@@ -59,7 +64,9 @@ enum UnicornRuntime {
             case .noDebugger:
                 "JIT wasn't enabled: StikDebug didn't attach to WarpSign. Make sure LocalDevVPN is connected, then try again."
             case .wrongResult(let result):
-                "Unicorn ran its check wrongly (got (result), not 3000)."
+                "Unicorn ran its check wrongly (got \(result), not 3000)."
+            case .notLoaded(let tried):
+                "iOS wouldn't load Unicorn:\n\(tried)"
             }
         }
     }
@@ -69,9 +76,9 @@ enum UnicornRuntime {
     /// Downloaded before: setting up only signs and loads it
     static var isDownloaded: Bool { FileManager.default.fileExists(atPath: original.path) }
 
-    /// Get Unicorn ready for ipatool: download, sign and load it, then enable
-    /// JIT. Each step is skipped once done. Can open StikDebug, and waits
-    /// for it to attach (up to `wait`).
+    /// Get Unicorn ready for ipatool: download, sign and load it, and check
+    /// it runs. Each step is skipped once done. Only a JIT build needs more:
+    /// it opens StikDebug, and waits for it to attach (up to `wait`).
     @MainActor
     static func prepare(
         identity: IdentityData,
@@ -81,12 +88,22 @@ enum UnicornRuntime {
         if !emulatorState().loaded {
             try await loadLibrary(identity: identity, report: report)
         }
-        guard !emulatorState().ready else { return }
+        // The interpreter is ready once loaded
+        if !emulatorState().ready {
+            try await setUpJit(wait: wait, report: report)
+        }
+        let result = try await background { try checkUnicorn() }
+        guard result == 3000 else { throw Failure.wrongResult(result) }
+        report("Unicorn is ready")
+    }
 
+    /// A JIT build's memory, from StikDebug on iOS 26 and later
+    @MainActor
+    private static func setUpJit(wait: Duration, report: @escaping (String) -> Void) async throws {
         #if targetEnvironment(simulator)
         // The simulator runs on the Mac: no debugger needed
         report("Setting up JIT memory")
-        try await background { try setUpJit(throughDebugger: false) }
+        try await background { try WarpSign.setUpJit(throughDebugger: false) }
         #else
         // iOS 26's TXM: executable memory only through the debugger's
         // script, which has to be attached right now. JIT enabled ahead in
@@ -108,11 +125,8 @@ enum UnicornRuntime {
             }
         }
         report("Setting up JIT memory")
-        try await background { try setUpJit(throughDebugger: throughDebugger) }
+        try await background { try WarpSign.setUpJit(throughDebugger: throughDebugger) }
         #endif
-        let result = try await background { try checkUnicorn() }
-        guard result == 3000 else { throw Failure.wrongResult(result) }
-        report("Unicorn is ready")
     }
 
     private static func loadLibrary(identity: IdentityData, report: @escaping (String) -> Void) async throws {
@@ -131,14 +145,85 @@ enum UnicornRuntime {
         try await background {
             let files = FileManager.default
             try? files.removeItem(at: signed)
-            try files.copyItem(at: original, to: signed)
+            // A fresh file, not a copy: nothing of the download's (extended
+            // attributes such as a quarantine mark) carries over
+            try Data(contentsOf: original).write(to: signed)
+            let attributes = extendedAttributes(signed)
+            attributes.forEach { removeExtendedAttribute($0, from: signed) }
             try signLibrary(
                 path: signed.path,
                 identity: identity,
                 teamId: certificateTeam,
                 identifier: "org.unicorn-engine.unicorn"
             )
-            try loadUnicorn(path: signed.path)
+            try loadFirstAllowed(attributes: attributes)
+        }
+    }
+
+    /// Load the signed library from the first place iOS allows it.
+    ///
+    /// With no debugger attached, iOS's sandbox refused to map the library
+    /// when it was a copy of the download ("file system sandbox blocked
+    /// mmap()"). A freshly written file, with no extended attributes, loaded
+    /// (seen on a device in November 2026). Other folders are kept as
+    /// fallbacks, and if none loads, the error says what happened in each.
+    private static func loadFirstAllowed(attributes: [String]) throws {
+        let files = FileManager.default
+        let places: [(String, URL)] = [
+            ("Application Support", signed),
+            ("tmp", files.temporaryDirectory.appendingPathComponent("unicorn", isDirectory: true)),
+            ("Caches", URL.cachesDirectory.appendingPathComponent("unicorn", isDirectory: true)),
+            ("Documents", URL.documentsDirectory.appendingPathComponent(".unicorn", isDirectory: true)),
+        ]
+        var tried: [String] = []
+        for (name, place) in places {
+            var file = place
+            do {
+                if place != signed {
+                    try files.createDirectory(at: place, withIntermediateDirectories: true)
+                    file = place.appendingPathComponent("libunicorn.dylib")
+                    try? files.removeItem(at: file)
+                    try Data(contentsOf: signed).write(to: file)
+                }
+                try loadUnicorn(path: file.path)
+                return
+            } catch {
+                tried.append("\(name): \(shortLoadError(error.userMessage))")
+            }
+        }
+        let debugged = emulatorState().debugged ? "yes" : "no"
+        throw Failure.notLoaded(
+            tried.joined(separator: "\n")
+                + "\nAttributes removed: \(attributes.isEmpty ? "none" : attributes.joined(separator: ", "))"
+                + "\nDebugged: \(debugged), iOS \(UIDevice.current.systemVersion)")
+    }
+
+    /// dyld's reason, without the paths it tried
+    private static func shortLoadError(_ message: String) -> String {
+        if message.contains("sandbox blocked mmap") { return "sandbox blocked it" }
+        // e.g. "… (code signature in <…> '…' not valid for use in process: …)"
+        if let reason = message.range(of: "code signature") ?? message.range(of: "not valid") {
+            return String(message[reason.lowerBound...].prefix(160))
+        }
+        return String(message.prefix(160))
+    }
+
+    private static func extendedAttributes(_ file: URL) -> [String] {
+        file.withUnsafeFileSystemRepresentation { path -> [String] in
+            guard let path else { return [] }
+            let size = listxattr(path, nil, 0, 0)
+            guard size > 0 else { return [] }
+            var names = [CChar](repeating: 0, count: size)
+            guard listxattr(path, &names, size, 0) == size else { return [] }
+            return names.split(separator: 0).map { name in
+                String(decoding: name.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+            }
+        }
+    }
+
+    private static func removeExtendedAttribute(_ name: String, from file: URL) {
+        _ = file.withUnsafeFileSystemRepresentation { path in
+            path.map { removexattr($0, name, 0) }
         }
     }
 

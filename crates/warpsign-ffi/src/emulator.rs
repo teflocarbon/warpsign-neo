@@ -59,8 +59,12 @@ pub struct EmulatorState {
     /// StikDebug, leaves the app debugged but with nothing attached, and
     /// iOS 26's region calls need the script there to answer them.
     pub attached: bool,
-    /// Unicorn has its executable memory: ipatool can sign in and download
+    /// Unicorn has its executable memory (or, an interpreter build, needs
+    /// none): ipatool can sign in and download
     pub ready: bool,
+    /// The loaded Unicorn is an interpreter build (uc_interpreter): it
+    /// runs without JIT, so no debugger is needed
+    pub interpreter: bool,
 }
 
 static STATE: Mutex<(bool, bool)> = Mutex::new((false, false));
@@ -73,10 +77,12 @@ pub fn emulator_state() -> EmulatorState {
         debugged: sys::debugged(),
         attached: sys::attached(),
         ready,
+        interpreter: loaded && sys::interpreter(),
     }
 }
 
-/// Load the (signed) Unicorn library at `path`, once
+/// Load the (signed) Unicorn library at `path`, once. An interpreter build
+/// is ready straight away; a JIT build needs `set_up_jit` next.
 #[uniffi::export]
 pub fn load_unicorn(path: String) -> Result<(), WarpsignError> {
     let mut state = STATE.lock().unwrap_or_else(|e| e.into_inner());
@@ -85,6 +91,7 @@ pub fn load_unicorn(path: String) -> Result<(), WarpsignError> {
     }
     sys::load(&path).map_err(error)?;
     state.0 = true;
+    state.1 = sys::interpreter();
     Ok(())
 }
 
@@ -240,10 +247,20 @@ mod sys {
         if handle.is_null() {
             return Err(format!("couldn't load Unicorn: {}", last_dl_error()));
         }
-        if configure().is_none() {
-            return Err("this Unicorn has no split W^X support (uc_splitwx_configure)".into());
+        if configure().is_none() && !interpreter() {
+            return Err(
+                "this Unicorn has neither split W^X support nor the interpreter (uc_splitwx_configure, uc_interpreter)"
+                    .into(),
+            );
         }
         Ok(())
+    }
+
+    /// A Unicorn built with QEMU's interpreter (interpreter.patch) is loaded
+    pub fn interpreter() -> bool {
+        // SAFETY: looking up a NUL-terminated name in every loaded image
+        let symbol = unsafe { dlsym(RTLD_DEFAULT, c"uc_interpreter".as_ptr()) };
+        !symbol.is_null()
     }
 
     fn configure() -> Option<Configure> {
@@ -462,6 +479,10 @@ mod sys {
     }
 
     pub fn attached() -> bool {
+        false
+    }
+
+    pub fn interpreter() -> bool {
         false
     }
 

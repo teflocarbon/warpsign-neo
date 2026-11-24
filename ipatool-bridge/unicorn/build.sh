@@ -1,6 +1,7 @@
 #!/bin/bash
 # Build Unicorn, the emulator ipatool runs Apple's code in, as libunicorn.dylib
-# for iOS devices and arm64 simulators, into target/unicorn/<sdk>/.
+# for iOS devices and arm64 simulators, into target/unicorn/<sdk>/ (with
+# MODE=interpreter, target/unicorn-interpreter/<sdk>/).
 #
 # Unicorn is GPLv2-only, which can't be combined with WarpSign (AGPL-3.0), so
 # WarpSign doesn't ship it: the app downloads this library, signs it with
@@ -8,8 +9,11 @@
 # See README.md here.
 #
 # Unicorn 2.1.4, with ipatool's iOS patch (tools/patches/unicorn-ios.patch in
-# its Go module) and then splitwx.patch. Only arm64 guests: ipatool's
-# emulator runs arm64 code since 2.8.0.
+# its Go module) and then one of:
+#   MODE=jit (default): splitwx.patch, generated code in JIT memory, which
+#     on iOS 26 and later needs StikDebug
+#   MODE=interpreter: interpreter.patch, QEMU's interpreter, no JIT at all
+# Only arm64 guests: ipatool's emulator runs arm64 code since 2.8.0.
 #
 # Needs: macOS with Xcode, Go (to fetch ipatool's patch), CMake.
 
@@ -20,7 +24,13 @@ ROOT=$(cd "$HERE/../.." && pwd)
 DEPLOYMENT_TARGET=17.0
 UNICORN_VERSION=2.1.4
 UNICORN_SHA256=ea8863f095a0136388694e5a6063afd9bb7650e30243dd6251af59c5ce5601f4
-WORK=${WORK:-$ROOT/target/unicorn}
+MODE=${MODE:-jit}
+case "$MODE" in
+    jit) PATCH=splitwx.patch INTERPRETER=OFF DEFAULT_WORK=$ROOT/target/unicorn ;;
+    interpreter) PATCH=interpreter.patch INTERPRETER=ON DEFAULT_WORK=$ROOT/target/unicorn-interpreter ;;
+    *) echo "MODE is jit or interpreter" >&2; exit 2 ;;
+esac
+WORK=${WORK:-$DEFAULT_WORK}
 mkdir -p "$WORK"
 
 # QEMU's configure stops without pkg-config, though Unicorn needs no
@@ -43,7 +53,7 @@ echo "$UNICORN_SHA256  $WORK/unicorn.tar.gz" | shasum -a 256 -c -
 rm -rf "$SRC"
 tar -xzf "$WORK/unicorn.tar.gz" -C "$WORK"
 patch -s -d "$SRC" -p1 < "$IPATOOL_DIR/tools/patches/unicorn-ios.patch"
-patch -s -d "$SRC" -p1 < "$HERE/splitwx.patch"
+patch -s -d "$SRC" -p1 < "$HERE/$PATCH"
 
 # sdk, clang -target
 build() {
@@ -65,7 +75,7 @@ build() {
         -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT="$sysroot" \
         -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=$DEPLOYMENT_TARGET \
         -DCMAKE_C_FLAGS="$cflags" -DCMAKE_BUILD_TYPE=Release \
-        -DBUILD_SHARED_LIBS=ON -DUNICORN_ARCH=aarch64 -DUNICORN_BUILD_TESTS=OFF -DUNICORN_INSTALL=OFF >/dev/null
+        -DBUILD_SHARED_LIBS=ON -DUNICORN_ARCH=aarch64 -DUNICORN_INTERPRETER=$INTERPRETER -DUNICORN_BUILD_TESTS=OFF -DUNICORN_INSTALL=OFF >/dev/null
     SDKROOT="$sysroot" CC="$cc" IPHONEOS_DEPLOYMENT_TARGET=$DEPLOYMENT_TARGET \
         cmake --build "$out/build" --parallel "$(sysctl -n hw.ncpu)" >/dev/null
 
@@ -78,4 +88,4 @@ build() {
 
 build iphoneos "arm64-apple-ios$DEPLOYMENT_TARGET"
 build iphonesimulator "arm64-apple-ios$DEPLOYMENT_TARGET-simulator"
-echo "Done: target/unicorn/{iphoneos,iphonesimulator}/libunicorn.dylib"
+echo "Done: $WORK/{iphoneos,iphonesimulator}/libunicorn.dylib"

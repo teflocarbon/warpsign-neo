@@ -8,7 +8,7 @@ import Observation
 /// Browsing (search, app pages) uses the public catalog (AppStoreCatalog)
 /// and needs none of this. Signing in, listing apps and versions, and
 /// downloading run Apple's code in Unicorn, so each first makes sure it's
-/// ready, which can open StikDebug.
+/// ready (downloaded once, then signed and loaded each launch).
 @Observable
 @MainActor
 final class AppStoreModel {
@@ -21,7 +21,7 @@ final class AppStoreModel {
     }
 
     var account: AccountState = .unknown
-    /// What getting ready is doing ("Asking StikDebug for JIT"), while it is
+    /// What getting ready is doing ("Signing Unicorn"), while it is
     var readying: String?
     /// The apps the account has got, newest first, once listed
     var owned: [CatalogApp]?
@@ -47,7 +47,7 @@ final class AppStoreModel {
             ?? AppStoreCatalog.deviceCountry
     }
 
-    /// Unicorn is loaded with JIT this launch
+    /// Unicorn is loaded and runs, and ipatool's runtime too, this launch
     var isReady: Bool { UnicornRuntime.isReady && prepared }
 
     // MARK: Account
@@ -82,7 +82,7 @@ final class AppStoreModel {
 
     // MARK: Getting ready
 
-    /// Unicorn with JIT, then ipatool's runtime and Apple's assets (fetched
+    /// Unicorn, then ipatool's runtime and Apple's assets (fetched
     /// once, about 190 MB). Skips whatever's done.
     func ready(identity: IdentityData?) async throws {
         defer { readying = nil }

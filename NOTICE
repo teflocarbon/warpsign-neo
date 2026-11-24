@@ -41,9 +41,12 @@ pkg/appstore/storefront.go, under the same MIT License.
 ipatool-bridge/unicorn/ is not part of WarpSign and not under its license:
 it builds Unicorn (https://github.com/unicorn-engine/unicorn), which is
 GPLv2-only, as a separate library that the app downloads at run time. Its
-own files (build.sh, splitwx.patch, README.md) are under the GNU General
-Public License, version 2 only. splitwx.patch follows the approach of QEMU's
-split W^X support (GPLv2-or-later); see ipatool-bridge/unicorn/README.md.
+own files (build.sh, interpreter.patch, splitwx.patch, README.md) are
+under the GNU General Public License, version 2 only. interpreter.patch
+carries QEMU 5.0's TCG interpreter (GPLv2-or-later) as Naville/unicorn
+(https://github.com/Naville/unicorn, GPLv2) ports it to Unicorn 2;
+splitwx.patch follows the approach of QEMU's split W^X support
+(GPLv2-or-later); see ipatool-bridge/unicorn/README.md.
 
 Rust dependencies keep their own licenses (MIT, Apache-2.0, MPL-2.0 and
 others), listed in each crate's metadata.
