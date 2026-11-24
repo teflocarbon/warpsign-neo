@@ -197,7 +197,7 @@ final class LibraryStore {
             apps.insert(app, at: 0)
             save()
             importError = nil
-            return app
+            return await decryptAutomatically(app)
         } catch {
             importError = "\(name): \(error.userMessage)"
             return nil
@@ -271,8 +271,9 @@ final class LibraryStore {
 
     /// Put a newer version of `app` in place of its IPA: the same library
     /// entry, with its signed copies and settings kept. Refuses a different
-    /// app.
-    func replaceIPA(of app: LibraryApp, with file: URL) async throws -> LibraryApp {
+    /// app. An encrypted one is decrypted with a key that fits, unless
+    /// `decryptAutomatically` is false.
+    func replaceIPA(of app: LibraryApp, with file: URL, decryptAutomatically: Bool = true) async throws -> LibraryApp {
         let id = app.id
         let bundleId = app.bundleId
         let metadata = try await background { () throws -> IpaMetadata in
@@ -312,7 +313,18 @@ final class LibraryStore {
         if !apps[index].signedCopies.isEmpty { apps[index].needsSigning = true }
         icons[id] = nil
         save()
-        return apps[index]
+        guard decryptAutomatically else { return apps[index] }
+        return await self.decryptAutomatically(apps[index])
+    }
+
+    /// An encrypted app, decrypted in place if that's turned on and one of
+    /// the keys fits (it takes seconds). Otherwise, or if it fails, as it
+    /// was: it can still be decrypted from its page.
+    private func decryptAutomatically(_ app: LibraryApp) async -> LibraryApp {
+        let keys = DecryptionKeys.shared
+        guard app.isEncrypted, keys.decryptsAutomatically, !keys.keys.isEmpty else { return app }
+        _ = try? await keys.decrypt(app, library: self, observer: StepRecorder { _ in })
+        return self.app(app.id) ?? app
     }
 
     func setAutoUpdate(_ on: Bool, for app: LibraryApp) {

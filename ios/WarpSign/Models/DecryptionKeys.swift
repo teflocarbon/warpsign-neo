@@ -21,6 +21,15 @@ final class DecryptionKeys {
 
     private(set) var keys: [Key] = []
 
+    /// Decrypt encrypted apps as they're added or updated, when a key fits
+    private(set) var decryptsAutomatically = UserDefaults.standard.object(forKey: DecryptionKeys.automaticKey) as? Bool ?? true
+    private static let automaticKey = "DecryptAutomatically"
+
+    func setDecryptsAutomatically(_ on: Bool) {
+        decryptsAutomatically = on
+        UserDefaults.standard.set(on, forKey: Self.automaticKey)
+    }
+
     private static let listKey = "DecryptionKeys"
 
     private init() {
@@ -122,7 +131,7 @@ final class DecryptionKeys {
                 observer: observer
             )
         }
-        _ = try await library.replaceIPA(of: app, with: output)
+        _ = try await library.replaceIPA(of: app, with: output, decryptAutomatically: false)
         let index = Int(summary.keyIndex)
         return entries.indices.contains(index) ? entries[index].0.name : "your key"
     }

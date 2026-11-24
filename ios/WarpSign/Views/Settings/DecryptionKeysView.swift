@@ -29,6 +29,17 @@ struct DecryptionKeysView: View {
             } footer: {
                 Text("A key decrypts every App Store app its Apple ID got, right here: no helper, nothing to install. Each Apple ID has its own. Get one with UnfairPlay on a Mac signed in to the App Store, or fairplay-decrypt on a jailbroken device. Keys stay in this device's Keychain.")
             }
+
+            if !store.keys.isEmpty {
+                Section {
+                    Toggle("Decrypt Automatically", isOn: Binding(
+                        get: { store.decryptsAutomatically },
+                        set: { store.setDecryptsAutomatically($0) }
+                    ))
+                } footer: {
+                    Text("Encrypted apps are decrypted as they're added to the library or updated, when one of your keys fits. Apps no key fits stay as they are.")
+                }
+            }
         }
         .navigationTitle("Decryption Keys")
         .navigationBarTitleDisplayMode(.inline)
